@@ -1,0 +1,86 @@
+site_name: Vespid
+site_description: Lightweight Linux security daemon with centralized fleet management
+site_url: https://www.vespid.app
+repo_url: https://github.com/your-org/vespid
+docs_dir: docs
+site_dir: website/docs
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  logo: assets/logo.png
+  favicon: assets/logo.png
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - footnotes
+  - tables
+  - toc:
+      permalink: true
+
+extra_css:
+  - assets/extra.css
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Agent:
+      - Guide: agent/guide.md
+      - CLI Reference: agent/cli.md
+  - Server:
+      - Guide: server/guide.md
+      - API Reference: server/api.md
+      - Fleet Blocklist: server/fleet.md
+      - Auto-Enrollment: server/enrollment.md
+      - Detection Rule Packs: server/rule-packs.md
+      - Noise Suppression: server/noise-suppression.md
+      - Inventory (CMDB): server/inventory.md
+      - Deployment: server/deployment.md
+  - Host Threat Detection: HOST_THREAT_DETECTION.md
+  - Alert Manager: alert-manager.md
+  - Intelligence: INTEL_PIPELINE_FEATURES.md
+  - Architecture: architecture.md
+  - Advanced Topics:
+      - Sigma Rule Integration: SIGMA_INTEGRATION.md
+      - Centralized Config Management: CENTRALIZED_CONFIG_MANAGEMENT.md
+      - HAProxy Logging: HAPROXY_LOGGING.md
+      - Allowlist Convergence: ALLOWLIST_CONVERGENCE.md
+      - Threading Architecture: THREADING_ARCHITECTURE.md
+      - Connection Debug: CONNECTION_DEBUG_MONITOR.md
+  - Building & Packaging: building.md

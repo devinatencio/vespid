@@ -1,0 +1,113 @@
+<div id="blocked-results">
+    {% if blocked %}
+    <p class="result-count">{{ total }} blocked IP{{ 's' if total != 1 else '' }} (page {{ page }} of {{ total_pages }})</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Source IP</th>
+                {% if view == 'active' %}
+                <th>TTL Remaining</th>
+                <th>Strike</th>
+                <th>Reason</th>
+                {% else %}
+                <th>Blocks</th>
+                <th>Event Types</th>
+                {% endif %}
+                <th>{% if view == 'active' %}Blocked At{% else %}First Blocked{% endif %}</th>
+                {% if view != 'active' %}
+                <th>Last Blocked</th>
+                <th>Country</th>
+                {% endif %}
+                <th>Nodes</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for ip in blocked %}
+            <tr>
+                <td class="ip-cell"><code class="ip-copy" onclick="copyIpToClipboard('{{ ip.source_ip }}', this)" title="Click to copy">{{ ip.source_ip }}</code> <a href="#" class="ip-intel-icon" onclick="event.preventDefault(); openIpIntelModal('{{ ip.source_ip }}')" title="View IP intelligence">🔍</a></td>
+                {% if view == 'active' %}
+                <td>
+                    {% set ttl = ip.ttl_remaining or 0 %}
+                    {% if ttl > 86400 %}
+                    <span class="badge badge-offline">{{ (ttl // 3600) }}h {{ ((ttl % 3600) // 60) }}m</span>
+                    {% elif ttl > 3600 %}
+                    <span class="badge badge-degraded">{{ (ttl // 3600) }}h {{ ((ttl % 3600) // 60) }}m</span>
+                    {% elif ttl > 0 %}
+                    <span class="badge badge-healthy">{{ (ttl // 60) }}m</span>
+                    {% else %}
+                    <span class="badge">expired</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% set strike = ip.strike or 1 %}
+                    {% if strike >= 3 %}
+                    <span class="badge badge-offline">{{ strike }}</span>
+                    {% elif strike >= 2 %}
+                    <span class="badge badge-degraded">{{ strike }}</span>
+                    {% else %}
+                    <span class="badge badge-healthy">{{ strike }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="badge badge-event-{{ (ip.reason or 'unknown')|lower|replace('_','-') }}">{{ ip.reason or 'unknown' }}</span>
+                </td>
+                {% else %}
+                <td>
+                    {% if ip.block_count >= 5 %}
+                    <span class="badge badge-offline">{{ ip.block_count }}</span>
+                    {% elif ip.block_count >= 2 %}
+                    <span class="badge badge-degraded">{{ ip.block_count }}</span>
+                    {% else %}
+                    <span class="badge badge-healthy">{{ ip.block_count }}</span>
+                    {% endif %}
+                </td>
+                <td class="event-types-cell">
+                    {% for et in ip.event_types %}
+                    <span class="badge badge-event-{{ et|lower|replace('_','-') }}">{{ et }}</span>
+                    {% endfor %}
+                </td>
+                {% endif %}
+                <td><span class="ts-rel" data-ts="{{ ip.blocked_at or ip.first_blocked }}">{{ ip.blocked_at or ip.first_blocked }}</span></td>
+                {% if view != 'active' %}
+                <td><span class="ts-rel" data-ts="{{ ip.last_blocked }}">{{ ip.last_blocked }}</span></td>
+                <td>{% for c in ip.countries %}{{ c|country_name }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+                {% endif %}
+                <td>
+                    {% set node_count = ip.nodes|length %}
+                    <code class="node-count-badge" title="{% for node in ip.nodes %}{{ node|node_display_name }}{% if not loop.last %}, {% endif %}{% endfor %}">{{ node_count }} node{% if node_count != 1 %}s{% endif %}</code>
+                </td>
+                <td>
+                    <a href="{{ url_for('dashboard.events', source_ip=ip.source_ip, event_type='') }}" class="btn btn-sm" title="View all events for this IP">Events</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="#" hx-get="{{ url_for('dashboard.blocked_ips', view=view, page=page-1, **filters) }}" hx-target="#blocked-results" hx-swap="outerHTML">← Prev</a>
+        {% endif %}
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="current">{{ p }}</span>
+            {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+            <a href="#" hx-get="{{ url_for('dashboard.blocked_ips', view=view, page=p, **filters) }}" hx-target="#blocked-results" hx-swap="outerHTML">{{ p }}</a>
+            {% elif p == 4 or p == total_pages - 3 %}
+            <span>…</span>
+            {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+        <a href="#" hx-get="{{ url_for('dashboard.blocked_ips', view=view, page=page+1, **filters) }}" hx-target="#blocked-results" hx-swap="outerHTML">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    {% if view == 'active' %}
+    <p class="empty-state">No IPs are currently blocked on any agent.</p>
+    {% else %}
+    <p class="empty-state">No blocked IPs found for the selected filters.</p>
+    {% endif %}
+    {% endif %}
+</div>

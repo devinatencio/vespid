@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+{% block title %}Feeds — Vespid Server{% endblock %}
+{% block content %}
+<h1 class="page-title">📋 Threat Intelligence Feeds</h1>
+
+<!-- Summary Stats -->
+<div class="stats-grid" style="margin-bottom:1.5rem;">
+    <div class="stat-card">
+        <div class="stat-label">Feeds in Catalog</div>
+        <div class="stat-value">{{ catalog|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Categories</div>
+        <div class="stat-value" style="color:var(--info)">{{ categories|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Connected Nodes</div>
+        <div class="stat-value" style="color:var(--accent)">{{ nodes|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Default Feeds</div>
+        <div class="stat-value" style="color:var(--success)">{{ catalog|selectattr('is_default')|list|length }}</div>
+    </div>
+</div>
+
+<!-- Add Custom Feed (admin only) -->
+{% if current_user.role == 'admin' %}
+<div class="card">
+    <h2 class="card-title">➕ Add Custom Feed</h2>
+    <form method="POST" action="{{ url_for('dashboard.feeds_add') }}" class="rules-form feed-add-form">
+        <!-- Row 1: Core identity -->
+        <div class="rules-form-row">
+            <div class="form-group" style="flex:1">
+                <label for="feed-name">Name</label>
+                <input type="text" id="feed-name" name="name" placeholder="my_custom_feed" required pattern="[a-z0-9_]+" title="Lowercase letters, numbers, underscores only">
+            </div>
+            <div class="form-group" style="flex:1">
+                <label for="feed-provider">Provider</label>
+                <input type="text" id="feed-provider" name="provider" placeholder="e.g. abuse.ch, Spamhaus">
+            </div>
+            <div class="form-group" style="flex:1">
+                <label for="feed-category">Category</label>
+                <input type="text" id="feed-category" name="category" placeholder="custom" value="custom">
+            </div>
+        </div>
+        <!-- Row 2: URL + technical settings -->
+        <div class="rules-form-row">
+            <div class="form-group" style="flex:3">
+                <label for="feed-url">Feed URL</label>
+                <input type="url" id="feed-url" name="url" placeholder="https://example.com/blocklist.txt" required>
+            </div>
+            <div class="form-group" style="flex:1">
+                <label for="feed-format">Format</label>
+                <select id="feed-format" name="format">
+                    <option value="plain">Plain (one IP per line)</option>
+                    <option value="cidr">CIDR (network notation)</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex:0.7">
+                <label for="feed-refresh">Refresh</label>
+                <input type="number" id="feed-refresh" name="refresh_hours" value="1" min="0.5" step="0.5" title="Hours between updates">
+                <span class="form-hint">hours</span>
+            </div>
+            <div class="form-group" style="flex:1">
+                <label for="feed-confidence">Confidence</label>
+                <select id="feed-confidence" name="confidence">
+                    <option value="low">Low — single source</option>
+                    <option value="medium" selected>Medium — community reported</option>
+                    <option value="high">High — multi-sensor verified</option>
+                    <option value="very_high">Very High — confirmed, near-zero FP</option>
+                </select>
+            </div>
+        </div>
+        <!-- Row 3: Description (full width) -->
+        <div class="rules-form-row">
+            <div class="form-group" style="flex:1">
+                <label for="feed-desc">Description</label>
+                <textarea id="feed-desc" name="description" placeholder="Describe the feed: what data source powers it, how IPs are selected, and what makes it reliable." rows="3"></textarea>
+            </div>
+        </div>
+        <!-- Row 4: Detects + Usage side by side -->
+        <div class="rules-form-row">
+            <div class="form-group" style="flex:1">
+                <label for="feed-detects">What it Detects</label>
+                <textarea id="feed-detects" name="detects" placeholder="e.g. SSH brute-force attempts; port scanning; botnet C2 callbacks; exploit probing" rows="3"></textarea>
+            </div>
+            <div class="form-group" style="flex:1">
+                <label for="feed-usage">Recommended Usage</label>
+                <textarea id="feed-usage" name="recommended_usage" placeholder="e.g. Safe to auto-block at perimeter. Update frequency supports real-time blocking." rows="3"></textarea>
+            </div>
+        </div>
+        <button type="submit" class="btn">Add to Catalog</button>
+    </form>
+</div>
+{% endif %}
+
+<!-- Feed Catalog by Category -->
+{% for category, feeds in grouped.items() %}
+<div class="card" style="margin-bottom:1.5rem;">
+    <div class="rules-panel-header">
+        <h2 class="card-title">
+            <span class="category-icon category-{{ category }}">
+                {% if category == 'aggregated' %}🔗
+                {% elif category == 'hijacked' %}🏴‍☠️
+                {% elif category == 'botnet' %}🤖
+                {% elif category == 'attacks' %}⚔️
+                {% elif category == 'compromised' %}💀
+                {% elif category == 'anonymizers' %}🎭
+                {% else %}📦
+                {% endif %}
+            </span>
+            {{ category|title }}
+        </h2>
+        <span class="rules-count badge" style="background:rgba(168,85,247,0.15);color:#c084fc;">{{ feeds|length }} feed{{ 's' if feeds|length != 1 else '' }}</span>
+    </div>
+
+    <div class="feed-catalog-grid">
+        {% for feed in feeds %}
+        {% set total_nodes = nodes|length %}
+        {% set active_count = feed.stats.get('deployed_nodes', [])|length %}
+        {% set deployed_set = feed.stats.get('deployed_nodes', []) %}
+        <div class="feed-catalog-card">
+            <!-- Row 1: Name + deploy badges -->
+            <div class="feed-catalog-header">
+                <div>
+                    <span class="feed-name">{{ feed.name }}</span>
+                    {% if feed.is_default %}
+                    <span class="badge badge-healthy" style="font-size:0.6rem;">recommended</span>
+                    {% endif %}
+                </div>
+                <div class="feed-deploy-stats">
+                    {% if active_count %}
+                    <span class="feed-deploy-badge feed-deploy-active" title="Active on: {{ deployed_set|join(', ') }}">
+                        ● {{ active_count }}/{{ total_nodes }} nodes
+                    </span>
+                    {% endif %}
+                    {% if feed.stats.total_ips %}
+                    <span class="feed-deploy-badge feed-deploy-ips">
+                        {{ "{:,}".format(feed.stats.total_ips) }} IPs
+                    </span>
+                    {% endif %}
+                    {% if not active_count %}
+                    <span class="feed-deploy-badge feed-deploy-none">not deployed</span>
+                    {% endif %}
+                </div>
+            </div>
+            <!-- Row 2: Provider link -->
+            {% if feed.provider %}
+            <a href="{{ feed.url }}" target="_blank" rel="noopener" class="feed-provider-link" title="{{ feed.url }}">{{ feed.provider }} ↗</a>
+            {% endif %}
+            <!-- Row 3: Description -->
+            <p class="feed-catalog-desc">{{ feed.description }}</p>
+            <!-- Row 4: Compact meta line -->
+            <div class="feed-meta-line">
+                {% if feed.confidence %}
+                <span class="feed-confidence-badge feed-confidence-{{ feed.confidence }}">
+                    {% if feed.confidence == 'very_high' %}Very High
+                    {% elif feed.confidence == 'high' %}High
+                    {% elif feed.confidence == 'medium' %}Medium
+                    {% elif feed.confidence == 'low' %}Low
+                    {% endif %}
+                </span>
+                {% endif %}
+                <span class="feed-meta-sep">{{ feed.format }}</span>
+                <span class="feed-meta-sep">↻ {{ feed.refresh_seconds // 3600 }}h{% if feed.refresh_seconds % 3600 %} {{ (feed.refresh_seconds % 3600) // 60 }}m{% endif %}</span>
+                {% if feed.created_by != 'system' %}
+                <span class="feed-meta-sep">by {{ feed.created_by }}</span>
+                {% endif %}
+            </div>
+            <!-- Row 5: Expandable details (Detects + Usage) -->
+            {% if feed.detects or feed.recommended_usage %}
+            <details class="feed-details-expand">
+                <summary>Details</summary>
+                <div class="feed-details-body">
+                    {% if feed.detects %}
+                    <div class="feed-detail-row">
+                        <span class="feed-detail-label">🎯 Detects:</span>
+                        <span>{{ feed.detects }}</span>
+                    </div>
+                    {% endif %}
+                    {% if feed.recommended_usage %}
+                    <div class="feed-detail-row">
+                        <span class="feed-detail-label">✅ Usage:</span>
+                        <span>{{ feed.recommended_usage }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </details>
+            {% endif %}
+            <!-- Row 6: Deploy actions -->
+            <div class="feed-catalog-actions">
+                <form method="POST" action="{{ url_for('dashboard.feeds_deploy', feed_id=feed.id) }}" class="inline-form feed-deploy-form">
+                    <div class="node-picker">
+                        <button type="button" class="node-picker-toggle" onclick="this.closest('.node-picker').classList.toggle('open')">
+                            <span class="node-picker-icon">▸</span>
+                            <span class="node-picker-summary">Select Nodes — <span class="node-picker-count" data-total="{{ total_nodes }}">0</span> / {{ total_nodes }}</span>
+                            <span class="node-picker-hint">all if none selected</span>
+                        </button>
+                        <div class="node-picker-dropdown">
+                            <div class="node-picker-toolbar">
+                                <input type="text" class="node-picker-search" placeholder="Filter nodes…" oninput="filterNodes(this)">
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="toggleAllNodes(this, true)">All</button>
+                                <button type="button" class="btn btn-sm btn-secondary" onclick="toggleAllNodes(this, false)">None</button>
+                            </div>
+                            <div class="node-picker-list">
+                                {% for node in nodes %}
+                                <label class="node-chip {% if node.node_id in deployed_set %}node-chip-deployed{% endif %}">
+                                    <input type="checkbox" name="target_nodes" value="{{ node.node_id }}" onchange="updatePickerCount(this)"
+                                        {% if node.node_id in deployed_set %}disabled{% endif %}>
+                                    <span class="node-chip-label">{{ node.node_id|node_display_name }}</span>
+                                    {% if node.node_id in deployed_set %}
+                                    <span class="node-chip-status" title="Already deployed">✓</span>
+                                    {% endif %}
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="feed-action-buttons">
+                        <button type="submit" class="btn btn-sm btn-success" title="Deploy to selected nodes (or all if none selected)">🚀 Deploy</button>
+                        {% if active_count %}
+                        <button type="button" class="btn btn-sm btn-danger"
+                                onclick="if(confirm('Retract {{ feed.name }} from all nodes?')) this.closest('.feed-catalog-actions').querySelector('.retract-form').submit()"
+                                title="Remove from all nodes">Retract</button>
+                        {% endif %}
+                        {% if current_user.role == 'admin' %}
+                        <button type="button" class="btn btn-sm btn-secondary"
+                                onclick="if(confirm('Remove {{ feed.name }} from the catalog?')) this.closest('.feed-catalog-actions').querySelector('.remove-form').submit()"
+                                title="Remove from catalog">🗑</button>
+                        {% endif %}
+                    </div>
+                </form>
+                <form method="POST" action="{{ url_for('dashboard.feeds_retract', feed_id=feed.id) }}" class="retract-form" style="display:none;"></form>
+                {% if current_user.role == 'admin' %}
+                <form method="POST" action="{{ url_for('dashboard.feeds_remove', feed_id=feed.id) }}" class="remove-form" style="display:none;"></form>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endfor %}
+
+{% if not grouped %}
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-icon">📋</div>
+        <p>No feeds in the catalog yet</p>
+    </div>
+</div>
+{% endif %}
+
+<script>
+/* ── Node Picker helpers ──────────────────────────────────── */
+function updatePickerCount(checkbox) {
+    var picker = checkbox.closest('.node-picker');
+    var checked = picker.querySelectorAll('input[type="checkbox"]:checked').length;
+    picker.querySelector('.node-picker-count').textContent = checked;
+}
+
+function toggleAllNodes(btn, selectAll) {
+    var picker = btn.closest('.node-picker');
+    var chips = picker.querySelectorAll('.node-picker-list .node-chip');
+    chips.forEach(function(chip) {
+        if (chip.style.display !== 'none') {
+            chip.querySelector('input[type="checkbox"]').checked = selectAll;
+        }
+    });
+    var checked = picker.querySelectorAll('input[type="checkbox"]:checked').length;
+    picker.querySelector('.node-picker-count').textContent = checked;
+}
+
+function filterNodes(input) {
+    var query = input.value.toLowerCase();
+    var picker = input.closest('.node-picker');
+    var chips = picker.querySelectorAll('.node-picker-list .node-chip');
+    chips.forEach(function(chip) {
+        var label = chip.querySelector('.node-chip-label').textContent.toLowerCase();
+        chip.style.display = label.indexOf(query) !== -1 ? '' : 'none';
+    });
+}
+
+/* Close picker when clicking outside */
+document.addEventListener('click', function(e) {
+    document.querySelectorAll('.node-picker.open').forEach(function(picker) {
+        if (!picker.contains(e.target)) {
+            picker.classList.remove('open');
+        }
+    });
+});
+</script>
+{% endblock %}

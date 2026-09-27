@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+{% block title %}IP Intelligence Search — Vespid Server{% endblock %}
+{% block content %}
+<section aria-label="IP Intelligence Search">
+    <h1 class="page-title">🔍 IP Intelligence Search</h1>
+
+    <style>
+    .intel-sticky-bar {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: var(--card-bg, #1e293b);
+        border: 1px solid var(--border-color, #334155);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.75rem;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+    .intel-sticky-bar .quick-search {
+        flex: 1;
+        min-width: 200px;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        border: 1px solid var(--border-color, #334155);
+        background: var(--bg-input, #0f172a);
+        color: var(--text);
+        font-size: 0.9rem;
+    }
+    .intel-sticky-bar .quick-search:focus {
+        outline: none;
+        border-color: var(--primary-color, #3b82f6);
+    }
+    </style>
+
+    {# Count active filters (excluding q) #}
+    {% set intel_active = 0 %}
+    {% if filters.repeat_offender %}{% set intel_active = intel_active + 1 %}{% endif %}
+    {% if filters.geo_country %}{% set intel_active = intel_active + 1 %}{% endif %}
+    {% if filters.min_sighting_count %}{% set intel_active = intel_active + 1 %}{% endif %}
+
+    <!-- ════════════════ Sticky bar ════════════════ -->
+    <form id="intel-search-form"
+          role="search"
+          aria-label="IP intelligence search"
+          action="{{ url_for('intel_dashboard.search_page') }}"
+          method="get"
+          hx-get="{{ url_for('intel_dashboard.search_page') }}"
+          hx-trigger="submit"
+          hx-target="#intel-search-results"
+          hx-swap="innerHTML"
+          hx-indicator="#intel-search-loading"
+          hx-push-url="true">
+        <div class="intel-sticky-bar">
+            <input type="text" class="quick-search" id="intel-search-input" name="q"
+                   placeholder="IP, CIDR, prefix, or threat tag"
+                   value="{{ query }}" autocomplete="off">
+            <button type="submit" class="btn">Search</button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="toggleIntelFilters()" style="white-space:nowrap;">
+                <span id="intel-filter-toggle-icon">▾</span> Filters{% if intel_active > 0 %} ({{ intel_active }}){% endif %}
+            </button>
+            {% if query or intel_active > 0 %}
+            <a href="{{ url_for('intel_dashboard.search_page') }}" class="btn btn-sm btn-secondary">Clear</a>
+            {% endif %}
+            <span id="intel-search-loading" class="htmx-indicator" style="margin-left:auto;">Searching…</span>
+            <!-- Hidden fields to preserve sort state -->
+            <input type="hidden" name="sort_by" id="intel-sort-by" value="{{ sort_by }}">
+            <input type="hidden" name="sort_order" id="intel-sort-order" value="{{ sort_order }}">
+            <input type="hidden" name="page" id="intel-page" value="1">
+        </div>
+
+        <!-- ════════════════ Collapsible detailed filters ════════════════ -->
+        <div id="intel-detailed-filters" style="display:none;" class="card">
+            <div class="form-inline">
+                <div class="form-group">
+                    <label for="intel_repeat_offender">Repeat Offender</label>
+                    <select id="intel_repeat_offender" name="repeat_offender">
+                        <option value="">Any</option>
+                        <option value="true" {% if filters.repeat_offender == 'true' %}selected{% endif %}>Yes</option>
+                        <option value="false" {% if filters.repeat_offender == 'false' %}selected{% endif %}>No</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="intel_geo_country">Country</label>
+                    <select id="intel_geo_country" name="geo_country">
+                        <option value="">All Countries</option>
+                        <option value="US" {% if filters.geo_country == 'US' %}selected{% endif %}>US — United States</option>
+                        <option value="CN" {% if filters.geo_country == 'CN' %}selected{% endif %}>CN — China</option>
+                        <option value="RU" {% if filters.geo_country == 'RU' %}selected{% endif %}>RU — Russia</option>
+                        <option value="DE" {% if filters.geo_country == 'DE' %}selected{% endif %}>DE — Germany</option>
+                        <option value="FR" {% if filters.geo_country == 'FR' %}selected{% endif %}>FR — France</option>
+                        <option value="GB" {% if filters.geo_country == 'GB' %}selected{% endif %}>GB — United Kingdom</option>
+                        <option value="NL" {% if filters.geo_country == 'NL' %}selected{% endif %}>NL — Netherlands</option>
+                        <option value="JP" {% if filters.geo_country == 'JP' %}selected{% endif %}>JP — Japan</option>
+                        <option value="KR" {% if filters.geo_country == 'KR' %}selected{% endif %}>KR — South Korea</option>
+                        <option value="IN" {% if filters.geo_country == 'IN' %}selected{% endif %}>IN — India</option>
+                        <option value="BR" {% if filters.geo_country == 'BR' %}selected{% endif %}>BR — Brazil</option>
+                        <option value="AU" {% if filters.geo_country == 'AU' %}selected{% endif %}>AU — Australia</option>
+                        <option value="CA" {% if filters.geo_country == 'CA' %}selected{% endif %}>CA — Canada</option>
+                        <option value="IT" {% if filters.geo_country == 'IT' %}selected{% endif %}>IT — Italy</option>
+                        <option value="ES" {% if filters.geo_country == 'ES' %}selected{% endif %}>ES — Spain</option>
+                        <option value="PL" {% if filters.geo_country == 'PL' %}selected{% endif %}>PL — Poland</option>
+                        <option value="UA" {% if filters.geo_country == 'UA' %}selected{% endif %}>UA — Ukraine</option>
+                        <option value="ID" {% if filters.geo_country == 'ID' %}selected{% endif %}>ID — Indonesia</option>
+                        <option value="TW" {% if filters.geo_country == 'TW' %}selected{% endif %}>TW — Taiwan</option>
+                        <option value="VN" {% if filters.geo_country == 'VN' %}selected{% endif %}>VN — Vietnam</option>
+                        <option value="TH" {% if filters.geo_country == 'TH' %}selected{% endif %}>TH — Thailand</option>
+                        <option value="SG" {% if filters.geo_country == 'SG' %}selected{% endif %}>SG — Singapore</option>
+                        <option value="HK" {% if filters.geo_country == 'HK' %}selected{% endif %}>HK — Hong Kong</option>
+                        <option value="AR" {% if filters.geo_country == 'AR' %}selected{% endif %}>AR — Argentina</option>
+                        <option value="MX" {% if filters.geo_country == 'MX' %}selected{% endif %}>MX — Mexico</option>
+                        <option value="ZA" {% if filters.geo_country == 'ZA' %}selected{% endif %}>ZA — South Africa</option>
+                        <option value="NG" {% if filters.geo_country == 'NG' %}selected{% endif %}>NG — Nigeria</option>
+                        <option value="EG" {% if filters.geo_country == 'EG' %}selected{% endif %}>EG — Egypt</option>
+                        <option value="IR" {% if filters.geo_country == 'IR' %}selected{% endif %}>IR — Iran</option>
+                        <option value="PK" {% if filters.geo_country == 'PK' %}selected{% endif %}>PK — Pakistan</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="intel_min_sighting_count">Min Sightings</label>
+                    <input type="number" id="intel_min_sighting_count" name="min_sighting_count"
+                           placeholder="1" min="1" max="999999"
+                           value="{{ filters.min_sighting_count }}">
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn">Search</button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <!-- Search results area (replaced via HTMX) -->
+    <div class="card">
+        <h2 class="card-title">Results{% if total %} ({{ total }}){% endif %}</h2>
+        <div id="intel-search-results">
+            {% include 'intel/fragments/search_results.html' %}
+        </div>
+    </div>
+</section>
+
+<script>
+(function() {
+    /* ── Keyboard shortcut: "/" focuses search input ──────────── */
+    document.addEventListener('keydown', function(e) {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' ||
+            e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault();
+            var searchInput = document.getElementById('intel-search-input');
+            if (searchInput) searchInput.focus();
+        }
+    });
+
+    /* ── Toggle detailed filters ─────────────────────────────── */
+    window.toggleIntelFilters = function() {
+        var panel = document.getElementById('intel-detailed-filters');
+        var icon = document.getElementById('intel-filter-toggle-icon');
+        if (!panel) return;
+        var showing = panel.style.display !== 'none';
+        panel.style.display = showing ? 'none' : 'block';
+        icon.textContent = showing ? '▸' : '▾';
+    };
+
+    /* ── Sortable column headers ─────────────────────────────── */
+    document.addEventListener('click', function(e) {
+        var header = e.target.closest('[data-sort-col]');
+        if (!header) return;
+        e.preventDefault();
+
+        var col = header.getAttribute('data-sort-col');
+        var sortByField = document.getElementById('intel-sort-by');
+        var sortOrderField = document.getElementById('intel-sort-order');
+        var pageField = document.getElementById('intel-page');
+
+        if (sortByField.value === col) {
+            sortOrderField.value = (sortOrderField.value === 'desc') ? 'asc' : 'desc';
+        } else {
+            sortByField.value = col;
+            sortOrderField.value = 'desc';
+        }
+
+        pageField.value = '1';
+        htmx.trigger(document.getElementById('intel-search-form'), 'submit');
+    });
+
+    /* ── After swap: update sort indicators ──────────────────── */
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        if (e.detail.target && e.detail.target.id === 'intel-search-results') {
+            updateSortIndicators();
+            applyRelativeTimestamps();
+        }
+    });
+
+    function updateSortIndicators() {
+        var sortBy = document.getElementById('intel-sort-by');
+        var sortOrder = document.getElementById('intel-sort-order');
+        if (!sortBy || !sortOrder) return;
+        document.querySelectorAll('[data-sort-col] .sort-arrow').forEach(function(el) {
+            el.textContent = '';
+        });
+        var activeHeader = document.querySelector('[data-sort-col="' + sortBy.value + '"] .sort-arrow');
+        if (activeHeader) {
+            activeHeader.textContent = (sortOrder.value === 'desc') ? ' ▼' : ' ▲';
+        }
+    }
+
+    updateSortIndicators();
+
+    /* ── Open filters panel on page load if any are active ───── */
+    {% if intel_active > 0 %}
+    toggleIntelFilters();
+    {% endif %}
+})();
+</script>
+{% endblock %}

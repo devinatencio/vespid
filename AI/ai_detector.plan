@@ -1,0 +1,197 @@
+# AI Detector — Integration Plan for HiveLogic
+
+## Overview
+
+Add an `AIDetector` class to the agent-side detection pipeline that calls an external LLM API (Ollama) to analyze log batches for anomalous patterns that regex-based rules miss. It plugs into the existing detector framework alongside `SlidingWindowDetector` and `CorrelationDetector`.
+
+## Files to Create/Modify
+
+### New Files
+
+| File | Purpose |
+|------|---------|
+| `hivelogic/ai_detector.py` | `AIDetector` class + Ollama API client |
+| `AI/ai_detector.plan` | This plan document |
+
+### Modified Files
+
+| File | Change |
+|------|--------|
+| `hivelogic/detectors.py` | Add `AIDetection` dataclass |
+| `hivelogic/log_processor.py` | Wire `AIDetector` into `_on_line()` pipeline |
+| `hivelogic/daemon.py` | Handle `AIDetection` in `_on_detection()` |
+| `hivelogic/config.py` | Add `ai_detector` config section |
+| `config/config.example.yaml` | Document new config options |
+
+---
+
+## Architecture
+
+### 1. `AIDetection` dataclass (`detectors.py`)
+
+```python
+@dataclass
+class AIDetection:
+    rule: str           # e.g. "ai_anomaly"
+    source_ip: str
+    score: int          # 0-10 severity
+    labels: list[str]   # e.g. ["brute_force", "unauthorized_access"]
+    first_seen: float
+    last_seen: float
+    context: str        # snippet of log lines that triggered it
+```
+
+### 2. `AIDetector` class (`hivelogic/ai_detector.py`)
+
+```
+AIDetector
+├── __init__(config, api_url, model, min_score, batch_lines, cooldown)
+├── add_line(parsed_line)          # buffer lines, returns None or AIDetection
+├── _should_analyze()              # check if enough lines buffered + cooldown elapsed
+├── _build_prompt(lines)           # format log batch + system prompt -> string
+├── _query_ollama(prompt)          # POST /api/generate, parse JSON response
+├── _extract_response(raw)         # robust JSON extraction from model output
+└── reset()                        # for rule hot-reload compatibility
+```
+
+**Key design decisions:**
+- **Batch-based, not line-by-line** — Lines are buffered in a deque. Analysis triggers when buffer reaches `batch_lines` (default: 50) or a configurable interval elapses.
+- **Cooldown per IP** — Same as SlidingWindowDetector (300s default) to prevent spam.
+- **Configurable minimum score** — Only fire detection if AI score >= threshold (default: 7). This prevents noisy low-confidence alerts.
+- **Distinct detection source** — Uses rule name `ai_anomaly` (configurable) so it's tracked separately from rule-based detections. This lets the server-side alert manager create AI-specific alert rules.
+- **Async-safe** — Called from the existing async `_on_line()` loop. The Ollama HTTP call is synchronous but fast enough (4-5s on 16 CPUs, or use a thread pool executor for non-blocking).
+
+### 3. Ollama API Client (inline in `ai_detector.py`)
+
+Uses only `urllib.request` (stdlib, no dependencies):
+- `POST http://localhost:11434/api/generate`
+- JSON body: `{"model": "...", "system": "...", "prompt": "...", "stream": false, "format": "json"}`
+- Response: `{"response": "{\"score\":7,\"labels\":[\"brute_force\"]}"}`
+- Robust JSON extraction: handles markdown fences, extra text around JSON
+
+**System prompt** (embedded, not configurable in v1):
+```
+You are a security log analyzer. Output ONLY valid JSON.
+Format: {"score":0,"labels":[]}
+Score: 0=normal, 3=warning, 7=severe, 10=critical
+Labels: normal, invalid_login, brute_force, privilege_escalation,
+  data_exfiltration, service_down, high_errors, config_error,
+  unusual_traffic, port_scan, unauthorized_access
+```
+
+**Prompt construction:**
+```
+System: HiveLogic security agent. Logs from protected host.
+Analyze for security anomalies:
+
+```log
+[last N lines, truncated to ~4000 chars]
+```
+```
+
+### 4. Config Section (`config.py` + `config.example.yaml`)
+
+```yaml
+ai_detector:
+  enabled: false                    # opt-in; off by default
+  api_url: "http://localhost:11434/api/generate"
+  model: "qwen2.5-coder:3b"
+  batch_lines: 50                   # lines to buffer before analysis
+  max_interval_seconds: 30          # analyze even if buffer not full after N seconds
+  min_score: 7                      # only fire detection if score >= this
+  cooldown_seconds: 300             # per-IP cooldown
+  max_chars: 4000                   # truncate input to this many chars
+  rule_name: "ai_anomaly"           # rule name in detection events
+  block_ttl: 86400                  # block duration for AI detections (24h default)
+  labels_to_block:                  # which AI labels should trigger a block
+    - brute_force
+    - unauthorized_access
+    - port_scan
+    - privilege_escalation
+    - data_exfiltration
+```
+
+### 5. Pipeline Integration (`log_processor.py`)
+
+In `LogProcessor.__init__()`, conditionally create the AIDetector:
+```python
+if config.ai_detector.enabled:
+    self.ai_detector = AIDetector(config.ai_detector)
+else:
+    self.ai_detector = None
+```
+
+In `LogProcessor._on_line()`, after existing detectors (~line 1217):
+```python
+# AI anomaly detection
+if self.ai_detector is not None:
+    ai_detection = self.ai_detector.add_line(parsed)
+    if ai_detection is not None:
+        await self._on_detection(ai_detection)
+```
+
+The `AIDetection` dataclass implements the same interface `Detection` uses, so `_on_detection()` handles it naturally — whitelist check, publish event, apply nftables block.
+
+### 6. Daemon Integration (`daemon.py`)
+
+`_on_detection()` at line 655 already handles `Detection` objects generically. Minimal changes needed:
+- Accept `AIDetection` or `Detection` (duck typing — both have `rule`, `source_ip`, `first_seen`, `last_seen`)
+- The `context` field on `AIDetection` gets included in the `BLOCKED` event's `surrounding_logs` field, so the server sees what triggered the AI
+
+### 7. Hot Reload Compatibility
+
+When `LogProcessor.reload_rules()` is called (server-pushed rule updates), call `self.ai_detector.reset()` to clear the buffer. This avoids analyzing stale data with new config.
+
+---
+
+## Detection Flow (end-to-end)
+
+```
+1. Log line arrives -> parsed by existing parser -> ParsedLine
+2. Existing detectors run (SlidingWindow, Correlation) — no change
+3. ParsedLine pushed to AIDetector.add_line()
+4. Buffer accumulates. When batch_lines=50 reached OR max_interval_seconds elapsed:
+   a. Build prompt from buffered lines
+   b. POST to Ollama API (4-5s latency)
+   c. Parse response: {"score": 8, "labels": ["unauthorized_access"]}
+   d. If score >= min_score AND label in labels_to_block:
+      -> Return AIDetection(score=8, labels=["unauthorized_access"], ...)
+   e. Clear buffer, start cooldown for this IP
+5. _on_detection() called with AIDetection
+6. Same pipeline as any detection:
+   -> whitelist check -> DataBus.publish(BLOCKED)
+   -> nft.block_local() -> nftables drop rule
+   -> ActivityTracker.record_block()
+   -> Event shipped to server -> intel -> propagation engine -> fleet
+```
+
+---
+
+## Performance Considerations
+
+| Concern | Mitigation |
+|---------|------------|
+| 4-5s HTTP call blocks async loop | Use `loop.run_in_executor()` thread pool for the HTTP request |
+| Cold start (model load) takes 20s+ first time | Ollama keeps model in RAM after first request; subsequent are fast |
+| Analysis runs on every 50 lines, could be noisy | `min_score` and `cooldown` prevent spam; `labels_to_block` whitelist controls which AI labels actually block |
+| Memory: buffering lines for analysis | Fixed-size deque (batch_lines * 2 max); drops old lines if not consumed |
+| Disabled by default | `enabled: false` in config; no performance impact when off |
+
+---
+
+## Testing Strategy
+
+1. **Unit test:** `AIDetector` with mocked Ollama responses — verify correct JSON parsing, score thresholding, label filtering, cooldown behavior
+2. **Integration test:** Run against the test log file on the 16-CPU box — verify end-to-end: buffer fills -> API call -> detection returned -> blocks applied
+3. **Config validation:** Test all config options (disabled, missing fields, bad URLs, unreachable API)
+4. **Edge cases:** Empty log batch, malformed API response, timeout, very long log lines, unicode/encoding issues
+
+---
+
+## Future Enhancements (out of scope for v1)
+
+- **Two-tier analysis:** 1.5b model for fast triage, 3b model only if suspicious
+- **Context injection:** Prepend hostname, known service names, and recent detection history to the prompt for better scoring
+- **Feedback loop:** Track AI detection accuracy (was the blocked IP actually malicious?) to tune the model or prompt
+- **Anomaly scoring history:** Persist AI scores to compare against historical baseline — catch deviations over time
+- **Streaming mode:** Use Ollama's `/api/chat` streaming endpoint for progressive analysis (faster time-to-first-token)

@@ -1,0 +1,132 @@
+# Vespid Server Configuration
+# ================================
+#
+# Copy this file to /etc/vespid-server/config.yaml and adjust as needed.
+# All values can be overridden with environment variables using the
+# VESPID_ prefix (e.g. VESPID_PORT=9443).
+#
+# The server also supports JSON config files (config.json) for backward
+# compatibility. YAML is preferred because it supports comments and doesn't
+# require escaping.
+
+# Flask session signing key. MUST be changed in production.
+# Generate one with: python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+SECRET_KEY: change-me-to-a-random-string
+
+# Path to the SQLite database file.
+# For MySQL, see the DATABASE_TYPE settings below.
+DATABASE_PATH: /var/lib/vespid-server/vespid.db
+
+# Address and port the server binds to.
+# Defaults to localhost — place a reverse proxy (nginx/Caddy) in front for TLS.
+HOST: 127.0.0.1
+PORT: 8000
+
+# Enable Flask debug mode. Never use in production.
+DEBUG: false
+
+# How long login sessions remain valid (hours).
+SESSION_LIFETIME_HOURS: 24
+
+# Number of events per page in search results.
+EVENTS_PER_PAGE: 50
+
+# Number of recent event IDs kept for SSE reconnection replay.
+SSE_HISTORY_SIZE: 500
+
+# Node health thresholds (seconds since last event/heartbeat).
+# Healthy: < NODE_HEALTHY_SECONDS (default 5 min)
+# Degraded: between healthy and degraded thresholds
+# Offline: > NODE_DEGRADED_SECONDS (default 15 min)
+NODE_HEALTHY_SECONDS: 300
+NODE_DEGRADED_SECONDS: 900
+
+# ── Rate Limiting ─────────────────────────────────────────────────────
+# Protects API endpoints from abuse. Limits are tracked per API key for
+# authenticated endpoints, falling back to per-IP for unauthenticated
+# requests. Uses Flask-Limiter syntax (e.g. "60 per minute", "1000 per hour").
+#
+# Set RATELIMIT_ENABLED to false to disable all rate limiting.
+#
+# ⚠️  RATELIMIT_STORAGE_URI: critical for multi-worker deployments.
+# The default "memory://" backend stores counters in-process. With gunicorn's
+# multiple workers, each worker keeps its own independent counters — meaning
+# a 60/min limit with 4 workers effectively allows 240/min.
+#
+# Use Redis for shared counters across all workers:
+#   RATELIMIT_STORAGE_URI: redis://localhost:6379
+# Requires: pip install redis
+RATELIMIT_ENABLED: true
+RATELIMIT_EVENTS_INGEST: "60 per minute"
+RATELIMIT_HEARTBEAT: "30 per minute"
+RATELIMIT_COMMANDS: "60 per minute"
+RATELIMIT_EXPORT: "10 per minute"
+RATELIMIT_STORAGE_URI: "memory://"
+
+# ── MySQL Backend (optional) ──────────────────────────────────────────
+# Uncomment and configure these to use MySQL instead of SQLite.
+# You must also run schema_mysql.sql to create the database.
+# See README.md for full instructions.
+#
+# DATABASE_TYPE: mysql
+# DATABASE_HOST: localhost
+# DATABASE_PORT: 3306
+# DATABASE_NAME: vespid
+# DATABASE_USER: vespid
+# DATABASE_PASSWORD: your-secure-password
+
+# ── Database Backups (optional) ──────────────────────────────────────
+# Automated database backup settings. Defaults:
+#   Backups stored in: /var/lib/vespid-server/backups
+#   Schedule (interval/retention) is managed via the web UI (Admin → DB Backups).
+#
+# BACKUP_DIRECTORY: /var/lib/vespid-server/backups
+
+# ── Proxy / Load Balancer Support ────────────────────────────────────
+# Set to the number of trusted proxies in front of the server (e.g. 1 for
+# a single HAProxy or nginx). When set, X-Forwarded-For is trusted so
+# rate limiting and audit logs see the real client IP, not the proxy's.
+# Set to 0 to disable.
+PROXY_TRUST_COUNT: 1
+
+# ── Connection Debug Monitor (optional) ───────────────────────────────
+# Provides real-time visibility into gevent pool utilization, SSE client
+# counts, and request throughput. Useful for diagnosing connection issues
+# or unresponsive WebUI. Disabled by default — enable when troubleshooting.
+#
+# When enabled, exposes localhost-only endpoints:
+#   GET /_debug/connections         — Live connection snapshot
+#   GET /_debug/connections/history — Recent periodic snapshots
+#   GET /_debug/slow                — Slow requests (>2s)
+#
+# Also writes periodic JSON-lines snapshots to the debug log file.
+# See docs/CONNECTION_DEBUG_MONITOR.md for full details.
+#
+# CONNECTION_DEBUG_ENABLED: true
+# CONNECTION_DEBUG_INTERVAL: 30
+# CONNECTION_DEBUG_LOG: /var/log/vespid-server/connection_debug.log
+# CONNECTION_DEBUG_ALLOW_REMOTE: false
+
+# ── Subsystem Control ─────────────────────────────────────────────────
+# Toggle subsystems on/off. When disabled, the corresponding blueprints,
+# database tables, and nav items are not registered.
+#
+# SECURITY_ENABLED: true        # Vespid IDS/IPS (events, fleet, intel, rules)
+# METRICS_ENABLED: true         # Vespid Metrics (VictoriaMetrics, dashboards, checks)
+#
+# Both default to their natural defaults:
+#   SECURITY_ENABLED defaults to true  (security is the original product)
+#   METRICS_ENABLED defaults to false  (metrics is opt-in)
+
+# ── Metrics Subsystem (optional) ──────────────────────────────────────
+# When enabled, the server accepts metrics from vespid-agent
+# instances and forwards them to VictoriaMetrics for storage and querying.
+# Adds a "Metrics" section to the dashboard nav.
+#
+# Prerequisites:
+#   - VictoriaMetrics running (defaults to http://localhost:8428)
+#     curl -L https://github.com/VictoriaMetrics/VictoriaMetrics/releases/latest/download/victoria-metrics-linux-amd64.tar.gz | tar xz
+#     ./victoria-metrics-prod -retentionPeriod=90d -httpListenAddr=:8428 &
+#
+# METRICS_ENABLED: true
+# VICTORIAMETRICS_URL: "http://localhost:8428"

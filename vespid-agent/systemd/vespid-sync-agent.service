@@ -1,0 +1,33 @@
+[Unit]
+Description=Vespid Sync Agent — infrastructure discovery
+Documentation=https://github.com/vespid/hivemonitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/vespid-sync
+ExecStart=/opt/vespid-sync/.venv/bin/python /opt/vespid-sync/sync.py --config /etc/vespid-sync/config.yaml
+
+# Run as root — may need to read /sys/class/dmi or other system files
+User=root
+Group=root
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

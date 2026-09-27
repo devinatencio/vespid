@@ -1,0 +1,588 @@
+{% extends "base.html" %}
+{% block title %}{{ node.node_id }} — Vespid Server{% endblock %}
+{% block content %}
+<div class="node-detail-header">
+    <a href="{{ url_for('dashboard.nodes') }}" class="btn btn-sm btn-secondary">← Nodes</a>
+    <h1 class="page-title" style="margin-bottom:0">🖥️ {{ node.get('display_name') or node.node_id }}</h1>
+    <span class="badge badge-{{ health }}">
+        {% if health == 'healthy' %}● {% elif health == 'degraded' %}◐ {% else %}○ {% endif %}
+        {{ health }}
+    </span>
+    {% if in_fleet %}
+    <span class="badge badge-fleet">⚡ Fleet</span>
+    {% endif %}
+</div>
+
+<!-- Node Info Cards -->
+<div class="stats-grid" style="margin-bottom:1.5rem;">
+    <div class="stat-card">
+        <div class="stat-label">Status</div>
+        <div class="stat-value" style="color:{% if health == 'healthy' %}var(--success){% elif health == 'degraded' %}var(--warning){% else %}var(--danger){% endif %}">{{ health }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Active Blocks</div>
+        <div class="stat-value" style="color:var(--danger)">{{ block_list|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Subscribed IPs</div>
+        <div class="stat-value" style="color:var(--info)">{{ feeds|selectattr('last_sync_count', 'defined')|sum(attribute='last_sync_count') if feeds else 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Allowlist Entries</div>
+        <div class="stat-value" style="color:var(--success)">{{ allowlist|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Events</div>
+        <div class="stat-value">{{ "{:,}".format(node.total_events) }}</div>
+    </div>
+</div>
+
+<div class="card" style="padding:1rem 1.25rem; margin-bottom:1.5rem;">
+    <div class="host-info-pills">
+        <div class="host-pill host-pill-green">
+            <span class="host-pill-label">Display Name</span>
+            <span class="host-pill-value"><strong>{{ node.get('display_name') or '—' }}</strong>
+            {% if current_user.role == 'admin' %}
+            <button class="btn btn-sm btn-secondary" style="margin-left:0.5rem; font-size:0.7rem; padding:0.1rem 0.4rem;"
+                    onclick="document.getElementById('rename-form').classList.toggle('hidden')">✏️</button>
+            {% endif %}
+            </span>
+        </div>
+        <div class="host-pill host-pill-blue">
+            <span class="host-pill-label">Node ID (UUID)</span>
+            <span class="host-pill-value"><code>{{ node.node_id }}</code></span>
+        </div>
+        <div class="host-pill host-pill-teal">
+            <span class="host-pill-label">First Seen</span>
+            <span class="host-pill-value"><span data-ts="{{ node.first_seen_at }}">{{ node.first_seen_at }}</span></span>
+        </div>
+        <div class="host-pill host-pill-amber">
+            <span class="host-pill-label">Last Seen</span>
+            <span class="host-pill-value"><span data-ts="{{ node.last_event_at or '' }}">{{ node.last_event_at or '—' }}</span></span>
+        </div>
+        <div class="host-pill host-pill-purple">
+            <span class="host-pill-label">Last Event Origin</span>
+            <span class="host-pill-value">{{ location or '—' }}</span>
+        </div>
+        {% if agent_version %}
+        <div class="host-pill host-pill-green">
+            <span class="host-pill-label">Agent Version</span>
+            <span class="host-pill-value">{{ agent_version }}</span>
+        </div>
+        {% endif %}
+    </div>
+    {% if current_user.role == 'admin' %}
+    <div id="rename-form" class="hidden" style="margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border-color, #334155);">
+        <form method="POST" action="{{ url_for('dashboard.node_rename', node_id=node.node_id) }}" style="display:flex; align-items:center; gap:0.5rem;">
+            <label for="display_name" style="font-size:0.8rem; white-space:nowrap;">Rename:</label>
+            <input type="text" id="display_name" name="display_name" value="{{ node.get('display_name') or '' }}"
+                   maxlength="255" style="flex:1; font-size:0.8rem; padding:0.3rem 0.5rem;"
+                   placeholder="Enter a human-readable name...">
+            <button type="submit" class="btn btn-sm">Save</button>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ── Host Information ─────────────────────────────────────── -->
+{% if host_info %}
+<div class="card rules-panel" style="border-top: 3px solid var(--info);">
+    <div class="rules-panel-header">
+        <h2 class="card-title"><span class="rules-icon" style="background:color-mix(in srgb, var(--info) 20%, transparent);color:var(--info);">🖥️</span> Host Information</h2>
+    </div>
+    <p class="rules-description">System details reported by the node with each heartbeat.</p>
+
+    <div class="host-info-pills">
+        <div class="host-pill host-pill-blue">
+            <span class="host-pill-label">Hostname</span>
+            <span class="host-pill-value">{{ host_info.hostname or '—' }}</span>
+        </div>
+        <div class="host-pill host-pill-purple">
+            <span class="host-pill-label">OS</span>
+            <span class="host-pill-value">{{ host_info.os or '—' }}</span>
+        </div>
+        <div class="host-pill host-pill-teal">
+            <span class="host-pill-label">Kernel</span>
+            <span class="host-pill-value">{{ host_info.kernel or '—' }}</span>
+        </div>
+        <div class="host-pill host-pill-amber">
+            <span class="host-pill-label">Uptime</span>
+            <span class="host-pill-value">
+                {% if host_info.uptime_seconds %}
+                    {% set days = host_info.uptime_seconds // 86400 %}
+                    {% set hours = (host_info.uptime_seconds % 86400) // 3600 %}
+                    {% if days > 0 %}{{ days }}d {{ hours }}h{% else %}{{ hours }}h {{ ((host_info.uptime_seconds % 3600) // 60) }}m{% endif %}
+                {% else %}
+                    —
+                {% endif %}
+            </span>
+        </div>
+        <div class="host-pill host-pill-green">
+            <span class="host-pill-label">CPUs</span>
+            <span class="host-pill-value">{{ host_info.cpu_count or '—' }}</span>
+        </div>
+        <div class="host-pill host-pill-rose">
+            <span class="host-pill-label">Memory</span>
+            <span class="host-pill-value">
+                {% if host_info.memory_total_mb %}
+                    {% if host_info.memory_total_mb >= 1024 %}
+                        {{ "%.1f"|format(host_info.memory_total_mb / 1024) }} GiB
+                    {% else %}
+                        {{ host_info.memory_total_mb }} MiB
+                    {% endif %}
+                {% else %}
+                    —
+                {% endif %}
+            </span>
+        </div>
+    </div>
+
+    {% if host_info.interfaces %}
+    <h3 style="font-size:0.9rem; margin:1rem 0 0.5rem; color:var(--text-muted, #94a3b8);">Network Interfaces</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Interface</th>
+                <th>MAC Address</th>
+                <th>IPv4</th>
+                <th>IPv6</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for iface in host_info.interfaces %}
+            <tr class="fade-in">
+                <td><code>{{ iface.name }}</code></td>
+                <td><code>{{ iface.mac or '—' }}</code></td>
+                <td>
+                    {% if iface.ipv4 %}
+                        {% for ip in iface.ipv4 %}<code class="rule-entry">{{ ip }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    {% if iface.ipv6 %}
+                        {% for ip in iface.ipv6 %}<code class="rule-entry" style="font-size:0.75rem">{{ ip }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- ── API Key (Admin Only) ─────────────────────────────────── -->
+{% if current_user.role == 'admin' %}
+<div class="card rules-panel" style="border-top: 3px solid var(--danger);">
+    <div class="rules-panel-header">
+        <h2 class="card-title"><span class="rules-icon" style="background:color-mix(in srgb, var(--danger) 20%, transparent);color:var(--danger);">🔑</span> API Key</h2>
+        {% if node_api_keys %}
+        <span class="rules-count badge" style="background:color-mix(in srgb, var(--danger) 15%, transparent);color:var(--danger);">
+            {{ node_api_keys|length }} key{{ 's' if node_api_keys|length != 1 else '' }}
+        </span>
+        {% endif %}
+    </div>
+    <p class="rules-description">API keys assigned to this node. The full token is only shown once at creation — only the prefix is stored for identification.</p>
+
+    {% if node_api_keys %}
+    <table>
+        <thead>
+            <tr>
+                <th>Key Prefix</th>
+                <th>Label</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Last Used</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key in node_api_keys %}
+            <tr class="fade-in">
+                <td><code style="font-size:0.95rem; letter-spacing:0.5px;">{{ key.key_prefix }}…</code></td>
+                <td>{{ key.label }}</td>
+                <td>
+                    {% if key.is_active %}
+                        <span class="badge badge-healthy">active</span>
+                    {% else %}
+                        <span class="badge badge-offline">revoked</span>
+                    {% endif %}
+                </td>
+                <td><span data-ts="{{ key.created_at }}">{{ key.created_at }}</span></td>
+                <td><span data-ts="{{ key.last_used_at or '' }}">{{ key.last_used_at or '—' }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🔑</div>
+        <p>No API keys assigned to this node</p>
+        <p class="text-muted">Keys are created during enrollment or manually via Admin → API Keys</p>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- ── Detection Packs ───────────────────────────────────── -->
+<div class="card rules-panel" style="border-top: 3px solid var(--accent);">
+    <div class="rules-panel-header">
+        <h2 class="card-title"><span class="rules-icon" style="background:color-mix(in srgb, var(--accent) 20%, transparent);color:var(--accent);">🎯</span> Detection Packs</h2>
+        {% if node_packs %}
+        <span class="rules-count badge" style="background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent);">
+            {{ node_packs|length }} pack{{ 's' if node_packs|length != 1 else '' }}
+        </span>
+        {% endif %}
+    </div>
+
+    {% if active_parsers %}
+    <p class="rules-description" style="margin-bottom:0.75rem;">
+        Active parsers:
+        {% for parser in active_parsers|sort %}
+        <span class="badge" style="background:color-mix(in srgb, var(--accent) 15%, transparent);color:var(--accent);margin:0.1rem 0.2rem;">{{ parser }}</span>
+        {% endfor %}
+    </p>
+    <p class="rules-description">
+        Assignment mode: <strong>{{ pack_mode }}</strong>
+    </p>
+    {% elif active_parsers is none %}
+    <p class="rules-description">
+        <span class="badge badge-degraded">⚠️ Parser information pending</span>
+        — this node has not reported active parsers yet. All packs are distributed.
+    </p>
+    {% else %}
+    <p class="rules-description">
+        <span class="badge badge-degraded">⚠️ Parser information pending</span>
+        — this node has not reported active parsers yet.
+    </p>
+    {% endif %}
+
+    {% if node_packs %}
+    <div class="pack-list">
+        {% for pack in node_packs %}
+        <div class="pack-row">
+            <div class="pack-row-top">
+                <span class="pack-name">{{ pack.icon }} {{ pack.display_name }}</span>
+                {% if pack.enabled_count > 0 %}
+                <span class="badge badge-healthy" style="flex-shrink:0;">{{ pack.enabled_count }} rule{{ 's' if pack.enabled_count != 1 else '' }}</span>
+                {% else %}
+                <span class="badge badge-offline" style="flex-shrink:0;">NO RULES</span>
+                {% endif %}
+                <span class="pack-assign-type pack-assign-{{ pack.assignment_type }}">{{ pack.assignment_type }}</span>
+            </div>
+            <div class="pack-row-desc">{{ pack.description }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🎯</div>
+        <p>No detection packs assigned</p>
+        <p class="text-muted">Packs are assigned based on the node's active parsers or explicit profile configuration</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ── Subscription Feeds ───────────────────────────────────── -->
+<div class="card rules-panel" style="border-top: 3px solid var(--info);">
+    <div class="rules-panel-header">
+        <h2 class="card-title"><span class="rules-icon" style="background:color-mix(in srgb, var(--info) 20%, transparent);color:var(--info);">📋</span> Subscription Feeds</h2>
+        <span class="rules-count badge" style="background:color-mix(in srgb, var(--info) 15%, transparent);color:var(--info);">
+            {{ feeds|selectattr('enabled')|list|length if feeds else 0 }} / {{ feeds|length }} active
+        </span>
+    </div>
+    <p class="rules-description">Threat intelligence feeds this node subscribes to. Toggle feeds on or off — changes take effect on the next heartbeat cycle.</p>
+
+    {% if feeds %}
+    <div class="pack-list">
+        {% for feed in feeds %}
+        <div class="pack-row">
+            <div class="pack-row-top">
+                <span class="pack-name">{{ feed.name }}</span>
+                {% if feed.last_sync_count is defined and feed.last_sync_count %}
+                    <span class="badge" style="background:color-mix(in srgb, var(--info) 12%, transparent);color:var(--info);font-size:0.7rem;flex-shrink:0;">{{ "{:,}".format(feed.last_sync_count) }} IPs</span>
+                {% endif %}
+                <span class="badge" style="background:color-mix(in srgb, var(--text-muted) 8%, transparent);color:var(--text-muted);font-size:0.7rem;flex-shrink:0;">↻ {{ feed.refresh_seconds // 3600 }}h</span>
+                {% if feed.enabled %}
+                    <span class="badge badge-healthy">active</span>
+                {% else %}
+                    <span class="badge badge-offline">disabled</span>
+                {% endif %}
+                {% if current_user.role in ('admin', 'analyst') %}
+                <form method="POST" action="{{ url_for('dashboard.node_feed_toggle', node_id=node.node_id, feed_name=feed.name) }}" style="display:inline-flex; align-items:center;">
+                    {% if feed.enabled %}
+                        <input type="hidden" name="action" value="disable">
+                        <button type="submit" class="feed-toggle feed-toggle-on" title="Disable this feed"
+                                onclick="return confirm('Disable feed {{ feed.name }} on this node?')">
+                            <span class="feed-toggle-knob"></span>
+                        </button>
+                    {% else %}
+                        <input type="hidden" name="action" value="enable">
+                        <button type="submit" class="feed-toggle feed-toggle-off" title="Enable this feed"
+                                onclick="return confirm('Enable feed {{ feed.name }} on this node?')">
+                            <span class="feed-toggle-knob"></span>
+                        </button>
+                    {% endif %}
+                </form>
+                {% endif %}
+            </div>
+            <div class="pack-row-desc">
+                <span class="feed-url" title="{{ feed.url }}">{{ feed.url }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📋</div>
+        <p>No feed data reported yet</p>
+        <p class="text-muted">Feed status is reported with each heartbeat</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Block List & Allowlist side by side -->
+<div class="grid-2">
+    <!-- ── Active Blocks ────────────────────────────────────── -->
+    <div class="card rules-panel rules-panel-blocklist">
+        <div class="rules-panel-header">
+            <h2 class="card-title"><span class="rules-icon rules-icon-blocklist">✕</span> Active Blocks</h2>
+            <span class="rules-count badge badge-offline">{{ block_list|length }}</span>
+        </div>
+        <p class="rules-description">IPs currently blocked on this node's firewall. Data refreshes with each heartbeat.</p>
+
+        {% if block_list %}
+        <div class="block-list-controls">
+            <input type="text" id="block-search" class="form-input" placeholder="Search IP" oninput="filterBlocks(this.value)">
+            <span id="block-count-display" class="rules-count badge badge-offline">{{ block_list|length }}</span>
+        </div>
+        <div id="block-table-wrapper" style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border-color, #334155); border-radius: 6px;">
+        <table style="margin: 0;">
+            <thead>
+                <tr>
+                    <th>IP</th>
+                    <th>Reason</th>
+                    <th>TTL</th>
+                    <th>Strikes</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="block-tbody">
+                {% for entry in block_list %}
+                <tr class="fade-in" data-ip="{{ (entry.ip if entry is mapping else entry)|e }}" data-reason="{{ (entry.reason if entry is mapping else '')|e }}">
+                    <td><code class="rule-entry rule-entry-blocklist">{{ entry.ip if entry is mapping else entry }}</code></td>
+                    <td class="rule-reason">{{ entry.reason if entry is mapping else '—' }}</td>
+                    <td>
+                        {% if entry is mapping and entry.ttl_remaining is defined %}
+                            {% set ttl = entry.ttl_remaining %}
+                            {% if ttl >= 86400 %}
+                                <span class="ttl-badge ttl-long">{{ (ttl // 86400) }}d {{ ((ttl % 86400) // 3600) }}h</span>
+                            {% elif ttl >= 3600 %}
+                                <span class="ttl-badge ttl-medium">{{ (ttl // 3600) }}h {{ ((ttl % 3600) // 60) }}m</span>
+                            {% else %}
+                                <span class="ttl-badge ttl-short">{{ (ttl // 60) }}m</span>
+                            {% endif %}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if entry is mapping and entry.total_blocks is defined %}
+                            {% set bc = entry.total_blocks %}
+                            {% if bc >= 3 %}
+                                <span class="badge badge-offline">{{ bc }}×</span>
+                            {% elif bc >= 2 %}
+                                <span class="badge badge-degraded">{{ bc }}×</span>
+                            {% else %}
+                                <span class="badge badge-healthy">{{ bc }}×</span>
+                            {% endif %}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if current_user.role in ('admin', 'analyst') %}
+                        <form method="POST" action="{{ url_for('dashboard.node_unblock', node_id=node.node_id) }}" class="inline-form"
+                              onsubmit="return confirm('Unblock {{ entry.ip if entry is mapping else entry }} on {{ node.node_id }}?')">
+                            <input type="hidden" name="ip" value="{{ entry.ip if entry is mapping else entry }}">
+                            <button type="submit" class="btn btn-sm btn-success-outline" title="Unblock this IP">Unblock</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">🛡️</div>
+            <p>No active blocks on this node</p>
+            <p class="text-muted">Block data is reported with each heartbeat</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ── Allowlist ────────────────────────────────────────── -->
+    <div class="card rules-panel rules-panel-allowlist">
+        <div class="rules-panel-header">
+            <h2 class="card-title"><span class="rules-icon rules-icon-allowlist">✓</span> Allowlist</h2>
+            <span class="rules-count badge badge-healthy">{{ allowlist|length }}</span>
+        </div>
+        <p class="rules-description">IPs/CIDRs allowlisted on this node. Config entries cannot be removed remotely.</p>
+
+        <!-- Quick add form -->
+        {% if current_user.role in ('admin', 'analyst') %}
+        <form method="POST" action="{{ url_for('dashboard.node_allowlist_add', node_id=node.node_id) }}" class="rules-form">
+            <div class="rules-form-row">
+                <div class="form-group" style="flex:2">
+                    <label for="al-entry">IP / CIDR</label>
+                    <input type="text" id="al-entry" name="entry" placeholder="10.0.0.0/8" required>
+                </div>
+                <div class="form-group" style="flex:2">
+                    <label for="al-reason">Reason</label>
+                    <input type="text" id="al-reason" name="reason" placeholder="Trusted network...">
+                </div>
+                <div class="form-group" style="flex:0">
+                    <label>&nbsp;</label>
+                    <button type="submit" class="btn btn-success btn-sm">＋ Add</button>
+                </div>
+            </div>
+        </form>
+        {% endif %}
+
+        {% if allowlist %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Entry</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in allowlist %}
+                <tr class="fade-in">
+                    <td><code class="rule-entry rule-entry-allowlist">{{ entry.entry if entry is mapping else entry }}</code></td>
+                    <td>
+                        {% if entry is mapping and entry.source is defined %}
+                            {% if entry.source == 'config' %}
+                                <span class="badge badge-viewer">config</span>
+                            {% elif entry.source == 'system' %}
+                                <span class="badge badge-admin">system</span>
+                            {% else %}
+                                <span class="badge badge-analyst">runtime</span>
+                            {% endif %}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">✓</div>
+            <p>No allowlist entries reported</p>
+            <p class="text-muted">Allowlist data is reported with each heartbeat</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ── Recent Commands for this Node ────────────────────────── -->
+<div class="card">
+    <div class="rules-panel-header">
+        <h2 class="card-title">📡 Recent Commands</h2>
+    </div>
+    <p class="rules-description">Commands sent to this node.</p>
+    {% if recent_commands %}
+    <table>
+        <thead>
+            <tr>
+                <th>Command</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Acknowledged</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cmd in recent_commands %}
+            <tr class="fade-in">
+                <td>
+                    <span class="badge badge-cmd-{{ cmd.command_type|lower|replace('_','-') }}">{{ cmd.command_type }}</span>
+                </td>
+                <td>
+                    {% if cmd.payload is mapping %}
+                        <code>{{ cmd.payload.get('entry', '') or cmd.payload.get('ip', '') or cmd.payload.get('name', '') }}</code>
+                    {% else %}
+                        <code>—</code>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="cmd-status cmd-status-{{ cmd.status }}">
+                        {% if cmd.status == 'pending' %}⏳{% elif cmd.status == 'acknowledged' %}📨{% elif cmd.status == 'completed' %}✅{% elif cmd.status == 'failed' %}❌{% else %}❓{% endif %}
+                        {{ cmd.status }}
+                    </span>
+                </td>
+                <td><span data-ts="{{ cmd.created_at }}">{{ cmd.created_at }}</span></td>
+                <td><span data-ts="{{ cmd.acknowledged_at or '' }}">{{ cmd.acknowledged_at or '—' }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📡</div>
+        <p>No commands sent to this node yet</p>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+(function() {
+    var SEARCH_TERM = '';
+    var tbody = document.getElementById('block-tbody');
+    var countDisplay = document.getElementById('block-count-display');
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var totalCount = rows.length;
+
+    function matchRow(row, term) {
+        if (!term) return true;
+        var q = term.toLowerCase();
+        var ip = (row.getAttribute('data-ip') || '').toLowerCase();
+        var reason = (row.getAttribute('data-reason') || '').toLowerCase();
+        return ip.indexOf(q) !== -1 || reason.indexOf(q) !== -1;
+    }
+
+    function render() {
+        var visibleCount = 0;
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            if (matchRow(row, SEARCH_TERM)) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        }
+
+        if (countDisplay) {
+            countDisplay.textContent = visibleCount + '/' + totalCount;
+        }
+    }
+
+    window.filterBlocks = function(val) {
+        SEARCH_TERM = val.trim();
+        render();
+    };
+
+    render();
+})();
+</script>
+{% endblock %}

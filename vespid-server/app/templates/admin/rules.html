@@ -1,0 +1,553 @@
+{% extends "base.html" %}
+{% block title %}Detection Rules — Vespid Server{% endblock %}
+{% block content %}
+{% set rules_nav = True %}
+{% include "admin/_admin_nav.html" %}
+<h1 class="page-title">Detection Rules <span style="font-size:0.7em; color:var(--text-muted);">(revision {{ revision }})</span></h1>
+
+<div class="card" style="margin-bottom:1.5rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 class="card-title" style="margin:0;">All Rules ({{ total }})</h2>
+        <div style="display:flex; gap:0.5rem;">
+            <button class="btn" onclick="showAddForm('brute_force')">+ Brute Force Rule</button>
+            <button class="btn" onclick="showAddForm('custom')">+ Custom Rule</button>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Event Type</th>
+                <th>Max Attempts</th>
+                <th>Window</th>
+                <th>Parser / Regex</th>
+                <th>Enabled</th>
+                <th>Template</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for rule in rules %}
+            <tr>
+                <td><strong>{{ rule.name }}</strong></td>
+                <td><span class="badge badge-{{ 'info' if rule.rule_type == 'brute_force' else 'warning' }}">{{ rule.rule_type }}</span></td>
+                <td>{{ rule.event_type }}</td>
+                <td>{{ rule.max_attempts }}</td>
+                <td>{{ rule.window_seconds }}s</td>
+                <td style="max-width:300px; word-break:break-all; white-space:normal; font-family:monospace; font-size:0.8rem;">
+                    {{ rule.get('parser', '') }}{{ rule.get('regex', '') }}
+                </td>
+                <td>
+                    {% if rule.enabled %}
+                    <span style="color:var(--success);">●</span> Yes
+                    {% else %}
+                    <span style="color:var(--text-muted);">○</span> No
+                    {% endif %}
+                </td>
+                <td>{{ '✓' if rule.get('is_template') else '' }}</td>
+                <td>
+                    <button class="btn btn-sm" onclick='editRule({{ rule | tojson }})'>Edit</button>
+                    {% if rule.enabled %}
+                    <button class="btn btn-sm btn-secondary" onclick="deleteRule('{{ rule.rule_type }}', {{ rule.id }}, '{{ rule.name }}')">Disable</button>
+                    {% else %}
+                    <button class="btn btn-sm" onclick="enableRule('{{ rule.rule_type }}', {{ rule.id }})">Enable</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Rule Packs -->
+<div class="card" style="margin-bottom:1rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem;">
+        <div>
+            <h2 class="card-title" style="margin:0;">Rule Packs</h2>
+            <p class="text-muted" style="margin:0.25rem 0 0; font-size:0.8rem;">
+                Loaded from the server's <code>packs/</code> directory. Edit a pack's YAML on the
+                server, then reload to apply without a restart. Pristine rules are refreshed
+                (their enabled state is preserved); rules you've edited are left untouched.
+            </p>
+        </div>
+        <button class="btn" id="reload-packs-btn" onclick="reloadPacks()" style="white-space:nowrap;">↻ Reload Packs from Disk</button>
+    </div>
+</div>
+{% for pack in rule_packs %}
+<div class="card" style="margin-bottom:1.5rem; border:1px solid {{ 'var(--success)' if pack.enabled_count == pack.total_count else ('var(--warning)' if pack.enabled_count > 0 else 'var(--border)') }};">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; flex:1;" onclick="togglePack('pack-{{ pack.pack_name }}')">
+            <span class="pack-chevron" id="chevron-pack-{{ pack.pack_name }}" style="font-size:0.75rem; color:var(--text-muted); transition:transform 0.2s;">▶</span>
+            <h2 class="card-title" style="margin:0; display:flex; align-items:center; gap:0.5rem;">
+                <span style="font-size:1.2em;">{{ pack.icon }}</span> {{ pack.display_name }}
+                <span class="badge badge-{{ 'success' if pack.enabled_count == pack.total_count else ('warning' if pack.enabled_count > 0 else 'danger') }}" style="font-size:0.7em;">{{ pack.enabled_count }}/{{ pack.total_count }} active</span>
+                <span class="badge" style="font-size:0.7em; background:var(--bg-input); border:1px solid var(--border); color:var(--text-muted);" title="Number of nodes receiving this pack">🖥 {{ pack.node_count }} node{{ 's' if pack.node_count != 1 else '' }}</span>
+            </h2>
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-sm{{ ' btn-success' if pack.enabled_count == pack.total_count else '' }}" onclick="enableAllPack('{{ pack.pack_name }}')">{{ 'All Enabled ✓' if pack.enabled_count == pack.total_count else 'Enable All' }}</button>
+            <button class="btn btn-sm btn-secondary" onclick="disableAllPack('{{ pack.pack_name }}')">Disable All</button>
+        </div>
+    </div>
+
+    <div id="pack-{{ pack.pack_name }}" style="display:none; margin-top:1rem;">
+        <p class="text-muted" style="margin-bottom:0.75rem; font-size:0.85rem;">
+            {{ pack.description }}
+        </p>
+
+        {% if pack.node_ids %}
+        <details style="margin-bottom:0.75rem;">
+            <summary style="cursor:pointer; font-size:0.85rem; color:var(--text-muted);">
+                🖥 {{ pack.node_count }} node{{ 's' if pack.node_count != 1 else '' }} receiving this pack
+            </summary>
+            <div style="margin-top:0.5rem; padding:0.5rem; background:var(--bg-input); border-radius:var(--radius); border:1px solid var(--border); max-height:150px; overflow-y:auto;">
+                {% for nid in pack.node_ids %}
+                <span style="display:inline-block; margin:0.2rem; padding:0.2rem 0.5rem; background:var(--bg-card, #1e293b); border:1px solid var(--border); border-radius:var(--radius); font-size:0.8rem; font-family:monospace;" title="{{ nid }}">{{ nid | node_display_name }}</span>
+                {% endfor %}
+            </div>
+        </details>
+        {% else %}
+        <p style="margin-bottom:0.75rem; font-size:0.85rem; color:var(--text-muted);">
+            🖥 No nodes currently receive this pack.
+        </p>
+        {% endif %}
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(340px, 1fr)); gap:0.75rem;">
+            {% for tmpl in pack.templates %}
+            <div class="apache-rule-card" id="pack-tmpl-{{ tmpl.id }}" style="background:var(--bg-input); border:1px solid var(--border); border-radius:var(--radius); padding:0.75rem 1rem; display:flex; flex-direction:column; gap:0.4rem;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <strong style="font-size:0.9rem;">{{ tmpl.display_name or tmpl.name }}</strong>
+                    <label class="toggle-switch" style="position:relative; display:inline-block; width:40px; height:22px; cursor:pointer;">
+                        <input type="checkbox" {% if tmpl.enabled %}checked{% endif %}
+                               onchange="togglePackTemplate('{{ pack.pack_name }}', {{ tmpl.id }}, this)"
+                               style="opacity:0; width:0; height:0;">
+                        <span class="toggle-slider" style="position:absolute; top:0; left:0; right:0; bottom:0; background:{% if tmpl.enabled %}var(--success){% else %}var(--border){% endif %}; border-radius:22px; transition:0.2s;"></span>
+                    </label>
+                </div>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <span class="badge badge-info" style="font-size:0.7rem;">{{ tmpl.event_type }}</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted);">{{ tmpl.max_attempts }} hit{{ 's' if tmpl.max_attempts != 1 else '' }} / {{ tmpl.window_seconds }}s</span>
+                </div>
+                <div class="regex-container">
+                    {% if tmpl.regex|length > 500 %}
+                    <code style="font-size:0.7rem; color:#16a34a; word-break:break-all; white-space:pre-wrap; display:block;">{{ tmpl.regex[:500] }}…</code>
+                    <button class="btn btn-sm regex-view-btn" style="margin-top:0.3rem; font-size:0.7rem;" data-regex-text="{{ tmpl.regex | e }}" data-regex-name="{{ tmpl.display_name or tmpl.name | e }}">View full regex →</button>
+                    {% else %}
+                    <code style="font-size:0.7rem; color:#16a34a; word-break:break-all; white-space:pre-wrap; display:block;">{{ tmpl.regex }}</code>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if pack.prerequisite %}
+        <div style="margin-top:1rem; padding:0.75rem; background:rgba(234,179,8,0.08); border-radius:var(--radius); border:1px solid rgba(234,179,8,0.2);">
+            <strong style="font-size:0.85rem; color:var(--warning);">⚠️ Prerequisite:</strong>
+            <span style="font-size:0.85rem; color:var(--text-muted);">
+                {{ pack.prerequisite | safe }}
+            </span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<!-- Built-in Parser Reference -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 class="card-title" style="margin:0;">Built-in Parser Reference</h2>
+        <button class="btn btn-sm btn-secondary" onclick="toggleParserRef()" id="parser-ref-toggle">Show</button>
+    </div>
+    <p class="text-muted" style="margin-bottom:1rem; font-size:0.85rem;">
+        Built-in parsers are compiled into the Vespid client. To override a parser's behavior,
+        disable the brute force rule that uses it and create a custom rule with your own regex and thresholds.
+    </p>
+    <div id="parser-ref-body" style="display:none;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Parser Name</th>
+                    <th>Log Source</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in builtin_parsers %}
+                <tr>
+                    <td><code>{{ p.name }}</code></td>
+                    <td style="white-space:nowrap;">{{ p.log_source }}</td>
+                    <td style="font-size:0.85rem;">{{ p.description }}</td>
+                </tr>
+                <tr>
+                    <td colspan="3" style="padding:0.25rem 1rem 1rem; background:var(--bg-input, #0f172a); border-bottom:1px solid var(--border);">
+                        <code style="font-size:0.75rem; word-break:break-all; white-space:pre-wrap; display:block; color:var(--success, #22c55e);">{{ p.regex }}</code>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div id="rule-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+    <div class="card" style="max-width:600px; width:90%; max-height:80vh; overflow-y:auto;">
+        <h2 class="card-title" id="modal-title">Add Rule</h2>
+        <form id="rule-form" onsubmit="submitRule(event)">
+            <input type="hidden" id="rule-id" value="">
+            <input type="hidden" id="rule-type" value="">
+
+            <div class="form-group">
+                <label for="rule-name">Name</label>
+                <input type="text" id="rule-name" name="name" required maxlength="64" style="width:100%;">
+            </div>
+            <div class="form-group">
+                <label for="rule-event-type">Event Type</label>
+                <input type="text" id="rule-event-type" name="event_type" required maxlength="64" style="width:100%;">
+            </div>
+            <div class="form-group">
+                <label for="rule-max-attempts">Max Attempts</label>
+                <input type="number" id="rule-max-attempts" name="max_attempts" required min="1" max="10000" style="width:100%;">
+            </div>
+            <div class="form-group">
+                <label for="rule-window-seconds">Window (seconds)</label>
+                <input type="number" id="rule-window-seconds" name="window_seconds" required min="1" max="604800" style="width:100%;">
+            </div>
+
+            <!-- Brute force specific -->
+            <div id="bf-fields">
+                <div class="form-group">
+                    <label for="rule-parser">Parser</label>
+                    <input type="text" id="rule-parser" name="parser" maxlength="64" style="width:100%;" placeholder="e.g. secure, apache, messages">
+                </div>
+            </div>
+
+            <!-- Custom rule specific -->
+            <div id="custom-fields" style="display:none;">
+                <div class="form-group">
+                    <label for="rule-regex">Regex (must include <code>(?P&lt;ip&gt;...)</code>)</label>
+                    <textarea id="rule-regex" name="regex" rows="3" maxlength="1024" style="width:100%; font-family:monospace;"></textarea>
+                    <small id="regex-error" style="color:var(--danger); display:none;"></small>
+                </div>
+                <div class="form-group">
+                    <label for="rule-log-sources">Log Sources (comma-separated, or * for all)</label>
+                    <input type="text" id="rule-log-sources" name="log_sources" style="width:100%;" placeholder="apache, secure, messages">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="rule-enabled" name="enabled" checked> Enabled
+                </label>
+            </div>
+
+            <div id="form-errors" style="color:var(--danger); margin-bottom:1rem; display:none;"></div>
+
+            <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button type="submit" class="btn">Save Rule</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Regex Viewer Modal -->
+<div id="regex-modal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1001; align-items:center; justify-content:center;">
+    <div class="card" style="max-width:800px; width:90%; max-height:80vh; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h2 class="card-title" id="regex-modal-title" style="margin:0;">Regex</h2>
+            <button class="btn btn-sm btn-secondary" onclick="closeRegexModal()">✕</button>
+        </div>
+        <div style="overflow-y:auto; flex:1;">
+            <code id="regex-modal-body" style="font-size:0.75rem; color:#16a34a; word-break:break-all; white-space:pre-wrap; display:block; background:var(--bg-input); padding:1rem; border-radius:var(--radius);"></code>
+        </div>
+        <div style="margin-top:0.75rem; display:flex; justify-content:flex-end; gap:0.5rem;">
+            <button class="btn btn-sm" onclick="copyRegexToClipboard()">Copy</button>
+            <button class="btn btn-sm btn-secondary" onclick="closeRegexModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function toggleParserRef() {
+    var body = document.getElementById('parser-ref-body');
+    var btn = document.getElementById('parser-ref-toggle');
+    if (body.style.display === 'none') {
+        body.style.display = '';
+        btn.textContent = 'Hide';
+    } else {
+        body.style.display = 'none';
+        btn.textContent = 'Show';
+    }
+}
+
+function showAddForm(type) {
+    document.getElementById('modal-title').textContent = 'Add ' + (type === 'brute_force' ? 'Brute Force' : 'Custom') + ' Rule';
+    document.getElementById('rule-id').value = '';
+    document.getElementById('rule-type').value = type;
+    document.getElementById('rule-form').reset();
+    document.getElementById('rule-enabled').checked = true;
+    document.getElementById('form-errors').style.display = 'none';
+
+    if (type === 'brute_force') {
+        document.getElementById('bf-fields').style.display = '';
+        document.getElementById('custom-fields').style.display = 'none';
+    } else {
+        document.getElementById('bf-fields').style.display = 'none';
+        document.getElementById('custom-fields').style.display = '';
+    }
+
+    document.getElementById('rule-modal').style.display = 'flex';
+}
+
+function editRule(rule) {
+    var type = rule.rule_type;
+    document.getElementById('modal-title').textContent = 'Edit Rule';
+    document.getElementById('rule-id').value = rule.id;
+    document.getElementById('rule-type').value = type;
+    document.getElementById('rule-name').value = rule.name;
+    document.getElementById('rule-event-type').value = rule.event_type;
+    document.getElementById('rule-max-attempts').value = rule.max_attempts;
+    document.getElementById('rule-window-seconds').value = rule.window_seconds;
+    document.getElementById('rule-enabled').checked = !!rule.enabled;
+    document.getElementById('form-errors').style.display = 'none';
+
+    if (type === 'brute_force') {
+        document.getElementById('bf-fields').style.display = '';
+        document.getElementById('custom-fields').style.display = 'none';
+        document.getElementById('rule-parser').value = rule.parser || '';
+    } else {
+        document.getElementById('bf-fields').style.display = 'none';
+        document.getElementById('custom-fields').style.display = '';
+        document.getElementById('rule-regex').value = rule.regex || '';
+        var sources = rule.log_sources;
+        if (typeof sources === 'string') {
+            try { sources = JSON.parse(sources); } catch(e) { sources = ['*']; }
+        }
+        document.getElementById('rule-log-sources').value = (sources || ['*']).join(', ');
+    }
+
+    document.getElementById('rule-modal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('rule-modal').style.display = 'none';
+}
+
+function deleteRule(type, id, name) {
+    if (!confirm('Disable rule "' + name + '"?')) return;
+    var urlType = type === 'brute_force' ? 'brute-force' : 'custom';
+    fetch('/api/v1/rules/' + urlType + '/' + id, { method: 'DELETE' })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Server returned ' + r.status);
+            return r.json();
+        })
+        .then(function() { location.reload(); })
+        .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function enableRule(type, id) {
+    var urlType = type === 'brute_force' ? 'brute-force' : 'custom';
+    fetch('/api/v1/rules/' + urlType + '/' + id, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: true})
+    })
+    .then(function(r) {
+        if (!r.ok) throw new Error('Server returned ' + r.status);
+        return r.json();
+    })
+    .then(function() { location.reload(); })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function submitRule(event) {
+    event.preventDefault();
+    var type = document.getElementById('rule-type').value;
+    var id = document.getElementById('rule-id').value;
+    var urlType = type === 'brute_force' ? 'brute-force' : 'custom';
+
+    var data = {
+        name: document.getElementById('rule-name').value,
+        event_type: document.getElementById('rule-event-type').value,
+        max_attempts: parseInt(document.getElementById('rule-max-attempts').value),
+        window_seconds: parseInt(document.getElementById('rule-window-seconds').value),
+        enabled: document.getElementById('rule-enabled').checked
+    };
+
+    if (type === 'brute_force') {
+        data.parser = document.getElementById('rule-parser').value;
+    } else {
+        var regex = document.getElementById('rule-regex').value;
+        // Client-side validation for (?P<ip>...)
+        if (regex.indexOf('(?P<ip>') === -1) {
+            document.getElementById('regex-error').textContent = 'Regex must contain a (?P<ip>...) named group';
+            document.getElementById('regex-error').style.display = '';
+            return;
+        }
+        document.getElementById('regex-error').style.display = 'none';
+        data.regex = regex;
+        var sources = document.getElementById('rule-log-sources').value;
+        data.log_sources = sources.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
+        if (data.log_sources.length === 0) data.log_sources = ['*'];
+    }
+
+    var method = id ? 'PUT' : 'POST';
+    var url = id ? '/api/v1/rules/' + urlType + '/' + id : '/api/v1/rules/' + urlType;
+
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(function(r) {
+        if (r.headers.get('content-type') && r.headers.get('content-type').indexOf('application/json') === -1) {
+            throw new Error('Server returned an unexpected response (status ' + r.status + ')');
+        }
+        return r.json().then(function(j) { return {status: r.status, body: j}; });
+    })
+    .then(function(res) {
+        if (res.status >= 400) {
+            var errDiv = document.getElementById('form-errors');
+            var msg = res.body.errors ? res.body.errors.join('; ') : (res.body.message || 'Unknown error');
+            errDiv.textContent = msg;
+            errDiv.style.display = '';
+        } else {
+            location.reload();
+        }
+    })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+// Close modal on backdrop click
+document.getElementById('rule-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+// --- Regex Viewer Modal ---
+var _currentRegexText = '';
+
+function showRegexModal(name, regex) {
+    document.getElementById('regex-modal-title').textContent = name;
+    _currentRegexText = regex;
+    document.getElementById('regex-modal-body').textContent = regex;
+    document.getElementById('regex-modal').style.display = 'flex';
+}
+
+function closeRegexModal() {
+    document.getElementById('regex-modal').style.display = 'none';
+}
+
+function copyRegexToClipboard() {
+    navigator.clipboard.writeText(_currentRegexText).then(function() {
+        var btn = document.querySelector('#regex-modal .btn');
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+    });
+}
+
+// Delegated click: any .regex-view-btn triggers the modal
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.regex-view-btn');
+    if (!btn) return;
+    e.preventDefault();
+    var name = btn.getAttribute('data-regex-name') || 'Regex';
+    var regex = btn.getAttribute('data-regex-text') || '';
+    showRegexModal(name, regex);
+});
+
+// Close regex modal on backdrop click
+document.getElementById('regex-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeRegexModal();
+});
+
+// --- Rule Pack Functions (generic for any pack) ---
+function reloadPacks() {
+    var btn = document.getElementById('reload-packs-btn');
+    var original = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Reloading…'; }
+    fetch('/api/v1/rules/packs/reload', { method: 'POST' })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, body: d }; }); })
+        .then(function (res) {
+            if (!res.ok) { throw new Error((res.body && res.body.message) || 'Reload failed'); }
+            alert(res.body.message + ' (revision ' + res.body.revision + ')');
+            window.location.reload();
+        })
+        .catch(function (err) {
+            alert('Reload failed: ' + err.message);
+            if (btn) { btn.disabled = false; btn.textContent = original; }
+        });
+}
+
+function togglePack(packId) {
+    var body = document.getElementById(packId);
+    var chevron = document.getElementById('chevron-' + packId);
+    if (body.style.display === 'none') {
+        body.style.display = '';
+        chevron.style.transform = 'rotate(90deg)';
+    } else {
+        body.style.display = 'none';
+        chevron.style.transform = 'rotate(0deg)';
+    }
+}
+
+function enableAllPack(packName) {
+    if (!confirm('Enable all rules in this pack?')) return;
+    fetch('/api/v1/rules/templates/' + packName + '/enable-all', { method: 'POST' })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Server returned ' + r.status);
+            return r.json();
+        })
+        .then(function() { location.reload(); })
+        .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function disableAllPack(packName) {
+    if (!confirm('Disable all rules in this pack?')) return;
+    fetch('/api/v1/rules/templates/' + packName + '/disable-all', { method: 'POST' })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Server returned ' + r.status);
+            return r.json();
+        })
+        .then(function() { location.reload(); })
+        .catch(function(e) { alert('Error: ' + e.message); });
+}
+
+function togglePackTemplate(packName, ruleId, checkbox) {
+    fetch('/api/v1/rules/templates/' + packName + '/' + ruleId + '/toggle', { method: 'POST' })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Server returned ' + r.status);
+            return r.json();
+        })
+        .then(function(data) {
+            checkbox.checked = data.enabled;
+            // Update slider color
+            var slider = checkbox.parentElement.querySelector('.toggle-slider');
+            if (slider) {
+                slider.style.background = data.enabled ? 'var(--success)' : 'var(--border)';
+            }
+            // Update the badge count without full reload
+            var container = checkbox.closest('.card');
+            if (container) {
+                var cards = container.querySelectorAll('.apache-rule-card input[type="checkbox"]');
+                var count = 0;
+                cards.forEach(function(cb) { if (cb.checked) count++; });
+                var badge = container.querySelector('.badge-warning, .badge-success, .badge-danger');
+                if (badge) {
+                    badge.textContent = count + '/' + cards.length + ' active';
+                    badge.className = 'badge badge-' + (count === cards.length ? 'success' : (count > 0 ? 'warning' : 'danger'));
+                    badge.style.fontSize = '0.7em';
+                }
+            }
+        })
+        .catch(function(e) {
+            alert('Error: ' + e.message);
+            checkbox.checked = !checkbox.checked;
+        });
+}
+
+
+</script>
+{% endblock %}

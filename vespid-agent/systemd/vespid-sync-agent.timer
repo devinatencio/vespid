@@ -1,0 +1,11 @@
+[Unit]
+Description=Vespid Sync Agent — periodic infrastructure discovery (every 5 minutes)
+Documentation=https://github.com/vespid/hivemonitor
+
+[Timer]
+OnCalendar=*:0/5
+Persistent=true
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target

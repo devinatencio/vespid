@@ -1,0 +1,113 @@
+# Apache Attack Detection Pack
+# Detects common HTTP attacks from Apache/NGINX Combined Log Format access logs.
+---
+pack_name: apache-attacks
+display_name: Apache Attack Detection Pack
+icon: "🛡️"
+description: >
+  Pre-built rules to detect common HTTP attacks: RCE, path traversal,
+  credential scanning, IoT exploits, and more.
+prerequisite: >
+  Ensure your nodes have an Apache/NGINX access log configured in
+  vespid.yaml under log_sources with parser "apache". The improved
+  parser handles all HTTP status codes (400, 403, 404, etc.) and feeds
+  them to these rules.
+
+rules:
+  - name: tls_on_http_probe
+    event_type: TLS_ON_HTTP_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\\x16\\x03.*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 3600
+
+  - name: http_path_scanner
+    event_type: HTTP_PATH_SCAN
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s404\s'
+    log_sources: ["apache"]
+    max_attempts: 20
+    window_seconds: 60
+
+  - name: http_error_brute
+    event_type: HTTP_ERROR_BRUTE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s(?:400|403|404)\s'
+    log_sources: ["apache"]
+    max_attempts: 30
+    window_seconds: 300
+
+  - name: http_rce_shell_injection
+    event_type: HTTP_RCE_ATTEMPT
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+.*(?:;wget[\s+]|;curl[\s+]|;chmod[\s+]|;sh[\s+]|/bin/sh|/bin/bash|;rm[\s+]|;wget%20|;curl%20|;chmod%20|;sh%20|;rm%20)'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: http_cgi_path_traversal_rce
+    event_type: HTTP_CGI_TRAVERSAL
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+/cgi-bin/[.%0-9a-f]*(?:\.\.|%2e|%252e)'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: http_php_rce
+    event_type: HTTP_PHP_RCE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+.*(?:eval-stdin\.php|invokefunction|auto_prepend_file|pearcmd)'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 300
+
+  - name: http_env_secret_scan
+    event_type: HTTP_SECRET_SCAN
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"GET\s+.*(?:/\.env|/\.aws/|/\.azure/|/\.gcp/|/\.git/|terraform\.tfvars|terraform\.tfstate|credentials\.json|service-account\.json)'
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 60
+
+  - name: http_vite_fs_traversal
+    event_type: HTTP_VITE_TRAVERSAL
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"GET\s+/@fs/'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 60
+
+  - name: http_path_traversal
+    event_type: HTTP_PATH_TRAVERSAL
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+.*(?:\.\./|%2e%2e|%252e%252e)'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: http_iot_exploit
+    event_type: HTTP_IOT_EXPLOIT
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+.*(?:boaform|setup\.cgi|login\.cgi\?cli=)'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: http_malicious_user_agent
+    event_type: HTTP_MALICIOUS_UA
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s\d{3}\s\d+\s"[^"]*"\s"(?:r00ts3c|xfa1|gbrmss|libredtail-http|masscan)'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: http_docker_api_probe
+    event_type: HTTP_DOCKER_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"GET\s+/(?:containers|images|volumes|networks)/json'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: http_wordpress_scan
+    event_type: HTTP_WP_SCAN
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+/wp-(?:login|admin|config|content/uploads)'
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 120
+
+  - name: http_spring_actuator_probe
+    event_type: HTTP_ACTUATOR_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"GET\s+/actuator(?:/|$)'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120

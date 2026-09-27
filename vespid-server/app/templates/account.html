@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}My Account — Vespid{% endblock %}
+
+{% block content %}
+<h1 class="page-title">My Account</h1>
+
+<div class="grid-2" style="margin-bottom: 1.5rem;">
+    <!-- Account Info -->
+    <div class="card">
+        <div class="card-header"><h3>Account Information</h3></div>
+        <div class="card-body">
+            <table class="table">
+                <tbody>
+                    <tr><th scope="row">Username</th><td><code>{{ current_user.username }}</code></td></tr>
+                    <tr><th scope="row">Role</th><td><span class="badge badge-{{ current_user.role }}">{{ current_user.role }}</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Display Name -->
+    <div class="card">
+        <div class="card-header"><h3>Display Name</h3></div>
+        <div class="card-body">
+            <p class="text-muted" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
+                Your display name is shown in the navigation bar instead of your username.
+            </p>
+            <form method="POST" action="{{ url_for('auth.update_account_display_name') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="display_name">Display Name</label>
+                    <input type="text" id="display_name" name="display_name" value="{{ current_user.display_name }}" maxlength="128" placeholder="{{ current_user.username }}">
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Theme Preference -->
+<div class="card">
+    <div class="card-header"><h3>Theme Preference</h3></div>
+    <div class="card-body">
+        <p class="text-muted" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
+            Choose your default color theme. You can also cycle themes from the navigation bar.
+        </p>
+        <form method="POST" action="{{ url_for('auth.update_account_theme') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                {% set theme_meta = {
+                    'dark': {'bg': '#0f172a', 'fg': '#e2e8f0', 'icon': '🌓'},
+                    'light': {'bg': '#f1f5f9', 'fg': '#1e293b', 'icon': '☀️'},
+                    'nord': {'bg': '#2e3440', 'fg': '#88c0d0', 'icon': '🏔️'},
+                    'vespid': {'bg': '#0d0b08', 'fg': '#ffe600', 'icon': '🐝'},
+                } %}
+                {% for t in all_themes %}
+                {% set meta = theme_meta.get(t, {'bg': '#1e293b', 'fg': '#e2e8f0', 'icon': '🎨'}) %}
+                <button type="submit" name="theme" value="{{ t }}" style="display: block; padding: 0.75rem 1.25rem; border: 2px solid {% if current_user.theme == t %}var(--accent){% else %}var(--border){% endif %}; border-radius: var(--radius); background: {{ meta.bg }}; color: {{ meta.fg }}; cursor: pointer; font-size: 0.9rem; font-family: inherit; line-height: 1.4;">
+                    {{ meta.icon }}&nbsp;{{ t | capitalize }}
+                </button>
+                {% endfor %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Brand Beam -->
+<div class="card">
+    <div class="card-header"><h3>Brand Beam Animation</h3></div>
+    <div class="card-body">
+        <p class="text-muted" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
+            The glowing sweep beam under the Vespid Nest logo in the navigation bar.
+        </p>
+        <form method="POST" action="{{ url_for('auth.update_brand_beam') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="enabled" value="{{ '0' if current_user.brand_beam_enabled else '1' }}">
+            <button type="submit" class="btn {% if current_user.brand_beam_enabled %}btn-danger{% else %}btn{% endif %}">
+                {{ 'Disable' if current_user.brand_beam_enabled else 'Enable' }}
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Password Change -->
+<div class="card">
+    <div class="card-header"><h3>Change Password</h3></div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('auth.change_password') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="form-group">
+                <label for="current_password">Current Password</label>
+                <input type="password" id="current_password" name="current_password" required autocomplete="current-password">
+            </div>
+            <div class="form-group">
+                <label for="new_password">New Password</label>
+                <input type="password" id="new_password" name="new_password" required minlength="8" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <label for="confirm_password">Confirm New Password</label>
+                <input type="password" id="confirm_password" name="confirm_password" required minlength="8" autocomplete="new-password">
+            </div>
+            <div class="form-group">
+                <button type="submit" class="btn">Change Password</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

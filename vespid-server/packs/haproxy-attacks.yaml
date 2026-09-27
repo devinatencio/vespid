@@ -1,0 +1,121 @@
+# HAProxy Attack Detection Pack
+# Detects HTTP attacks against HAProxy-protected backends.
+---
+pack_name: haproxy-attacks
+display_name: HAProxy Attack Detection Pack
+icon: "🔀"
+description: >
+  Detect HTTP-level attacks against backends served through HAProxy:
+  auth brute force, directory scanning, path traversal, RCE attempts,
+  SQL injection, scanner user agents, IoT exploits, and sensitive
+  file probing. Supports both HTTP and TCP mode logs.
+prerequisite: >
+  Requires HAProxy logs configured in log_sources with parser "haproxy".
+  Set haproxy_mode to "http" for best results — the pack's TCP-mode
+  rules will still match in auto-detect mode.
+
+rules:
+  - name: haproxy_auth_brute
+    event_type: HAPROXY_AUTH_BRUTE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+40[13]\s'
+    log_sources: ["haproxy"]
+    max_attempts: 10
+    window_seconds: 300
+
+  - name: haproxy_path_probe
+    event_type: HAPROXY_PATH_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+404\s.*"(?:GET|POST|HEAD)\s+/(?:wp-login|wp-admin|administrator|admin|phpmyadmin|pma|myadmin|mysql|dbadmin|cgi-bin)'
+    log_sources: ["haproxy"]
+    max_attempts: 5
+    window_seconds: 120
+
+  - name: haproxy_bad_request
+    event_type: HAPROXY_BAD_REQUEST
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+400\s'
+    log_sources: ["haproxy"]
+    max_attempts: 10
+    window_seconds: 60
+
+  - name: haproxy_tls_on_http
+    event_type: HAPROXY_TLS_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*\\x16\\x03'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 3600
+
+  - name: haproxy_path_traversal
+    event_type: HAPROXY_PATH_TRAVERSAL
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST)\s+\S*(?:\.\./|%2e%2e|%252e%252e|/\.\.)'
+    log_sources: ["haproxy"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: haproxy_rce_attempt
+    event_type: HAPROXY_RCE_ATTEMPT
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"(?:GET|POST)\s+\S*(?:;wget(?:[\s+]|%20)+|;curl(?:[\s+]|%20)+|;chmod(?:[\s+]|%20)+|;sh(?:[\s+]|%20)+|/bin/sh|/bin/bash|;rm(?:[\s+]|%20)+|eval-stdin\.php|invokefunction|auto_prepend_file|pearcmd)'
+    log_sources: ["haproxy"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: haproxy_sqli
+    event_type: HAPROXY_SQL_INJECTION
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"(?:GET|POST)\s+\S*(?:UNION[\s+]+SELECT|OR[\s+]+1=1|AND[\s+]+1=1|%27|%22[\s+]*OR[\s+]*|SELECT[\s+]+.*?FROM|DROP[\s+]+TABLE|INSERT[\s+]+INTO|information_schema\.tables)'
+    log_sources: ["haproxy"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: haproxy_sensitive_file_probe
+    event_type: HAPROXY_SENSITIVE_FILE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"GET\s+/(?:server-status|server-info|nginx_status|status|info\.php|phpinfo|test\.php|debug|console|elmah\.axd|/actuator(?:/|$))'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: haproxy_docker_api_probe
+    event_type: HAPROXY_DOCKER_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"GET\s+/(?:containers|images|volumes|networks)/json'
+    log_sources: ["haproxy"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: haproxy_wp_scan
+    event_type: HAPROXY_WP_SCAN
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"(?:GET|POST)\s+/wp-(?:login|admin|config|content/uploads)'
+    log_sources: ["haproxy"]
+    max_attempts: 5
+    window_seconds: 120
+
+  - name: haproxy_iot_exploit
+    event_type: HAPROXY_IOT_EXPLOIT
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"(?:GET|POST)\s+\S*(?:boaform|setup\.cgi|login\.cgi\?cli=)'
+    log_sources: ["haproxy"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: haproxy_env_secret_scan
+    event_type: HAPROXY_SECRET_SCAN
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"GET\s+\S*(?:/\.env|/\.aws/|/\.azure/|/\.gcp/|/\.git/|terraform\.tfvars|terraform\.tfstate|credentials\.json|service-account\.json)'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 60
+
+  - name: haproxy_vite_fs_traversal
+    event_type: HAPROXY_VITE_TRAVERSAL
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"GET\s+/@fs/'
+    log_sources: ["haproxy"]
+    max_attempts: 2
+    window_seconds: 60
+
+  - name: haproxy_script_injection
+    event_type: HAPROXY_SCRIPT_INJECTION
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/.*"(?:GET|POST)\s+\S*(?:<script|javascript:|%3Cscript|onload=|onerror=|alert\(|confirm\(|prompt\()'
+    log_sources: ["haproxy"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: haproxy_ssl_handshake_probe
+    event_type: HAPROXY_SSL_HANDSHAKE_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+:\s+SSL handshake failure'
+    log_sources: ["haproxy"]
+    max_attempts: 5
+    window_seconds: 300

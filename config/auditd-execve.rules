@@ -1,0 +1,17 @@
+# Vespid — Auditd Execve Rules
+# ================================
+# These rules configure auditd to record all process executions (execve syscalls).
+# Required for Vespid's host-based threat detection pipeline.
+#
+# Installation:
+#   sudo cp /etc/vespid/auditd-execve.rules /etc/audit/rules.d/vespid-execve.rules
+#   sudo augenrules --load
+#
+# Or apply immediately (non-persistent):
+#   sudo auditctl -R /etc/vespid/auditd-execve.rules
+#
+# Verify:
+#   auditctl -l | grep execve
+
+-a always,exit -F arch=b64 -S execve
+-a always,exit -F arch=b32 -S execve

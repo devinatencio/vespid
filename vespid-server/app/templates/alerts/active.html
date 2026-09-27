@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Active Alerts — Vespid{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Active Alerts</h1>
+    <div class="page-actions">
+        <a href="{{ url_for('alerts.rules_page') }}" class="btn btn-secondary">Alert Rules</a>
+        <a href="{{ url_for('alerts.history_page') }}" class="btn btn-secondary">History</a>
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('alerts.channels_page') }}" class="btn btn-secondary">Channels</a>
+        <a href="{{ url_for('alerts.silences_page') }}" class="btn btn-secondary">Silences</a>
+        {% endif %}
+    </div>
+</div>
+
+<div id="active-alerts-container">
+    <div class="loading">Loading alerts…</div>
+</div>
+
+<script>
+(function() {
+    function loadAlerts() {
+        fetch('/alerts/api/active')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var container = document.getElementById('active-alerts-container');
+                var alerts = d.alerts || [];
+                if (!alerts.length) {
+                    container.innerHTML = '<div class="empty-state">No active alerts — everything looks good 🟢</div>';
+                    return;
+                }
+                var html = '<table class="data-table"><thead><tr>' +
+                    '<th>Severity</th><th>Rule</th><th>Labels</th><th>Value</th><th>Duration</th><th>Actions</th>' +
+                    '</tr></thead><tbody>';
+                alerts.forEach(function(a) {
+                    var severityClass = a.severity === 'critical' ? 'badge-danger' : 'badge-warning';
+                    var severityEmoji = a.severity === 'critical' ? '🔴' : '🟡';
+                    var labels = [];
+                    for (var k in a.labels) {
+                        labels.push('<span class="label-pill">' + k + '=' + a.labels[k] + '</span>');
+                    }
+                    var duration = timeAgo(a.fired_at);
+                    html += '<tr>' +
+                        '<td><span class="badge ' + severityClass + '">' + severityEmoji + ' ' + a.severity + '</span></td>' +
+                        '<td><strong>' + escapeHtml(a.rule_name) + '</strong></td>' +
+                        '<td>' + labels.join(' ') + '</td>' +
+                        '<td>' + (a.value !== undefined ? a.value.toFixed(2) : '—') + '</td>' +
+                        '<td data-ts="' + a.fired_at + '">' + duration + '</td>' +
+                        '<td>' +
+                        '  <button class="btn btn-sm btn-secondary" onclick="ackAlert(' + a.id + ')">Acknowledge</button>' +
+                        '  <button class="btn btn-sm btn-secondary" onclick="resolveAlert(' + a.id + ')">Resolve</button>' +
+                        '</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+                applyRelativeTimestamps();
+            })
+            .catch(function() {
+                document.getElementById('active-alerts-container').innerHTML =
+                    '<div class="flash flash-error">Failed to load alerts</div>';
+            });
+    }
+
+    window.ackAlert = function(id) {
+        fetch('/alerts/api/events/' + id + '/ack', {method: 'POST'})
+            .then(function() { loadAlerts(); })
+            .catch(function() { alert('Failed to acknowledge'); });
+    };
+
+    window.resolveAlert = function(id) {
+        fetch('/alerts/api/events/' + id + '/resolve', {method: 'POST'})
+            .then(function() { loadAlerts(); })
+            .catch(function() { alert('Failed to resolve'); });
+    };
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    loadAlerts();
+    setInterval(loadAlerts, 30000);
+})();
+</script>
+{% endblock %}

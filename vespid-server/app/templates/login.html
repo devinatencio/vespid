@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Vespid Server</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0d0b08;
+            --bg-card: rgba(15, 21, 32, 0.9);
+            --text: #f0e6d0;
+            --text-muted: #b8960f;
+            --text-heading: #ffe600;
+            --border: #1a2535;
+            --accent: #ffe600;
+            --accent-hover: #ffd000;
+            --danger: #ff2d55;
+            --danger-bg: rgba(255, 45, 85, 0.12);
+            --glow: rgba(255, 230, 0, 0.2);
+            --radius: 16px;
+            --yellow-glow: rgba(255, 230, 0, 0.25);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            background-image:
+                radial-gradient(circle at 1px 1px, rgba(255, 230, 0, 0.03) 1px, transparent 0),
+                radial-gradient(ellipse at 50% 0%, rgba(255, 230, 0, 0.04) 0%, transparent 60%);
+            background-size: 32px 32px, 100% 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: var(--text);
+            line-height: 1.6;
+            overflow: hidden;
+        }
+
+        /* Floating hexagon decorations */
+        .hex-bg {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+        .hex-bg span {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            background: rgba(255, 230, 0, 0.04);
+            border: 1px solid rgba(255, 230, 0, 0.07);
+            animation: floatHex 20s infinite ease-in-out;
+        }
+        .hex-bg span:nth-child(1) { top: 10%; left: 5%; width: 80px; height: 80px; animation-delay: 0s; animation-duration: 25s; }
+        .hex-bg span:nth-child(2) { top: 60%; left: 2%; width: 50px; height: 50px; animation-delay: -5s; animation-duration: 18s; background: rgba(255, 230, 0, 0.02); border-color: rgba(255, 230, 0, 0.05); }
+        .hex-bg span:nth-child(3) { top: 20%; right: 8%; width: 70px; height: 70px; animation-delay: -10s; animation-duration: 22s; }
+        .hex-bg span:nth-child(4) { bottom: 15%; right: 3%; width: 55px; height: 55px; animation-delay: -15s; animation-duration: 20s; background: rgba(255, 230, 0, 0.02); border-color: rgba(255, 230, 0, 0.05); }
+        .hex-bg span:nth-child(5) { top: 45%; left: 50%; width: 90px; height: 90px; animation-delay: -7s; animation-duration: 28s; }
+
+        @keyframes floatHex {
+            0%, 100% { transform: translateY(0) rotate(0deg) scale(1); opacity: 0.4; }
+            25% { transform: translateY(-30px) rotate(90deg) scale(1.1); opacity: 0.7; }
+            50% { transform: translateY(10px) rotate(180deg) scale(0.9); opacity: 0.3; }
+            75% { transform: translateY(-15px) rotate(270deg) scale(1.05); opacity: 0.6; }
+        }
+
+        .login-wrapper {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 420px;
+            padding: 1.5rem;
+            animation: fadeIn 0.8s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Logo section */
+        .logo-section {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo-shield {
+            width: 320px;
+            height: auto;
+            display: block;
+            margin: 0 auto 1rem;
+            filter: drop-shadow(0 0 20px var(--glow));
+            animation: logoPulse 4s ease-in-out infinite;
+        }
+
+        @keyframes logoPulse {
+            0%, 100% { filter: drop-shadow(0 0 20px var(--glow)); transform: scale(1); }
+            50% { filter: drop-shadow(0 0 35px var(--yellow-glow)); transform: scale(1.03); }
+        }
+
+        .logo-title {
+            font-size: 1.75rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #ffe600, #ffcc00, #f5a623);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo-subtitle {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-top: 0.2rem;
+            font-weight: 400;
+        }
+
+        /* Login card */
+        .login-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 2rem 2rem 2.25rem;
+            box-shadow:
+                0 8px 32px rgba(0, 0, 0, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            transition: box-shadow 0.3s;
+        }
+
+        .login-card:focus-within {
+            box-shadow:
+                0 8px 40px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(255, 230, 0, 0.12),
+                inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .login-card h1 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 1.5rem;
+            color: var(--text-heading);
+        }
+
+        /* Flash messages */
+        .flash-error {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--danger-bg);
+            color: #ff6b8a;
+            padding: 0.65rem 0.9rem;
+            border-radius: 10px;
+            margin-bottom: 1.25rem;
+            font-size: 0.875rem;
+            border: 1px solid rgba(255, 45, 85, 0.2);
+            animation: flashIn 0.35s ease-out;
+        }
+        .flash-error::before {
+            content: "!";
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(255, 45, 85, 0.3);
+            color: #ff6b8a;
+            font-weight: 700;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+
+        @keyframes flashIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Form */
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 0.4rem;
+            letter-spacing: 0.01em;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .input-wrapper input {
+            width: 100%;
+            padding: 0.7rem 0.9rem;
+            background: rgba(10, 16, 24, 0.7);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 0.925rem;
+            font-family: inherit;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .input-wrapper input::placeholder {
+            color: rgba(176, 150, 15, 0.3);
+        }
+
+        .input-wrapper input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(255, 230, 0, 0.1);
+            background: rgba(10, 16, 24, 0.9);
+        }
+
+        .input-wrapper input:-webkit-autofill,
+        .input-wrapper input:-webkit-autofill:hover,
+        .input-wrapper input:-webkit-autofill:focus {
+            -webkit-text-fill-color: var(--text);
+            -webkit-box-shadow: 0 0 0px 1000px rgba(10, 16, 24, 0.95) inset;
+            transition: background-color 5000s ease-in-out 0s;
+        }
+
+        .btn-login {
+            width: 100%;
+            padding: 0.75rem;
+            background: linear-gradient(135deg, #ffe600, #ffcc00, #f5a623);
+            color: #0d0b08;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 0.25rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-login::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, transparent 40%, rgba(255,255,255,0.15) 50%, transparent 60%);
+            background-size: 200% 200%;
+            transition: background-position 0.4s;
+        }
+
+        .btn-login:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(255, 230, 0, 0.3);
+        }
+
+        .btn-login:hover::after {
+            background-position: 100% 100%;
+        }
+
+        .btn-login:active {
+            transform: translateY(0);
+        }
+
+        /* Footer */
+        .login-footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.75rem;
+            color: rgba(184, 150, 15, 0.4);
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .login-wrapper { padding: 1rem; }
+            .login-card { padding: 1.5rem; }
+            .logo-shield { width: 256px; }
+            .logo-title { font-size: 1.4rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="hex-bg">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
+
+    <div class="login-wrapper">
+        <div class="logo-section">
+            <img class="logo-shield" src="{{ url_for('static', filename='vespid_monitor.png') }}" alt="Vespid">
+            <div class="logo-subtitle">Server Dashboard</div>
+        </div>
+
+        <div class="login-card">
+            <h1>Sign in to your account</h1>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% for category, message in messages %}
+                    <div class="flash-error">{{ message }}</div>
+                {% endfor %}
+            {% endwith %}
+            <form method="POST" action="{{ url_for('auth.login') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <div class="input-wrapper">
+                        <input type="text" id="username" name="username" required autocomplete="username" placeholder="Enter your username">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Enter your password">
+                    </div>
+                </div>
+                <button type="submit" class="btn-login">Log In</button>
+            </form>
+        </div>
+
+        <div class="login-footer">
+            Vespid v1.0.0 &middot; Secure Network Defense
+        </div>
+    </div>
+</body>
+</html>

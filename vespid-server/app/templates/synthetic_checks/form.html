@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+{% block title %}{% if edit %}Edit{% else %}New{% endif %} Synthetic Check — Vespid{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{% if not edit %}New{% else %}Edit{% endif %} Synthetic Check</h1>
+</div>
+
+<div id="form-container" {% if edit %}data-check-id="{{ check_id }}"{% endif %}>
+    <div class="loading">Loading…</div>
+</div>
+
+<script>
+var CHECK_ID = {% if edit %}{{ check_id }}{% else %}null{% endif %};
+var EDIT_MODE = {% if edit %}true{% else %}false{% endif %};
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+var availableLocations = [];
+
+function apiFetch(url, options) {
+    options = options || {};
+    options.credentials = 'same-origin';
+    options.headers = options.headers || {};
+    return fetch(url, options).then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var ct = r.headers.get('content-type') || '';
+        if (ct.indexOf('application/json') === -1) throw new Error('Not JSON');
+        return r.json();
+    });
+}
+
+function loadForm() {
+    apiFetch('/api/v1/synthetic-checks')
+        .then(function(data) {
+            var seen = {};
+            (data.checks || []).forEach(function(c) {
+                (c.locations || []).forEach(function(l) { seen[l] = true; });
+            });
+            availableLocations = Object.keys(seen).sort();
+            if (!availableLocations.length) availableLocations = ['default'];
+
+            if (EDIT_MODE && CHECK_ID) {
+                loadExistingCheck();
+            } else {
+                renderForm(null);
+            }
+        })
+        .catch(function(err) {
+            document.getElementById('form-container').innerHTML =
+                '<div class="alert alert-error">Failed to load form: ' + err.message + '</div>';
+        });
+}
+
+function loadExistingCheck() {
+    apiFetch('/api/v1/synthetic-checks/' + CHECK_ID)
+        .then(function(data) {
+            if (data.error) { alert('Error: ' + data.error); return; }
+            renderForm(data.check);
+        })
+        .catch(function(err) {
+            alert('Failed to load check: ' + err.message);
+        });
+}
+
+function renderForm(check) {
+    var container = document.getElementById('form-container');
+    var name = check ? check.name : '';
+    var ctype = check ? check.check_type : 'http';
+    var target = check ? check.target : '';
+    var config = check ? (check.check_config || {}) : {};
+    var locs = check ? (check.locations || []) : [];
+    var interval = check ? check.interval_secs : 60;
+    var timeout = check ? check.timeout_secs : 30;
+
+    _scSteps = (config.steps && Array.isArray(config.steps)) ? config.steps.slice() : [];
+
+    var locCheckboxes = '';
+    availableLocations.forEach(function(loc) {
+        var checked = locs.indexOf(loc) >= 0 ? ' checked' : '';
+        locCheckboxes += '<label style="display:inline-block;margin-right:12px;font-weight:400;">' +
+            '<input type="checkbox" name="location" value="' + escapeHtml(loc) + '"' + checked + '> ' + escapeHtml(loc) +
+            '</label>';
+    });
+    if (!locCheckboxes) {
+        locCheckboxes = '<span class="text-muted" style="font-size:0.85rem;">No active workers found. Checks will wait for eligible workers.</span>';
+    }
+
+    var formHtml = '<div class="card" style="max-width:700px;margin:0 auto;">' +
+        '<div class="card-body">' +
+        '<div class="form-group">' +
+            '<label for="sc-name">Check Name</label>' +
+            '<input type="text" id="sc-name" class="form-control" value="' + escapeHtml(name) + '" placeholder="e.g. Homepage HTTPS">' +
+        '</div>' +
+        '<div class="form-group">' +
+            '<label for="sc-type">Check Type</label>' +
+            '<select id="sc-type" class="form-control" onchange="window._scUpdateFields()">' +
+                '<option value="http"' + (ctype === 'http' ? ' selected' : '') + '>HTTP/HTTPS</option>' +
+                '<option value="icmp"' + (ctype === 'icmp' ? ' selected' : '') + '>ICMP Ping</option>' +
+                '<option value="tcp"' + (ctype === 'tcp' ? ' selected' : '') + '>TCP Port</option>' +
+                '<option value="dns"' + (ctype === 'dns' ? ' selected' : '') + '>DNS Resolution</option>' +
+                '<option value="ssl"' + (ctype === 'ssl' ? ' selected' : '') + '>SSL/TLS Certificate</option>' +
+            '</select>' +
+        '</div>' +
+        '<div class="form-group">' +
+            '<label for="sc-target">Target</label>' +
+            '<input type="text" id="sc-target" class="form-control" value="' + escapeHtml(target) + '" placeholder="e.g. https://example.com or 192.168.1.1">' +
+        '</div>' +
+        '<div id="config-fields"></div>' +
+        '<div class="form-group">' +
+            '<label>Locations</label>' +
+            '<div style="margin-top:4px;" id="location-checkboxes">' + locCheckboxes + '</div>' +
+        '</div>' +
+        '<div class="form-group">' +
+            '<label for="sc-interval">Check Interval (seconds)</label>' +
+            '<input type="number" id="sc-interval" class="form-control" value="' + interval + '" min="5" step="1">' +
+        '</div>' +
+        '<div class="form-group">' +
+            '<label for="sc-timeout">Timeout (seconds)</label>' +
+            '<input type="number" id="sc-timeout" class="form-control" value="' + timeout + '" min="1" step="1">' +
+        '</div>' +
+        (EDIT_MODE ? '' :
+            '<div class="alert" style="margin-bottom:12px;padding:8px 12px;font-size:0.8rem;background:#fbbf24;color:#1a1a2e;border:1px solid #f59e0b;border-radius:6px;display:flex;align-items:center;gap:8px;">' +
+                '<span style="font-size:1.1rem;">⚠</span>' +
+                '<div style="line-height:1.5;">' +
+                    '<div style="font-weight:600;">Auto-create alert rule from default policy</div>' +
+                    '<label style="display:flex;align-items:center;gap:6px;margin-top:4px;font-weight:500;cursor:pointer;">' +
+                        '<input type="checkbox" id="sc-auto-rule" checked> ' +
+                        'Create — you can disable or edit it in Alert Rules later' +
+                    '</label>' +
+                '</div>' +
+            '</div>'
+        ) +
+        '<div style="margin-top:16px;display:flex;gap:8px;">' +
+            '<button id="save-btn" class="btn btn-primary" onclick="saveCheck()">' + (EDIT_MODE ? 'Update' : 'Create') + '</button>' +
+            '<button class="btn btn-secondary" onclick="window.location.href=\'/alerts/synthetic-checks\'">Cancel</button>' +
+        '</div></div>';
+
+    container.innerHTML = formHtml;
+    // Expose config-closure helper for onchange handler
+    window._scUpdateFields = function() {
+        var type = document.getElementById('sc-type').value;
+        var fields = document.getElementById('config-fields');
+        var html = '';
+        if (type === 'http') {
+            html += '<div class="form-group"><label for="sc-body-match">Body Match (optional)</label>' +
+                '<input type="text" id="sc-body-match" class="form-control" value="' + escapeHtml(config.body_match || '') + '" placeholder="e.g. OK or regex"></div>';
+            html += '<div class="form-group"><label for="sc-expected-status">Expected Status (optional)</label>' +
+                '<input type="text" id="sc-expected-status" class="form-control" value="' + escapeHtml(config.expected_status || '') + '" placeholder="e.g. 200-399, or 200,301"></div>';
+            html += '<div class="form-group"><label for="sc-max-duration">Max Duration (ms, optional)</label>' +
+                '<input type="number" id="sc-max-duration" class="form-control" value="' + escapeHtml(String(config.max_duration_ms || '')) + '" placeholder="Check fails if slower"></div>';
+            html += '<div class="form-group" style="margin-top:20px;">' +
+                '<label style="display:flex;align-items:center;gap:8px;">Steps <span style="font-weight:400;font-size:0.85rem;color:var(--text-muted,#888);">— optional, run multiple HTTP requests in sequence</span></label>' +
+                '<div id="sc-steps-container"></div>' +
+                '<button type="button" class="btn btn-secondary" style="margin-top:8px;font-size:0.85rem;" onclick="window._scAddStep()">+ Add Step</button>' +
+                '</div>';
+        } else if (type === 'icmp') {
+            html += '<div class="form-group"><label for="sc-max-rtt">Max RTT (ms, optional)</label>' +
+                '<input type="number" id="sc-max-rtt" class="form-control" value="' + (config.max_rtt_ms || '') + '" placeholder="e.g. 1000"></div>';
+        } else if (type === 'tcp') {
+            html += '<div class="form-group"><label for="sc-port">Port</label>' +
+                '<input type="number" id="sc-port" class="form-control" value="' + (config.port || '') + '" placeholder="e.g. 443"></div>';
+            html += '<div class="form-group"><label for="sc-max-connect">Max Connect Time (ms, optional)</label>' +
+                '<input type="number" id="sc-max-connect" class="form-control" value="' + (config.max_connect_ms || '') + '" placeholder="Check fails if slower"></div>';
+        } else if (type === 'dns') {
+            html += '<div class="form-group"><label for="sc-ns">Nameserver (optional)</label>' +
+                '<input type="text" id="sc-ns" class="form-control" value="' + (config.nameserver || '') + '" placeholder="e.g. 1.1.1.1"></div>';
+            html += '<div class="form-group"><label for="sc-expected-value">Expected Value (optional)</label>' +
+                '<input type="text" id="sc-expected-value" class="form-control" value="' + (config.expected_value || '') + '" placeholder="e.g. 8.8.8.8"></div>';
+        } else if (type === 'ssl') {
+            html += '<div class="form-group"><label for="sc-port">Port</label>' +
+                '<input type="number" id="sc-port" class="form-control" value="' + (config.port || '443') + '" placeholder="e.g. 443"></div>';
+            html += '<div class="form-group"><label for="sc-sni">SNI (optional)</label>' +
+                '<input type="text" id="sc-sni" class="form-control" value="' + (config.sni || '') + '" placeholder="Leave blank to use target hostname"></div>';
+            html += '<div class="form-group"><label><input type="checkbox" id="sc-check-chain"' + (config.check_chain !== false ? ' checked' : '') + '> Validate full certificate chain</label>' +
+                '<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">Verifies against system CA bundle. Uncheck for self-signed certs.</div></div>';
+        }
+        fields.innerHTML = html;
+    };
+    window._scUpdateFields();
+    renderSteps();
+}
+
+function saveCheck() {
+    var name = document.getElementById('sc-name').value.trim();
+    var ctype = document.getElementById('sc-type').value;
+    var target = document.getElementById('sc-target').value.trim();
+    var interval = parseInt(document.getElementById('sc-interval').value) || 60;
+    var timeout = parseInt(document.getElementById('sc-timeout').value) || 30;
+
+    if (!name || !target) { alert('Name and Target are required.'); return; }
+
+    var config = {};
+    if (ctype === 'http') {
+        var bm = document.getElementById('sc-body-match');
+        if (bm && bm.value.trim()) config.body_match = bm.value.trim();
+        var es = document.getElementById('sc-expected-status');
+        if (es && es.value.trim()) config.expected_status = es.value.trim();
+        var md = document.getElementById('sc-max-duration');
+        if (md && md.value) config.max_duration_ms = parseInt(md.value);
+        var steps = collectSteps();
+        if (steps.length > 0) config.steps = steps;
+    } else if (ctype === 'icmp') {
+        var mr = document.getElementById('sc-max-rtt');
+        if (mr && mr.value) config.max_rtt_ms = parseInt(mr.value);
+    } else if (ctype === 'tcp') {
+        var port = document.getElementById('sc-port');
+        if (port && port.value) config.port = parseInt(port.value);
+        var mc = document.getElementById('sc-max-connect');
+        if (mc && mc.value) config.max_connect_ms = parseInt(mc.value);
+    } else if (ctype === 'dns') {
+        var ns = document.getElementById('sc-ns');
+        if (ns && ns.value.trim()) config.nameserver = ns.value.trim();
+        var ev = document.getElementById('sc-expected-value');
+        if (ev && ev.value.trim()) config.expected_value = ev.value.trim();
+    } else if (ctype === 'ssl') {
+        var port = document.getElementById('sc-port');
+        if (port && port.value) config.port = parseInt(port.value);
+        var sni = document.getElementById('sc-sni');
+        if (sni && sni.value.trim()) config.sni = sni.value.trim();
+        var cc = document.getElementById('sc-check-chain');
+        config.check_chain = cc ? cc.checked : true;
+    }
+
+    var locations = [];
+    var checkboxes = document.querySelectorAll('input[name="location"]:checked');
+    checkboxes.forEach(function(cb) { locations.push(cb.value); });
+
+    var payload = {
+        name: name,
+        check_type: ctype,
+        target: target,
+        check_config: config,
+        locations: locations,
+        interval_secs: interval,
+        timeout_secs: timeout,
+        auto_create_rule: !EDIT_MODE ? document.getElementById('sc-auto-rule').checked : true,
+    };
+
+    var url = EDIT_MODE ? '/api/v1/synthetic-checks/' + CHECK_ID : '/api/v1/synthetic-checks';
+    var method = EDIT_MODE ? 'PUT' : 'POST';
+
+    apiFetch(url, {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCsrfToken(),
+        },
+        body: JSON.stringify(payload),
+    })
+    .then(function(data) {
+        if (data.error) { alert('Error: ' + data.error); return; }
+        window.location.href = '/alerts/synthetic-checks';
+    })
+    .catch(function(err) { alert('Failed to save: ' + err.message); });
+}
+
+var _scSteps = [];
+
+function renderSteps() {
+    var container = document.getElementById('sc-steps-container');
+    if (!container) return;
+    if (_scSteps.length === 0) {
+        container.innerHTML = '<div style="font-size:0.85rem;color:var(--text-muted,#888);padding:4px 0;">No steps configured — single request only.</div>';
+        return;
+    }
+    var html = '';
+    _scSteps.forEach(function(step, idx) {
+        html += '<div class="sc-step-row" style="background:var(--bg-card,var(--card-bg,#f9f9f9));border:1px solid var(--border,#ddd);border-radius:6px;padding:12px;margin-bottom:8px;">' +
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;position:relative;">' +
+            '<span style="font-weight:600;font-size:0.85rem;color:var(--text-muted,#888);">Step ' + (idx + 1) + '</span>' +
+            '<span style="cursor:pointer;font-weight:700;font-size:0.75rem;color:#60a5fa;border:1px solid #60a5fa;border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;" onclick="event.stopPropagation();var p=this.nextElementSibling;while(p&&p.className!==\'sc-step-help\')p=p.nextElementSibling;if(p)p.style.display=p.style.display===\'block\'?\'none\':\'block\';">?</span>' +
+            '<div class="sc-step-help" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:200;background:var(--bg-card,#1a1a2e);border:1px solid var(--border,#334);border-radius:8px;padding:14px;font-size:0.8rem;color:var(--text,#e0e0e0);box-shadow:0 8px 24px rgba(0,0,0,0.5);width:400px;max-width:90vw;line-height:1.5;">' +
+              '<div style="font-weight:600;margin-bottom:8px;color:var(--text-heading,var(--accent,#ffe600));font-size:0.85rem;">Step Fields</div>' +
+              '<table style="width:100%;border-collapse:collapse;">' +
+                '<tr><td style="padding:3px 8px 3px 0;white-space:nowrap;font-weight:500;color:var(--text-muted,#999);vertical-align:top;">Name</td><td style="padding:3px 0;">Optional label for this step</td></tr>' +
+                '<tr><td style="padding:3px 8px 3px 0;white-space:nowrap;font-weight:500;color:var(--text-muted,#999);vertical-align:top;">URL</td><td style="padding:3px 0;">Override request URL. Leave blank to reuse the check URL or previous step\'s URL.</td></tr>' +
+                '<tr><td style="padding:3px 8px 3px 0;white-space:nowrap;font-weight:500;color:var(--text-muted,#999);vertical-align:top;">Body</td><td style="padding:3px 0;">Request body for POST/PUT/PATCH. Supports <code style="background:var(--bg-input,#111);padding:1px 4px;border-radius:3px;font-size:0.75rem;">$ENV_VAR</code> / <code style="background:var(--bg-input,#111);padding:1px 4px;border-radius:3px;font-size:0.75rem;">${ENV_VAR}</code> substitution.</td></tr>' +
+                '<tr><td style="padding:3px 8px 3px 0;white-space:nowrap;font-weight:500;color:var(--text-muted,#999);vertical-align:top;">Body Match</td><td style="padding:3px 0;">Response body must contain this text or the step fails.</td></tr>' +
+                '<tr><td style="padding:3px 8px 3px 0;white-space:nowrap;font-weight:500;color:var(--text-muted,#999);vertical-align:top;">Expected Status</td><td style="padding:3px 0;">HTTP status range, e.g. <code style="background:var(--bg-input,#111);padding:1px 4px;border-radius:3px;font-size:0.75rem;">200-399</code> or <code style="background:var(--bg-input,#111);padding:1px 4px;border-radius:3px;font-size:0.75rem;">200,301</code>. Default <code style="background:var(--bg-input,#111);padding:1px 4px;border-radius:3px;font-size:0.75rem;">200-399</code>.</td></tr>' +
+              '</table>' +
+              '<div style="font-weight:600;margin:10px 0 5px;color:var(--text-heading,var(--accent,#ffe600));font-size:0.85rem;">Example — Login + Dashboard</div>' +
+              '<pre style="background:var(--bg-input,#0d1117);color:var(--text,#e0e0e0);padding:8px;border-radius:5px;font-size:0.75rem;margin:0;white-space:pre-wrap;border:1px solid var(--border,#334);">' +
+                'Step 1: POST /api/login  body={"user":"$USER"}  expect status 200\n' +
+                'Step 2: GET  /api/dashboard  body_match: "Welcome"  expect status 200' +
+              '</pre>' +
+              '<div style="font-weight:600;margin:10px 0 3px;color:var(--text-heading,var(--accent,#ffe600));font-size:0.85rem;">Cookies</div>' +
+              '<div style="color:var(--text-muted,#999);">Cookies from each response are automatically sent on subsequent steps (no manual header needed).</div>' +
+            '</div>' +
+            '<input type="text" class="form-control sc-step-name" data-idx="' + idx + '" value="' + escapeHtml(step.name || '') + '" placeholder="Name (optional)" style="flex:1;max-width:160px;font-size:0.85rem;">' +
+            '<select class="form-control sc-step-method" data-idx="' + idx + '" style="width:80px;font-size:0.85rem;">' +
+                '<option value="GET"' + (step.method === 'GET' || !step.method ? ' selected' : '') + '>GET</option>' +
+                '<option value="POST"' + (step.method === 'POST' ? ' selected' : '') + '>POST</option>' +
+                '<option value="PUT"' + (step.method === 'PUT' ? ' selected' : '') + '>PUT</option>' +
+                '<option value="DELETE"' + (step.method === 'DELETE' ? ' selected' : '') + '>DELETE</option>' +
+                '<option value="PATCH"' + (step.method === 'PATCH' ? ' selected' : '') + '>PATCH</option>' +
+            '</select>' +
+            '<button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:2px 8px;color:var(--badge-clr,#f87171);" onclick="window._scRemoveStep(' + idx + ')">Remove</button>' +
+            '</div>' +
+            '<div style="margin-bottom:6px;">' +
+            '<input type="text" class="form-control sc-step-url" data-idx="' + idx + '" value="' + escapeHtml(step.url || '') + '" placeholder="URL override (blank = previous URL)" style="width:100%;font-size:0.85rem;">' +
+            '</div>' +
+            '<div style="margin-bottom:6px;">' +
+            '<textarea class="form-control sc-step-body" data-idx="' + idx + '" rows="3" placeholder="Body (for POST/PUT/PATCH) — supports $ENV_VAR substitution" style="width:100%;font-size:0.85rem;resize:vertical;">' + escapeHtml(step.body || '') + '</textarea>' +
+            '</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+            '<input type="text" class="form-control sc-step-body-match" data-idx="' + idx + '" value="' + escapeHtml(step.body_match || '') + '" placeholder="Body match (optional)" style="flex:1;min-width:180px;font-size:0.85rem;">' +
+            '<input type="text" class="form-control sc-step-expect-status" data-idx="' + idx + '" value="' + escapeHtml(step.expect_status || '') + '" placeholder="Expected status (default 200-399)" style="width:220px;font-size:0.85rem;">' +
+            '</div>' +
+            '</div>';
+    });
+    container.innerHTML = html;
+}
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.sc-step-row')) {
+        document.querySelectorAll('.sc-step-help').forEach(function(el) { el.style.display = 'none'; });
+    }
+});
+
+window._scAddStep = function() {
+    _scSteps.push({name: '', method: 'GET', url: '', body: '', body_match: '', expect_status: ''});
+    renderSteps();
+};
+
+window._scRemoveStep = function(idx) {
+    _scSteps.splice(idx, 1);
+    renderSteps();
+};
+
+function collectSteps() {
+    var steps = [];
+    document.querySelectorAll('.sc-step-row').forEach(function(row) {
+        var idx = parseInt(row.querySelector('.sc-step-name').dataset.idx);
+        var name = row.querySelector('.sc-step-name').value.trim();
+        var method = row.querySelector('.sc-step-method').value;
+        var url = row.querySelector('.sc-step-url').value.trim();
+        var body = row.querySelector('.sc-step-body').value.trim();
+        var body_match = row.querySelector('.sc-step-body-match').value.trim();
+        var expect_status = row.querySelector('.sc-step-expect-status').value.trim();
+        var step = {};
+        if (name) step.name = name;
+        step.method = method;
+        if (url) step.url = url;
+        if (body) step.body = body;
+        if (body_match) step.body_match = body_match;
+        if (expect_status) step.expect_status = expect_status;
+        steps.push(step);
+    });
+    return steps;
+}
+
+loadForm();
+</script>
+{% endblock %}

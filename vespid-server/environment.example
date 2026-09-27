@@ -1,0 +1,53 @@
+# =============================================================================
+# HiveGuard Server — Gunicorn Environment Overrides
+# =============================================================================
+# This file is read by systemd (EnvironmentFile=/etc/hiveguard-server/environment)
+# and overrides defaults in gunicorn.conf.py.
+#
+# After editing, restart the service:
+#   sudo systemctl restart hiveguard-server
+#
+# For full documentation see the "Performance Tuning" section in README.md
+# =============================================================================
+
+# --- Bind address ---
+# GUNICORN_BIND=127.0.0.1:8000
+
+# --- Worker class ---
+# gevent (default): greenlet-based, handles thousands of connections per worker
+# gthread: OS threads, use only if gevent causes compatibility issues
+# GUNICORN_WORKER_CLASS=gevent
+
+# --- Worker timeout (seconds) ---
+# GUNICORN_TIMEOUT=120
+
+# =============================================================================
+# CHOOSE YOUR DATABASE BACKEND — uncomment ONE section below
+# =============================================================================
+
+# --- SQLite ---
+# SQLite uses a single write lock. Keep workers at 1 to avoid contention.
+# Gevent still helps because reads and SSE streams multiplex freely.
+#
+# GUNICORN_WORKERS=1
+# GUNICORN_WORKER_CONNECTIONS=1000
+
+# --- MySQL / MariaDB ---
+# MySQL handles concurrent writes. Use one worker per CPU core.
+# Examples: 2-core = 2, 4-core = 4, 8-core = 8
+#
+# GUNICORN_WORKERS=2
+# GUNICORN_WORKER_CONNECTIONS=1000
+
+# =============================================================================
+# COMMON SETTINGS (apply regardless of backend)
+# =============================================================================
+
+# Keep-alive (seconds) — set higher than your heartbeat interval (default 300s)
+# so nodes reuse TCP connections instead of reconnecting each cycle.
+# GUNICORN_KEEPALIVE=65
+
+# Worker recycling — restart workers after N requests to prevent memory leaks.
+# Jitter spreads restarts so they don't all happen at once.
+# GUNICORN_MAX_REQUESTS=8000
+# GUNICORN_MAX_REQUESTS_JITTER=800

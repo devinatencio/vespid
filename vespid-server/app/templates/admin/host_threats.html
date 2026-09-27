@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Host Threat Timeline — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+<h1 class="page-title">Host Threat Timeline</h1>
+
+<div class="card">
+    <h2 class="card-title">Host Events ({{ events|length }} of {{ total }})</h2>
+    {% if total_pages > 1 %}
+    <nav class="pagination" style="margin-bottom:0.75rem;" aria-label="Host threat timeline pagination top">
+        <span class="pagination-info">Page {{ page }} of {{ total_pages }} ({{ total }} events)</span>
+        <div class="pagination-controls">
+            {% if page > 1 %}
+            <a href="{{ url_for('host_threats.host_threats_page', page=page-1) }}" class="btn btn-sm btn-secondary">← Prev</a>
+            {% endif %}
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == page %}
+                <span class="btn btn-sm" style="pointer-events:none;">{{ p }}</span>
+                {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+                <a href="{{ url_for('host_threats.host_threats_page', page=p) }}" class="btn btn-sm btn-secondary">{{ p }}</a>
+                {% elif p == 4 or p == total_pages - 3 %}
+                <span style="color:var(--text-muted);">…</span>
+                {% endif %}
+            {% endfor %}
+            {% if page < total_pages %}
+            <a href="{{ url_for('host_threats.host_threats_page', page=page+1) }}" class="btn btn-sm btn-secondary">Next →</a>
+            {% endif %}
+        </div>
+    </nav>
+    {% endif %}
+    {% if events %}
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Hostname</th>
+                <th>Rule Name</th>
+                <th>Executable</th>
+                <th>Command Line</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr>
+                <td><span data-ts="{{ event.timestamp }}">{{ event.timestamp }}</span></td>
+                <td>{{ event.hostname }}</td>
+                <td><span class="badge badge-warning">{{ event.rule_name }}</span></td>
+                <td style="font-family:monospace; font-size:0.85rem;">{{ event.exe }}</td>
+                <td style="max-width:400px; font-family:monospace; font-size:0.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="{{ event.command_line }}">{{ event.command_line[:120] }}{% if event.command_line|length > 120 %}…{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if total_pages > 1 %}
+    <nav class="pagination" style="margin-top:0.75rem;" aria-label="Host threat timeline pagination">
+        <span class="pagination-info">Page {{ page }} of {{ total_pages }} ({{ total }} events)</span>
+        <div class="pagination-controls">
+            {% if page > 1 %}
+            <a href="{{ url_for('host_threats.host_threats_page', page=page-1) }}" class="btn btn-sm btn-secondary">← Prev</a>
+            {% endif %}
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == page %}
+                <span class="btn btn-sm" style="pointer-events:none;">{{ p }}</span>
+                {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+                <a href="{{ url_for('host_threats.host_threats_page', page=p) }}" class="btn btn-sm btn-secondary">{{ p }}</a>
+                {% elif p == 4 or p == total_pages - 3 %}
+                <span style="color:var(--text-muted);">…</span>
+                {% endif %}
+            {% endfor %}
+            {% if page < total_pages %}
+            <a href="{{ url_for('host_threats.host_threats_page', page=page+1) }}" class="btn btn-sm btn-secondary">Next →</a>
+            {% endif %}
+        </div>
+    </nav>
+    {% endif %}
+    {% else %}
+    <p class="text-muted">No host threat events found.</p>
+    {% endif %}
+</div>
+{% endblock %}

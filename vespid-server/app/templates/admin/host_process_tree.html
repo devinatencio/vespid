@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Process Tree{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.75rem; margin-bottom:1.5rem;">
+    <h1 class="page-title" style="margin:0;">Process Tree</h1>
+    <span class="muted" style="font-size:0.8rem;">Hierarchical view of pid/ppid relationships</span>
+</div>
+
+<div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1.25rem;">
+    <label for="hostname-select" style="font-size:0.8rem; font-weight:600; text-transform:uppercase; letter-spacing:0.03em; color:var(--text-muted);">Hostname</label>
+    <select id="hostname-select" name="hostname"
+            hx-get="{{ url_for('host_threats.process_tree_page') }}"
+            hx-target="#pt-tree-container"
+            hx-trigger="change"
+            hx-push-url="true"
+            hx-indicator="#pt-loading"
+            style="padding:0.4rem 0.75rem; border-radius:6px; border:1px solid var(--border); background:var(--bg-input); color:var(--text); font-size:0.85rem; min-width:240px;">
+        <option value="">— Select a host —</option>
+        {% for h in hostnames %}
+        <option value="{{ h }}" {% if h == selected_hostname %}selected{% endif %}>{{ h }}</option>
+        {% endfor %}
+    </select>
+    <span id="pt-loading" class="htmx-indicator" style="font-size:0.78rem; color:var(--text-muted);">Loading…</span>
+</div>
+
+<div id="pt-tree-container">
+    {% if selected_hostname %}
+        {% include "admin/host_threats/_process_tree_fragment.html" %}
+    {% elif not hostnames %}
+        <div style="text-align:center; padding:3rem 1rem;">
+            <div style="font-size:2rem; margin-bottom:0.5rem;">📭</div>
+            <h3>No hosts available</h3>
+            <p class="muted">No host events have been recorded yet.</p>
+        </div>
+    {% else %}
+        <div style="text-align:center; padding:3rem 1rem;">
+            <div style="font-size:2rem; margin-bottom:0.5rem;">👆</div>
+            <h3>Select a host</h3>
+            <p class="muted">Choose a hostname above to view its process tree.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

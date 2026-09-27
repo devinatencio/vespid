@@ -1,0 +1,677 @@
+/* ── Vespid Theme ───────────────────────────────────────────
+ * Cyberpunk bee aesthetic — pure black + electric yellow
+ *
+ * Background:   #0d0b08 (near-black)
+ * Cards:        #0f1520 (dark grey)
+ * Accent:       #ffe600 (electric yellow)
+ * Text:         #f0e6d0 (warm cream)
+ * Muted:        #b8960f (desaturated gold)
+ *
+ * To customize: copy this file to your CUSTOM_THEME_DIR and edit.
+ * ──────────────────────────────────────────────────────────────── */
+
+body.theme-vespid {
+    --bg: #0d0b08;
+    --bg-card: #0f1520;
+    --bg-card-hover: #162030;
+    --bg-input: #0a1018;
+    --bg-secondary: #0a1018;
+    --text: #f0e6d0;
+    --text-muted: #b8960f;
+    --text-heading: #ffe600;
+    --border: #1a2535;
+    --border-color: #1a2535;
+    --nav-bg: #060503;
+    --info: #00d4ff;
+    --link: #55aaff;
+    --shadow: 0 1px 3px rgba(0,0,0,0.6), 0 1px 2px rgba(0,0,0,0.5);
+    --accent: #ffe600;
+    --accent-hover: #ffd000;
+    --danger: #ff2d55;
+    --danger-hover: #e6264c;
+    --success: #39ff14;
+    --warning: #ffaa00;
+    --button-text: #000000;
+    --toggle-knob: #f0e6d0;
+    --focus-ring: rgba(255, 230, 0, 0.3);
+    --json-key: #ff6ec7;
+    --json-string: #00ff88;
+    --json-number: #ffe600;
+    --json-bool: #00d4ff;
+    --json-null: #b8960f;
+    --worldmap-land: #0f1520;
+    --worldmap-border: #1a2535;
+    --worldmap-heat-low: #55aaff;
+    --worldmap-heat-mid-low: #00d4ff;
+    --worldmap-heat-mid-high: #ffaa00;
+    --worldmap-heat-high: #ff2d55;
+    --chart-line: #f5a623;
+    --chart-line-fill: rgba(245, 166, 35, 0.12);
+    --chart-palette-0: #ffe600;
+    --chart-palette-1: #ff2d55;
+    --chart-palette-2: #39ff14;
+    --chart-palette-3: #ffaa00;
+    --chart-palette-4: #00d4ff;
+    --chart-palette-5: #ff00ff;
+    --chart-palette-6: #00ffcc;
+    --chart-palette-7: #ff5555;
+    --chart-palette-8: #ffff55;
+    --chart-palette-9: #ff8800;
+    --chart-palette-10: #55aaff;
+    --chart-palette-11: #ff77cc;
+    --chart-grid: rgba(255, 255, 255, 0.05);
+    background-size: 40px 40px, 40px 40px, 32px 32px;
+    background-image:
+        linear-gradient(rgba(255, 230, 0, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 230, 0, 0.02) 1px, transparent 1px),
+        radial-gradient(circle at 1px 1px, rgba(255,230,0,0.04) 1px, transparent 0);
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+body.theme-vespid ::-webkit-scrollbar { width: 10px; height: 10px; }
+body.theme-vespid ::-webkit-scrollbar-track { background: #0d0b08; }
+body.theme-vespid ::-webkit-scrollbar-thumb { background: #1a2535; border-radius: 5px; }
+body.theme-vespid ::-webkit-scrollbar-thumb:hover { background: #ffe600; }
+
+/* ── Navigation ─────────────────────────────────────────────── */
+body.theme-vespid .main-nav {
+    border-bottom-color: #1a2535;
+}
+
+body.theme-vespid .nav-brand {
+    background: linear-gradient(135deg, #ffe600, #ffcc00, #f5a623, #ffe600);
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 8px rgba(255, 230, 0, 0.35));
+    animation: brand-shimmer 4s ease-in-out infinite;
+    position: relative;
+    padding-bottom: 8px;
+}
+body.theme-vespid .nav-brand-beam {
+    background: linear-gradient(90deg, #ffe600, #ffcc00, #ffe600);
+    opacity: 0.18;
+    box-shadow: 0 0 3px rgba(255,230,0,0.2);
+}
+body.theme-vespid .nav-brand-beam::after {
+    background: radial-gradient(ellipse at center, #fff 0%, #fffbe6 20%, #ffe600 50%, transparent 100%);
+    box-shadow:
+        0 0 22px rgba(255,230,0,1),
+        0 -6px 24px rgba(255,230,0,0.7),
+        0 0 40px rgba(255,230,0,0.6),
+        0 -12px 50px rgba(255,230,0,0.35),
+        0 0 72px rgba(255,230,0,0.25);
+}
+body.theme-vespid .nav-brand-logo {
+    filter: drop-shadow(0 0 6px rgba(255, 230, 0, 0.3));
+}
+
+body.theme-vespid .nav-links a,
+body.theme-vespid .nav-dropdown-toggle {
+    color: #d4c490;
+}
+body.theme-vespid .nav-links a:hover,
+body.theme-vespid .nav-dropdown-toggle:hover {
+    color: #ffe600;
+    background: rgba(255, 230, 0, 0.08);
+}
+body.theme-vespid .nav-links a.active,
+body.theme-vespid .nav-dropdown-toggle.active {
+    background: var(--accent);
+    color: #0d0b08;
+}
+
+body.theme-vespid .nav-username {
+    background: rgba(255, 230, 0, 0.08);
+    color: #b8960f;
+}
+body.theme-vespid a.nav-username:hover {
+    background: rgba(255, 230, 0, 0.14);
+    color: #ffe600;
+}
+
+/* ── Nav stats pill ─────────────────────────────────────────── */
+body.theme-vespid .nav-stats-pill {
+    background: #0d0b08;
+    border: 1.5px solid var(--accent);
+    box-shadow: 0 0 12px rgba(255, 230, 0, 0.08);
+}
+body.theme-vespid .nav-stats-pill .stat-val {
+    color: #ffe600;
+}
+body.theme-vespid .nav-stats-pill .stat-label {
+    color: #b8960f;
+}
+body.theme-vespid .nav-stats-pill .stat-icon {
+    opacity: 1;
+}
+body.theme-vespid .nav-stats-pill .stat-sep {
+    color: rgba(255, 230, 0, 0.15);
+}
+
+/* ── Side panel ─────────────────────────────────────────────── */
+body.theme-vespid .side-panel {
+    background: #0d0b08;
+    border-right-color: #1a2535;
+}
+body.theme-vespid .side-panel-title {
+    background: linear-gradient(135deg, #ffe600, #ffcc00, #f5a623);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+body.theme-vespid .spn-section-title {
+    border-top-color: #1a2535;
+    color: #b8960f;
+}
+body.theme-vespid .spn-item {
+    border-left-color: rgba(255, 230, 0, 0.08);
+}
+body.theme-vespid .spn-item:hover {
+    background: rgba(255, 230, 0, 0.12);
+    color: #ffe600;
+    border-left-color: rgba(255, 230, 0, 0.30);
+}
+body.theme-vespid .spn-item.active {
+    background: rgba(255, 230, 0, 0.18);
+    color: #ffe600;
+    border-left-color: #ffe600;
+}
+body.theme-vespid .spn-item-home {
+    background: rgba(255, 230, 0, 0.06);
+}
+body.theme-vespid .spn-item-home:hover {
+    background: rgba(255, 230, 0, 0.12);
+}
+body.theme-vespid .spn-item-home.active {
+    background: rgba(255, 230, 0, 0.16);
+}
+
+/* ── Cards ──────────────────────────────────────────────────── */
+body.theme-vespid .card {
+    background: rgba(15, 21, 32, 0.9);
+    border: 1px solid rgba(255, 230, 0, 0.15);
+    box-shadow: 0 0 18px rgba(255, 230, 0, 0.04), var(--shadow);
+}
+body.theme-vespid .stat-card {
+    background: rgba(15, 21, 32, 0.8);
+}
+body.theme-vespid .stat-card:hover,
+body.theme-vespid a.stat-card-link:hover {
+    border-color: rgba(255, 230, 0, 0.5);
+    box-shadow: 0 4px 24px rgba(255, 230, 0, 0.14), var(--shadow);
+}
+body.theme-vespid .stat-card .stat-value {
+    text-shadow: 0 0 14px rgba(255, 230, 0, 0.28);
+}
+body.theme-vespid .empty-state {
+    background: rgba(15, 21, 32, 0.6);
+}
+
+/* ── Tables ─────────────────────────────────────────────────── */
+body.theme-vespid th {
+    background: var(--border-color);
+    color: #b8960f;
+}
+body.theme-vespid tr:hover {
+    background: var(--bg-card-hover);
+}
+body.theme-vespid td code {
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--text);
+}
+body.theme-vespid td code.ip-copy {
+    color: var(--link);
+}
+body.theme-vespid td code.node-name {
+    color: var(--text-heading);
+}
+body.theme-vespid td code.event-id {
+    color: var(--text-muted);
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+body.theme-vespid .btn:not(.btn-secondary):not(.btn-danger):not([class*="btn-success"]) {
+    color: #0d0b08;
+}
+body.theme-vespid .btn:not(.btn-secondary):not(.btn-danger):not([class*="btn-success"]):hover {
+    background: var(--accent-hover);
+    color: #0d0b08;
+}
+body.theme-vespid .btn.btn-secondary {
+    background: transparent;
+    color: #ffe600;
+    border: 1px solid #ffe600;
+}
+body.theme-vespid .btn.btn-secondary:hover {
+    background: rgba(255, 230, 0, 0.15);
+    color: #ffe600;
+}
+body.theme-vespid .btn.btn-success-outline {
+    background: rgba(255, 230, 0, 0.1);
+    color: #ffe600;
+    border: 1px solid #ffe600;
+}
+body.theme-vespid .btn.btn-success-outline:hover {
+    background: #ffe600;
+    color: #000;
+}
+body.theme-vespid .theme-toggle:hover {
+    border-color: var(--accent);
+    background: rgba(255, 230, 0, 0.08);
+}
+
+/* ── Forms ──────────────────────────────────────────────────── */
+body.theme-vespid .form-group input::placeholder,
+body.theme-vespid .form-group textarea::placeholder {
+    color: #5a4a10;
+}
+body.theme-vespid .form-group input:focus,
+body.theme-vespid .form-group select:focus,
+body.theme-vespid .form-group textarea:focus {
+    box-shadow: 0 0 0 3px rgba(255, 230, 0, 0.18);
+}
+body.theme-vespid .side-panel-search .search-input:focus {
+    box-shadow: 0 0 0 2px rgba(255, 230, 0, 0.18);
+}
+body.theme-vespid .node-chip input[type="checkbox"]:checked + .node-chip-label {
+    background: rgba(255, 230, 0, 0.16);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(255, 230, 0, 0.3);
+}
+
+/* ── Standard badges ────────────────────────────────────────── */
+body.theme-vespid .badge-healthy,
+body.theme-vespid .badge-active,
+body.theme-vespid .badge-success { --badge-bg: rgba(57, 255, 20, 0.15); --badge-clr: #39ff14; }
+
+body.theme-vespid .badge-warning,
+body.theme-vespid .badge-degraded { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+
+body.theme-vespid .badge-danger,
+body.theme-vespid .badge-offline,
+body.theme-vespid .badge-revoked { --badge-bg: rgba(255, 45, 85, 0.15); --badge-clr: #ff2d55; }
+
+body.theme-vespid .badge-info,
+body.theme-vespid .badge-analyst { --badge-bg: rgba(0, 212, 255, 0.15); --badge-clr: #00d4ff; }
+
+body.theme-vespid .badge-admin,
+body.theme-vespid .badge-asn { --badge-bg: rgba(255, 0, 255, 0.15); --badge-clr: #ff00ff; }
+
+body.theme-vespid .badge-fleet,
+body.theme-vespid .badge-org { --badge-bg: rgba(255, 230, 0, 0.12); --badge-clr: #ffe600; }
+
+body.theme-vespid .badge-viewer { --badge-bg: rgba(184, 150, 15, 0.12); --badge-clr: #b8960f; }
+
+
+body.theme-vespid .badge-accent {
+    color: #0d0b08;
+}
+
+/* Boost danger/blocked badge visibility on dark cards */
+body.theme-vespid .badge-danger,
+body.theme-vespid .badge-event-ssh-brute,
+body.theme-vespid .badge-event-ssh-medium-brute,
+body.theme-vespid .badge-event-ssh-slow-brute {
+    --badge-bg: rgba(255, 45, 85, 0.22);
+    --badge-clr: #ffffff;
+}
+
+body.theme-vespid .badge-action-blocked {
+    --badge-bg: var(--danger);
+    --badge-clr: #ffffff;
+}
+
+/* ── Event / action badges ──────────────────────────────────── */
+body.theme-vespid .badge-event-port-scan,
+body.theme-vespid .badge-action-detected { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+
+body.theme-vespid .badge-event-dns-tunnel { --badge-bg: rgba(255, 0, 255, 0.15); --badge-clr: #ff00ff; }
+
+body.theme-vespid .badge-event-web-attack,
+body.theme-vespid .badge-event-http-auth-brute { --badge-bg: rgba(255, 119, 204, 0.15); --badge-clr: #ff77cc; }
+
+body.theme-vespid .badge-event-malware-beacon { --badge-bg: rgba(255, 45, 85, 0.20); --badge-clr: #ff2d55; }
+
+body.theme-vespid .badge-event-blocklist-hit { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+
+body.theme-vespid .badge-event-nft-action { --badge-bg: rgba(0, 255, 204, 0.12); --badge-clr: #00ffcc; }
+
+body.theme-vespid .badge-event-ssh-banner-grab,
+body.theme-vespid .badge-event-ssh-auth-timeout { --badge-bg: rgba(85, 170, 255, 0.15); --badge-clr: #55aaff; }
+
+body.theme-vespid .badge-action-allowlisted,
+body.theme-vespid .badge-event-allowlist-add,
+body.theme-vespid .badge-event-allowlist-remove { --badge-bg: rgba(57, 255, 20, 0.12); --badge-clr: #39ff14; }
+
+body.theme-vespid .badge-action-unallowlisted { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+
+body.theme-vespid .badge-action-alerted { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+
+body.theme-vespid .badge-action-rate-limited,
+body.theme-vespid .badge-action-rate_limited { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+
+body.theme-vespid .badge-action-unblocked { --badge-bg: rgba(57, 255, 20, 0.12); --badge-clr: #39ff14; }
+
+body.theme-vespid .badge-action-logged,
+body.theme-vespid .badge-action-observed { --badge-bg: rgba(184, 150, 15, 0.12); --badge-clr: #b8960f; }
+
+body.theme-vespid .badge-action-observed-log-match { --badge-bg: rgba(85, 170, 255, 0.15); --badge-clr: #55aaff; }
+
+body.theme-vespid .badge-action-blocked::before {
+    background: var(--badge-clr);
+}
+
+/* ── Command status badges ──────────────────────────────────── */
+body.theme-vespid .cmd-status-pending { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+body.theme-vespid .cmd-status-acknowledged { --badge-bg: rgba(85, 170, 255, 0.15); --badge-clr: #55aaff; }
+body.theme-vespid .cmd-status-completed { --badge-bg: rgba(57, 255, 20, 0.15); --badge-clr: #39ff14; }
+body.theme-vespid .cmd-status-failed { --badge-bg: rgba(255, 45, 85, 0.15); --badge-clr: #ff2d55; }
+body.theme-vespid .cmd-status-expired { --badge-bg: rgba(184, 150, 15, 0.12); --badge-clr: #b8960f; }
+
+/* ── Host info pills ────────────────────────────────────────── */
+body.theme-vespid .host-pill-blue { background: rgba(85, 170, 255, 0.12); border-color: rgba(85, 170, 255, 0.30); color: #55aaff; }
+body.theme-vespid .host-pill-blue .host-pill-label { color: #77bbff; }
+
+body.theme-vespid .host-pill-purple { background: rgba(255, 0, 255, 0.12); border-color: rgba(255, 0, 255, 0.30); color: #ff00ff; }
+body.theme-vespid .host-pill-purple .host-pill-label { color: #ff33ff; }
+
+body.theme-vespid .host-pill-teal { background: rgba(0, 255, 204, 0.12); border-color: rgba(0, 255, 204, 0.30); color: #00ffcc; }
+body.theme-vespid .host-pill-teal .host-pill-label { color: #33ffd6; }
+
+body.theme-vespid .host-pill-amber { background: rgba(255, 170, 0, 0.12); border-color: rgba(255, 170, 0, 0.30); color: #ffaa00; }
+body.theme-vespid .host-pill-amber .host-pill-label { color: #ffbb33; }
+
+body.theme-vespid .host-pill-green { background: rgba(57, 255, 20, 0.12); border-color: rgba(57, 255, 20, 0.30); color: #39ff14; }
+body.theme-vespid .host-pill-green .host-pill-label { color: #5fff43; }
+
+body.theme-vespid .host-pill-rose { background: rgba(255, 45, 85, 0.12); border-color: rgba(255, 45, 85, 0.30); color: #ff2d55; }
+body.theme-vespid .host-pill-rose .host-pill-label { color: #ff5577; }
+
+/* ── TTL badges ─────────────────────────────────────────────── */
+body.theme-vespid .ttl-short { background: rgba(57, 255, 20, 0.15); color: #39ff14; }
+body.theme-vespid .ttl-medium { background: rgba(255, 170, 0, 0.15); color: #ffaa00; }
+body.theme-vespid .ttl-long { background: rgba(255, 45, 85, 0.15); color: #ff2d55; }
+
+/* ── Feed cards ─────────────────────────────────────────────── */
+body.theme-vespid .feed-card {
+    background: rgba(0, 0, 0, 0.25);
+}
+body.theme-vespid .feed-catalog-card:hover {
+    border-color: rgba(255, 0, 255, 0.4);
+}
+body.theme-vespid .feed-provider,
+body.theme-vespid .feed-provider-link {
+    color: #ff00ff;
+}
+body.theme-vespid .feed-provider-link:hover {
+    color: #ff33ff;
+}
+body.theme-vespid .feed-confidence-very_high { --badge-bg: rgba(57, 255, 20, 0.15); --badge-clr: #39ff14; }
+body.theme-vespid .feed-confidence-high { --badge-bg: rgba(85, 170, 255, 0.15); --badge-clr: #55aaff; }
+body.theme-vespid .feed-confidence-medium { --badge-bg: rgba(255, 170, 0, 0.15); --badge-clr: #ffaa00; }
+body.theme-vespid .feed-confidence-low { --badge-bg: rgba(255, 45, 85, 0.12); --badge-clr: #ff2d55; }
+
+/* ── Sparklines ─────────────────────────────────────────────── */
+body.theme-vespid .stat-sparkline-bar {
+    background: var(--accent);
+}
+
+/* ── IP intel ───────────────────────────────────────────────── */
+body.theme-vespid .ip-intel-score {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--border);
+}
+body.theme-vespid .ip-intel-score.score-high {
+    background: rgba(255, 45, 85, 0.12);
+    color: #ff2d55;
+    border-color: rgba(255, 45, 85, 0.30);
+}
+body.theme-vespid .ip-intel-score.score-medium {
+    background: rgba(255, 170, 0, 0.12);
+    color: #ffaa00;
+    border-color: rgba(255, 170, 0, 0.30);
+}
+body.theme-vespid .ip-intel-score.score-low {
+    background: rgba(57, 255, 20, 0.12);
+    color: #39ff14;
+    border-color: rgba(57, 255, 20, 0.30);
+}
+
+/* ── Rules management ───────────────────────────────────────── */
+body.theme-vespid .rules-icon-allowlist { background: rgba(57, 255, 20, 0.18); color: #39ff14; }
+body.theme-vespid .rules-icon-blocklist { background: rgba(255, 45, 85, 0.18); color: #ff2d55; }
+body.theme-vespid .rule-entry-allowlist { background: rgba(57, 255, 20, 0.10); color: #39ff14; border-color: rgba(57, 255, 20, 0.20); }
+body.theme-vespid .rule-entry-blocklist { background: rgba(255, 230, 0, 0.10); color: #ffe600; border-color: rgba(255, 230, 0, 0.20); }
+
+body.theme-vespid .pack-assign-auto { background: rgba(184, 150, 15, 0.12); color: #b8960f; }
+body.theme-vespid .pack-assign-explicit { background: rgba(255, 170, 0, 0.15); color: #ffaa00; }
+body.theme-vespid .pack-assign-all { background: rgba(85, 170, 255, 0.12); color: #55aaff; }
+
+/* ── Timeline / Recent Events ───────────────────────────────── */
+body.theme-vespid .timeline-item {
+    background: #262626;
+    border-color: var(--border);
+}
+
+body.theme-vespid .timeline-item-danger {
+    background: linear-gradient(90deg, rgba(255, 45, 85, 0.12) 0%, #262626 12%);
+    border-left: 3px solid #ff2d55;
+}
+
+body.theme-vespid .timeline-body code {
+    background: var(--bg-card);
+    color: var(--accent);
+}
+
+body.theme-vespid .timeline-dot-info {
+    box-shadow:
+        0 0 0 2px #262626,
+        0 0 0 3px rgba(255, 230, 0, 0.10);
+}
+body.theme-vespid .timeline-dot-danger {
+    box-shadow:
+        0 0 0 2px #262626,
+        0 0 0 3px rgba(255, 45, 85, 0.15);
+}
+body.theme-vespid .timeline-dot-warning {
+    box-shadow:
+        0 0 0 2px #262626,
+        0 0 0 3px rgba(255, 170, 0, 0.10);
+}
+
+/* Solid badge variants inside blocked timeline rows */
+body.theme-vespid .timeline-item-danger .badge-event-nft-action { --badge-bg-solid: #004d3d; --badge-clr-solid: #00ffcc; }
+
+body.theme-vespid .timeline-item-danger .badge-event-ssh-brute,
+body.theme-vespid .timeline-item-danger .badge-event-ssh-medium-brute,
+body.theme-vespid .timeline-item-danger .badge-event-ssh-slow-brute,
+body.theme-vespid .timeline-item-danger .badge-action-blocked { --badge-bg-solid: #6b0f1f; --badge-clr-solid: #ffd1d8; }
+
+body.theme-vespid .timeline-item-danger .badge-event-port-scan,
+body.theme-vespid .timeline-item-danger .badge-action-detected { --badge-bg-solid: #6b3d00; --badge-clr-solid: #ffdd99; }
+
+body.theme-vespid .timeline-item-danger .badge-event-web-attack,
+body.theme-vespid .timeline-item-danger .badge-event-http-auth-brute { --badge-bg-solid: #6b1a4a; --badge-clr-solid: #ffcce6; }
+
+body.theme-vespid .timeline-item-danger .badge-event-malware-beacon { --badge-bg-solid: #6b0f1f; --badge-clr-solid: #ffd1d8; }
+
+body.theme-vespid .timeline-item-danger .badge-event-dns-tunnel { --badge-bg-solid: #4a004d; --badge-clr-solid: #ffb3ff; }
+
+body.theme-vespid .timeline-item-danger .badge-event-blocklist-hit { --badge-bg-solid: #6b4500; --badge-clr-solid: #ffeebb; }
+
+body.theme-vespid .timeline-country,
+body.theme-vespid .timeline-asn {
+    --tc-clr: #b8960f;
+    background: rgba(255, 230, 0, 0.10);
+    border: 1px solid rgba(255, 230, 0, 0.18);
+}
+body.theme-vespid .timeline-item-danger .timeline-country,
+body.theme-vespid .timeline-item-danger .timeline-asn {
+    background: rgba(255, 45, 85, 0.12);
+    border-color: rgba(255, 45, 85, 0.20);
+    --tc-clr: #ff6b81;
+}
+
+/* ── Flash messages ─────────────────────────────────────────── */
+body.theme-vespid .flash-messages .flash-error {
+    background: rgba(255, 45, 85, 0.10);
+    color: #ffb3bd;
+    border-left-color: var(--danger);
+}
+body.theme-vespid .flash-messages .flash-success {
+    background: rgba(57, 255, 20, 0.10);
+    color: #b3ff99;
+    border-left-color: var(--success);
+}
+body.theme-vespid .flash-messages .flash-info {
+    background: rgba(255, 230, 0, 0.10);
+    color: #fff5b3;
+    border-left-color: var(--accent);
+}
+
+/* ── Toast notifications ────────────────────────────────────── */
+body.theme-vespid .toast-danger {
+    background: rgba(255, 45, 85, 0.10);
+    border-left-color: var(--danger);
+}
+body.theme-vespid .toast-success {
+    border-left-color: var(--success);
+}
+body.theme-vespid .toast-info {
+    border-left-color: var(--accent);
+}
+
+/* ── Notification panel ─────────────────────────────────────── */
+body.theme-vespid .notif-panel {
+    background: var(--bg-card);
+    border-color: rgba(255, 230, 0, 0.22);
+    box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.6),
+        0 0 0 1px rgba(255, 230, 0, 0.08),
+        0 0 30px rgba(255, 230, 0, 0.06);
+}
+body.theme-vespid .notif-clear-btn {
+    color: #ffe600;
+}
+body.theme-vespid .notif-clear-btn:hover {
+    background: rgba(255, 230, 0, 0.10);
+    color: #ffffff;
+}
+body.theme-vespid .notif-item {
+    border-bottom-color: rgba(255, 230, 0, 0.05);
+}
+body.theme-vespid .notif-item:hover {
+    background: rgba(255, 230, 0, 0.04);
+}
+body.theme-vespid .notif-item-danger {
+    border-left-color: #ff2d55;
+    box-shadow: inset 3px 0 0 0 #ff2d55;
+}
+body.theme-vespid .notif-blocked-tag {
+    color: #ffd1d8;
+    background: rgba(255, 45, 85, 0.18);
+}
+body.theme-vespid .notif-item-meta code {
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--accent);
+}
+
+/* ── Modal & log context overrides ──────────────────────────── */
+body.theme-vespid .event-modal-overlay {
+    background: rgba(13, 11, 8, 0.82);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+body.theme-vespid .event-modal {
+    background: #0f1520;
+    border-color: #1a2535;
+    box-shadow:
+        0 24px 48px rgba(0, 0, 0, 0.7),
+        0 0 0 1px rgba(255, 230, 0, 0.12),
+        0 0 50px rgba(255, 230, 0, 0.08);
+}
+body.theme-vespid .event-modal-header {
+    border-bottom-color: #1a2535;
+}
+body.theme-vespid .event-modal-section-title {
+    color: #ffe600;
+    border-bottom-color: rgba(255, 230, 0, 0.25);
+}
+body.theme-vespid .event-modal .badge-action-blocked {
+    --badge-bg-solid: #8b1f32;
+    --badge-clr-solid: #ffffff;
+    box-shadow: 0 0 10px rgba(255, 45, 85, 0.30);
+}
+body.theme-vespid .event-modal-log-lines {
+    background: #0a0a0a;
+    border-color: #1a2535;
+    color: #b8960f;
+}
+body.theme-vespid .event-modal-log-lines .log-line-trigger {
+    background: rgba(255, 230, 0, 0.06);
+    color: #f0e6d0;
+    border-left-color: #ffe600;
+}
+body.theme-vespid .log-context {
+    border-color: #1a2535;
+}
+body.theme-vespid .log-context-lines {
+    background: #0a0a0a;
+    color: #b8960f;
+}
+body.theme-vespid .log-line-trigger {
+    background: rgba(255, 230, 0, 0.06);
+    color: #f0e6d0;
+    border-left-color: #ffe600;
+}
+body.theme-vespid .btn-view-full-context {
+    color: #ffe600;
+}
+body.theme-vespid .btn-view-full-context:hover {
+    color: #f0e6d0;
+}
+
+/* ── Inventory detail page ──────────────────────────────────── */
+body.theme-vespid .detail-section-title {
+    color: var(--text-heading);
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+body.theme-vespid .meta-card {
+    background: var(--bg-input);
+    border-color: var(--border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+body.theme-vespid .meta-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+body.theme-vespid .meta-key {
+    color: var(--accent);
+    opacity: 1;
+}
+
+body.theme-vespid .meta-list-item {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+}
+
+body.theme-vespid .hero-banner {
+    background: linear-gradient(135deg, rgba(255, 230, 0, 0.10) 0%, rgba(245, 166, 35, 0.06) 100%);
+    border-color: rgba(255, 230, 0, 0.22);
+}
+
+body.theme-vespid .section-count {
+    background: rgba(255, 230, 0, 0.14);
+    color: var(--accent);
+}

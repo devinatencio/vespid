@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block title %}Notification Channels — Vespid{% endblock %}
+{% block content %}
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">🔔</div>
+    <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">Notification Channels</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Alert notification destinations
+        </div>
+    </div>
+    <div id="ch-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    <button class="btn btn-primary" onclick="showChannelModal()" style="white-space:nowrap;">+ New Channel</button>
+</div>
+
+<div id="channels-container">
+    <div class="loading">Loading channels…</div>
+</div>
+
+<!-- Channel Modal -->
+<div id="channel-modal-overlay" class="event-modal-overlay" style="display:none;" onclick="closeChannelModal(event)">
+    <div class="event-modal" onclick="event.stopPropagation()">
+        <div class="event-modal-header">
+            <h3 class="event-modal-title" id="channel-modal-title">New Channel</h3>
+            <button class="event-modal-close" onclick="closeChannelModal()">&times;</button>
+        </div>
+        <div class="event-modal-body">
+            <form id="channel-form" onsubmit="saveChannel(event)">
+                <input type="hidden" id="channel-id" value="">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="channel-name" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <select id="channel-type" class="form-input" onchange="toggleChannelConfig()">
+                        <option value="slack">Slack</option>
+                        <option value="discord">Discord</option>
+                        <option value="email">Email</option>
+                        <option value="webhook">Webhook</option>
+                        <option value="pagerduty">PagerDuty</option>
+                    </select>
+                </div>
+                <div id="config-fields"></div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="channel-enabled" checked> Enabled</label>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save Channel</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeChannelModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.ch-stat { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.ch-stat .ch-stat-n { font-weight:700; font-size:0.95rem; line-height:1; }
+.ch-stat .ch-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+</style>
+<script>
+(function() {
+    var configTemplates = {
+        slack: [
+            {key: 'webhook_url', label: 'Webhook URL', type: 'url'},
+            {key: 'channel', label: 'Channel (optional)', type: 'text'}
+        ],
+        discord: [
+            {key: 'webhook_url', label: 'Webhook URL', type: 'url'}
+        ],
+        email: [
+            {key: 'recipients', label: 'Recipients (comma-separated)', type: 'text'},
+            {key: 'from_address', label: 'From Address', type: 'email'},
+            {key: 'smtp_host', label: 'SMTP Host', type: 'text'},
+            {key: 'smtp_port', label: 'SMTP Port (default: 587)', type: 'number'},
+            {key: 'smtp_tls', label: 'TLS Mode', type: 'select', options: [
+                {value: 'starttls', label: 'STARTTLS (port 587)'},
+                {value: 'ssl', label: 'SSL/TLS (port 465)'},
+                {value: 'none', label: 'None (unencrypted)'}
+            ]},
+            {key: 'smtp_user', label: 'SMTP Username (optional)', type: 'text'},
+            {key: 'smtp_password', label: 'SMTP Password (optional)', type: 'password'},
+            {key: 'subject_prefix', label: 'Subject Prefix (e.g. [Vespid])', type: 'text'}
+        ],
+        webhook: [
+            {key: 'url', label: 'URL', type: 'url'},
+            {key: 'method', label: 'Method', type: 'text'},
+            {key: 'headers', label: 'Headers (JSON)', type: 'text'}
+        ],
+        pagerduty: [
+            {key: 'routing_key', label: 'Routing Key', type: 'text'}
+        ]
+    };
+
+    function renderChannelStats(channels) {
+        var total = channels.length;
+        var enabled = 0, disabled = 0;
+        channels.forEach(function(c) { if (c.enabled) enabled++; else disabled++; });
+        var html = '';
+        html += '<div class="ch-stat"><span class="ch-stat-n">' + total + '</span> <span class="ch-stat-l">Total</span></div>';
+        html += '<div class="ch-stat"><span class="ch-stat-n">' + enabled + '</span> <span class="ch-stat-l">Enabled</span></div>';
+        if (disabled > 0) html += '<div class="ch-stat"><span class="ch-stat-n">' + disabled + '</span> <span class="ch-stat-l">Disabled</span></div>';
+        document.getElementById('ch-panel-stats').innerHTML = html;
+    }
+
+    function loadChannels() {
+        fetch('/alerts/api/channels')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var container = document.getElementById('channels-container');
+                var channels = d.channels || [];
+                renderChannelStats(channels);
+                if (!channels.length) {
+                    container.innerHTML = '<div class="empty-state">No notification channels configured.</div>';
+                    return;
+                }
+                var html = '<table class="data-table"><thead><tr>' +
+                    '<th>Enabled</th><th>Name</th><th>Type</th><th>Actions</th></tr></thead><tbody>';
+                channels.forEach(function(c) {
+                    html += '<tr>' +
+                        '<td>' + (c.enabled ? '✅' : '❌') + '</td>' +
+                        '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
+                        '<td><span class="badge">' + c.type + '</span></td>' +
+                        '<td>' +
+                        '  <button class="btn btn-sm btn-secondary" onclick="testChannel(' + c.id + ')">Test</button>' +
+                        '  <button class="btn btn-sm btn-secondary" onclick="editChannel(' + c.id + ')">Edit</button>' +
+                        '  <button class="btn btn-sm btn-danger" onclick="deleteChannel(' + c.id + ')">Delete</button>' +
+                        '</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            })
+            .catch(function() {
+                document.getElementById('channels-container').innerHTML =
+                    '<div class="flash flash-error">Failed to load channels</div>';
+            });
+    }
+
+    window.showChannelModal = function() {
+        document.getElementById('channel-form').reset();
+        document.getElementById('channel-id').value = '';
+        document.getElementById('channel-modal-title').textContent = 'New Channel';
+        document.getElementById('channel-modal-overlay').style.display = 'flex';
+        toggleChannelConfig();
+    };
+
+    window.editChannel = function(id) {
+        fetch('/alerts/api/channels')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var channel = (d.channels || []).find(function(c) { return c.id === id; });
+                if (!channel) return;
+                document.getElementById('channel-id').value = channel.id;
+                document.getElementById('channel-name').value = channel.name;
+                document.getElementById('channel-type').value = channel.type;
+                document.getElementById('channel-enabled').checked = channel.enabled;
+                document.getElementById('channel-modal-title').textContent = 'Edit Channel';
+                toggleChannelConfig();
+                // Fill config fields
+                var config = channel.config || {};
+                setTimeout(function() {
+                    for (var key in config) {
+                        var el = document.getElementById('config-' + key);
+                        if (el) {
+                            if (Array.isArray(config[key])) {
+                                el.value = config[key].join(', ');
+                            } else if (typeof config[key] === 'object') {
+                                el.value = JSON.stringify(config[key]);
+                            } else {
+                                el.value = config[key];
+                            }
+                        }
+                    }
+                }, 50);
+                document.getElementById('channel-modal-overlay').style.display = 'flex';
+            });
+    };
+
+    window.closeChannelModal = function(e) {
+        if (e && e.target !== e.currentTarget) return;
+        document.getElementById('channel-modal-overlay').style.display = 'none';
+    };
+
+    window.toggleChannelConfig = function() {
+        var type = document.getElementById('channel-type').value;
+        var fields = configTemplates[type] || [];
+        var html = '';
+        fields.forEach(function(f) {
+            html += '<div class="form-group">' +
+                '<label>' + escapeHtml(f.label) + '</label>';
+            if (f.type === 'select') {
+                html += '<select id="config-' + f.key + '" class="form-input">';
+                f.options.forEach(function(opt) {
+                    html += '<option value="' + opt.value + '">' + escapeHtml(opt.label) + '</option>';
+                });
+                html += '</select>';
+            } else {
+                html += '<input type="' + f.type + '" id="config-' + f.key + '" class="form-input">';
+            }
+            html += '</div>';
+        });
+        document.getElementById('config-fields').innerHTML = html;
+    };
+
+    window.saveChannel = function(e) {
+        e.preventDefault();
+        var id = document.getElementById('channel-id').value;
+        var type = document.getElementById('channel-type').value;
+        var config = {};
+        var fields = configTemplates[type] || [];
+        fields.forEach(function(f) {
+            var val = document.getElementById('config-' + f.key).value;
+            if (f.key === 'headers') {
+                try { config[f.key] = JSON.parse(val); } catch(e) { config[f.key] = {}; }
+            } else if (f.key === 'recipients') {
+                config[f.key] = val.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+            } else if (f.type === 'number' && val) {
+                config[f.key] = parseInt(val, 10);
+            } else if (val) {
+                config[f.key] = val;
+            }
+        });
+
+        var payload = {
+            name: document.getElementById('channel-name').value,
+            type: type,
+            config: config,
+            enabled: document.getElementById('channel-enabled').checked,
+        };
+
+        var url = id ? '/alerts/api/channels/' + id : '/alerts/api/channels';
+        var method = id ? 'PUT' : 'POST';
+        fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        }).then(function() {
+            closeChannelModal();
+            loadChannels();
+        }).catch(function() {
+            alert('Failed to save channel');
+        });
+    };
+
+    window.testChannel = function(id) {
+        fetch('/alerts/api/channels/' + id + '/test', {method: 'POST'})
+            .then(function(r) { return r.json(); })
+            .then(function(d) { alert('Test notification sent'); })
+            .catch(function() { alert('Test failed'); });
+    };
+
+    window.deleteChannel = function(id) {
+        if (!confirm('Delete this channel?')) return;
+        fetch('/alerts/api/channels/' + id, {method: 'DELETE'})
+            .then(function() { loadChannels(); })
+            .catch(function() { alert('Failed to delete'); });
+    };
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    loadChannels();
+})();
+</script>
+{% endblock %}

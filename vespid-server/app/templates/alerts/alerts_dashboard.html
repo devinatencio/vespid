@@ -1,0 +1,1065 @@
+{% extends "base.html" %}
+{% block title %}Alerts — Vespid{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Alerts</h1>
+</div>
+
+<!-- Summary bar -->
+<div class="summary-bar" id="summaryBar">
+    <div class="stat-card stat-total">
+        <div class="stat-bar"></div>
+        <div class="stat-body">
+            <div class="stat-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+            <div class="stat-main">
+                <span class="stat-value" id="statTotal">—</span>
+                <span class="stat-label">Active Alerts</span>
+            </div>
+        </div>
+    </div>
+    <div class="stat-card stat-critical">
+        <div class="stat-bar"></div>
+        <div class="stat-body">
+            <div class="stat-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+            <div class="stat-main">
+                <span class="stat-value" id="statCritical">—</span>
+                <span class="stat-label">Critical</span>
+            </div>
+        </div>
+    </div>
+    <div class="stat-card stat-warning">
+        <div class="stat-bar"></div>
+        <div class="stat-body">
+            <div class="stat-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+            <div class="stat-main">
+                <span class="stat-value" id="statWarning">—</span>
+                <span class="stat-label">Warning</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab bar -->
+<div class="tabs">
+    <button class="tab active" data-tab="active" onclick="switchTab('active')">Active</button>
+    <button class="tab" data-tab="history" onclick="switchTab('history')">History</button>
+    {% if current_user.role == 'admin' %}
+    <button class="tab" data-tab="channels" onclick="switchTab('channels')">Channels</button>
+    <button class="tab" data-tab="silences" onclick="switchTab('silences')">Silences</button>
+    {% endif %}
+    <div class="live-indicator" id="liveIndicator">
+        <span class="live-dot"></span>
+        <span class="live-text" id="liveText">Updated just now</span>
+    </div>
+</div>
+
+<!-- Tab panels -->
+<div id="tab-active" class="tab-panel" style="display:none;">
+    <div id="activeContent"></div>
+</div>
+
+<div id="tab-history" class="tab-panel" style="display:none;"></div>
+
+{% if current_user.role == 'admin' %}
+<div id="tab-channels" class="tab-panel" style="display:none;"></div>
+<div id="tab-silences" class="tab-panel" style="display:none;"></div>
+{% endif %}
+
+<!-- Channel modal (pre-rendered) -->
+<div class="modal-overlay" id="channelModal" style="display:none;">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="channelModalTitle">New Channel</h3>
+            <button class="modal-close" onclick="closeModal('channelModal')">&times;</button>
+        </div>
+        <form id="channelForm" onsubmit="saveChannel(event)">
+            <input type="hidden" id="channelId" value="">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="channelName" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select id="channelType" class="form-input" onchange="toggleChannelConfig()">
+                    <option value="slack">Slack</option>
+                    <option value="discord">Discord</option>
+                    <option value="email">Email</option>
+                    <option value="webhook">Webhook</option>
+                    <option value="pagerduty">PagerDuty</option>
+                </select>
+            </div>
+            <div id="channelConfigFields"></div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="channelEnabled" checked> Enabled
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Save</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('channelModal')">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Silence modal (pre-rendered) -->
+<div class="modal-overlay" id="silenceModal" style="display:none;">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="silenceModalTitle">New Silence</h3>
+            <button class="modal-close" onclick="closeModal('silenceModal')">&times;</button>
+        </div>
+        <form id="silenceForm" onsubmit="saveSilence(event)">
+            <input type="hidden" id="silenceEditId" value="">
+            <div class="form-group">
+                <label>Rule (optional)</label>
+                <select id="silenceRule" class="form-input"><option value="">All Rules</option></select>
+            </div>
+            <div class="form-group">
+                <label>Matchers</label>
+                <div id="matchersContainer"></div>
+                <button type="button" class="btn btn-sm btn-secondary" style="margin-top:0.5rem;" onclick="addMatcher()">+ Add matcher</button>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Starts</label>
+                    <input type="datetime-local" id="silenceStarts" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Ends</label>
+                    <input type="datetime-local" id="silenceEnds" class="form-input" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Reason</label>
+                <input type="text" id="silenceReason" class="form-input" required>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="silenceSubmitBtn">Create</button>
+                <button type="button" class="btn btn-secondary" onclick="closeModal('silenceModal')">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Toast container -->
+<div id="toastContainer" aria-live="polite"></div>
+
+<style>
+/* ── Stat cards ─────────────────────────────────────── */
+.summary-bar { display: flex; gap: 0.75rem; margin-bottom: 1.25rem; }
+.stat-card {
+    flex: 1; background: var(--bg-card, #1e293b);
+    border: 1px solid var(--border, #334155); border-radius: 10px;
+    overflow: hidden; display: flex; flex-direction: column;
+}
+.stat-card .stat-bar { height: 3px; flex-shrink: 0; }
+.stat-total .stat-bar { background: linear-gradient(90deg, var(--info), color-mix(in srgb, var(--info) 70%, var(--text))); }
+.stat-critical .stat-bar { background: linear-gradient(90deg, var(--danger), color-mix(in srgb, var(--danger) 70%, var(--text))); }
+.stat-warning .stat-bar { background: linear-gradient(90deg, var(--warning), color-mix(in srgb, var(--warning) 70%, var(--text))); }
+
+.stat-card .stat-body {
+    padding: 0.85rem 1rem 0.5rem; display: flex; align-items: flex-start; gap: 0.65rem;
+}
+.stat-card .stat-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 2px; transition: box-shadow 0.2s;
+}
+.stat-critical .stat-icon-pulse { animation: critPulse 1.5s ease-in-out infinite; box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 30%, transparent); }
+.stat-warning .stat-icon-pulse { animation: warnPulse 1.5s ease-in-out infinite; box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 35%, transparent); }
+@keyframes critPulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 40%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 0%, transparent); } 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 0%, transparent); } }
+@keyframes warnPulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 45%, transparent); } 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--warning) 0%, transparent); } 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 0%, transparent); } }
+.stat-total .stat-icon { background: color-mix(in srgb, var(--info) 12%, transparent); color: var(--info); }
+.stat-critical .stat-icon { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.stat-warning .stat-icon { background: color-mix(in srgb, var(--warning) 12%, transparent); color: var(--warning); }
+
+.stat-card .stat-main { display: flex; flex-direction: column; min-width: 0; }
+.stat-card .stat-value { font-size: 1.6rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; }
+.stat-total .stat-value { color: var(--text, #e2e8f0); }
+.stat-critical .stat-value { color: var(--danger); }
+.stat-warning .stat-value { color: var(--warning); }
+.stat-card .stat-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted, #94a3b8); font-weight: 600; margin-top: 0.05rem; }
+
+/* ── Live indicator ────────────────────────────────── */
+.live-indicator {
+    display: flex; align-items: center; gap: 0.4rem;
+    margin-left: auto; padding-left: 1rem;
+    border-left: 1px solid var(--border, #334155);
+}
+.live-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--success); flex-shrink: 0;
+    animation: livePulse 2s ease-in-out infinite;
+}
+@keyframes livePulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 40%, transparent); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 0%, transparent); }
+}
+.live-text { font-size: 0.72rem; color: var(--text-muted, #94a3b8); font-weight: 500; white-space: nowrap; }
+
+/* ── Tabs ───────────────────────────────────────────── */
+.tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border, #334155);
+    margin-bottom: 1.25rem; align-items: center;
+}
+.tab {
+    padding: 0.5rem 1rem; background: none; border: none;
+    color: var(--text-muted, #94a3b8); font-size: 0.82rem; font-weight: 500;
+    cursor: pointer; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; transition: color 0.15s, border-color 0.15s;
+}
+.tab:hover { color: var(--text, #e2e8f0); }
+.tab.active { color: var(--accent, #f59e0b); border-bottom-color: var(--accent, #f59e0b); }
+
+/* ── Table ──────────────────────────────────────────── */
+.table-wrap {
+    border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; overflow-x: auto;
+}
+.table-wrap table { width: 100%; border-collapse: collapse; }
+.table-wrap th {
+    background: var(--bg-secondary); padding: 0.6rem 0.75rem;
+    font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-muted); font-weight: 600; text-align: left;
+    white-space: nowrap; border-bottom: 1px solid var(--border);
+}
+.table-wrap td {
+    padding: 0.55rem 0.75rem; font-size: 0.82rem; color: var(--text);
+    border-bottom: 1px solid var(--border); vertical-align: middle;
+}
+.table-wrap td:first-child { padding-left: 1rem; }
+.table-wrap th:first-child { padding-left: 1rem; }
+.table-wrap tbody tr:hover { background: var(--bg-card-hover); }
+.table-wrap tbody tr:last-child td { border-bottom: none; }
+.table-wrap tr.tr-critical { box-shadow: inset 3px 0 0 var(--danger); }
+.table-wrap tr.tr-warning { box-shadow: inset 3px 0 0 var(--warning); }
+.table-wrap tr.tr-acked { box-shadow: inset 3px 0 0 var(--text-muted); background: color-mix(in srgb, var(--text-muted) 4%, transparent); }
+.table-wrap tr.tr-acked:hover { box-shadow: inset 3px 0 0 var(--text-muted); background: color-mix(in srgb, var(--text-muted) 8%, transparent); }
+.time-cell { white-space: nowrap; font-size: 0.78rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.history-rule-cell { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.2rem; }
+.history-extra-labels { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.3rem; }
+.history-label-pill { display: inline-block; font-size: 0.65rem; padding: 0.1rem 0.35rem; border-radius: 4px; background: var(--bg-secondary); color: var(--text-muted); border: 1px solid var(--border); white-space: nowrap; }
+
+/* ── Filters bar ────────────────────────────────────── */
+.filters-bar {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+.filters-bar .filter-group {
+    display: flex; gap: 0.15rem; background: var(--bg-secondary);
+    border-radius: 6px; padding: 2px; border: 1px solid var(--border);
+}
+.filters-bar .filter-btn {
+    padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid transparent;
+    background: transparent; color: var(--text-muted);
+    font-size: 0.72rem; cursor: pointer; font-weight: 500; line-height: 1.4;
+}
+.filters-bar .filter-btn:hover { color: var(--text); }
+.filters-bar .filter-btn.active { background: var(--accent); color: var(--button-text, #000000); }
+.search-wrap {
+    position: relative; flex: 1; min-width: 180px;
+}
+.search-wrap .search-icon {
+    position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+}
+.search-wrap input {
+    width: 100%; padding: 0.35rem 1.6rem 0.35rem 1.5rem;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 0.8rem; outline: none;
+}
+.search-wrap input:focus { border-color: var(--accent); }
+.search-wrap input::placeholder { color: var(--text-muted); }
+.search-clear {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--text-muted);
+    font-size: 0.9rem; cursor: pointer; padding: 2px 4px; border-radius: 3px;
+    display: none; line-height: 1;
+}
+.search-clear:hover { color: var(--text); }
+
+/* ── Badges / pills ─────────────────────────────────── */
+.label-pill {
+    display: inline-block; padding: 0.1rem 0.45rem; font-size: 0.72rem;
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent); border-radius: 4px;
+    color: var(--text-muted); margin: 0 0.1rem; white-space: nowrap;
+}
+.label-pill-mountpoint {
+    display: inline-block; padding: 0.1rem 0.45rem; font-size: 0.72rem;
+    background: color-mix(in srgb, var(--success) 18%, transparent); border-radius: 4px;
+    color: var(--success); margin: 0 0.1rem; white-space: nowrap;
+    font-weight: 600; border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+}
+.badge-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 0.3rem;
+}
+.badge-dot.critical { background: var(--danger); }
+.badge-dot.warning { background: var(--warning); }
+.badge-dot.ok { background: var(--success); }
+.sev-critical { font-size: 0.72rem; background: color-mix(in srgb, var(--danger) 20%, transparent); color: var(--danger); padding:0.15rem 0.5rem; border-radius:5px; font-weight:700; white-space:nowrap; border-left: 2px solid var(--danger); }
+.sev-warning { font-size: 0.72rem; background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); padding:0.15rem 0.5rem; border-radius:5px; font-weight:700; white-space:nowrap; border-left: 2px solid var(--warning); }
+.label-more {
+    display: inline-block; font-size: 0.7rem; padding: 0.05rem 0.4rem;
+    background: var(--accent, #f59e0b); color: var(--bg); border-radius: 4px;
+    cursor: pointer; font-weight: 600; margin-left: 0.15rem;
+}
+.label-more:hover { opacity: 0.8; }
+.label-extra { display: none; }
+
+/* ── Pagination ─────────────────────────────────────── */
+.pagination {
+    display: flex; gap: 0.25rem; justify-content: center; margin-top: 0.75rem;
+}
+.pagination button {
+    padding: 0.3rem 0.65rem; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--text-muted); font-size: 0.78rem;
+    cursor: pointer; font-weight: 500;
+}
+.pagination button:hover { border-color: var(--accent); color: var(--accent); }
+.pagination button.active { background: var(--accent); color: var(--button-text, #000000); border-color: var(--accent); }
+
+/* ── Toast ──────────────────────────────────────────── */
+#toastContainer {
+    position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 2000;
+    display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none;
+}
+.toast {
+    pointer-events: auto; padding: 0.6rem 1rem; border-radius: 8px;
+    font-size: 0.82rem; font-weight: 500; box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+    animation: toastIn 0.2s ease-out;
+    border: 1px solid var(--border, #334155);
+}
+.toast-success { background: color-mix(in srgb, var(--success) 22%, var(--bg-card)); color: var(--success); border-color: var(--success); }
+.toast-error { background: color-mix(in srgb, var(--danger) 22%, var(--bg-card)); color: var(--danger); border-color: var(--danger); }
+.toast-info { background: color-mix(in srgb, var(--info) 22%, var(--bg-card)); color: var(--info); border-color: var(--info); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.toast-out { animation: toastOut 0.2s ease-in forwards; }
+@keyframes toastOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(8px); } }
+
+/* ── Loading skeleton ───────────────────────────────── */
+.skeleton {
+    background: linear-gradient(90deg, var(--bg-secondary, #0f172a) 25%, var(--bg-card, #1e293b) 50%, var(--bg-secondary, #0f172a) 75%);
+    background-size: 200% 100%; animation: shimmer 1.2s ease-in-out infinite;
+    border-radius: 6px;
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+.skeleton-row { height: 2.4rem; margin-bottom: 0.35rem; }
+.skeleton-row:first-child { height: 1.8rem; margin-bottom: 0.5rem; }
+
+/* ── Modal ──────────────────────────────────────────── */
+.modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.65); display: flex;
+    align-items: center; justify-content: center; padding: 1.5rem;
+}
+.modal-content {
+    background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155);
+    border-radius: 12px; width: 100%; max-width: 500px;
+    max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    padding: 1.5rem 1.75rem;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+.modal-header h3 { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.modal-close {
+    background: none; border: none; color: var(--text-muted, #94a3b8);
+    font-size: 1.3rem; cursor: pointer; padding: 0.15rem 0.4rem; border-radius: 6px; line-height: 1;
+}
+.modal-close:hover { background: var(--bg-card-hover, #1e293b); color: var(--text, #e2e8f0); }
+
+/* ── Confirm dialog ─────────────────────────────────── */
+.confirm-box {
+    background: var(--bg-card, #1e293b); border: 1px solid var(--border, #334155);
+    border-radius: 10px; padding: 1rem 1.25rem;
+    display: flex; align-items: center; gap: 0.75rem;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+.confirm-box .confirm-msg { flex: 1; font-size: 0.85rem; color: var(--text, #e2e8f0); }
+.confirm-box .confirm-actions { display: flex; gap: 0.35rem; }
+
+/* ── Action buttons ──────────────────────────────────── */
+.btn-ack { background: var(--accent, #f59e0b); color: var(--bg); font-weight: 600; }
+.btn-ack:hover { background: var(--accent-hover, #d97706); color: var(--bg); }
+.btn-resolve { background: var(--success, #22c55e); color: var(--bg); font-weight: 600; }
+.btn-resolve:hover { background: color-mix(in srgb, var(--success) 85%, var(--text)); }
+
+/* ── Empty state ────────────────────────────────────── */
+.empty-state {
+    text-align: center; padding: 3.5rem 1.5rem;
+    color: var(--text-muted, #94a3b8);
+    background: var(--bg-secondary, #0f172a);
+    border: 1px dashed var(--border, #334155);
+    border-radius: 12px;
+    margin: 1rem 0;
+}
+.empty-state .empty-icon { font-size: 2.4rem; margin-bottom: 0.75rem; opacity: 0.6; }
+.empty-state .empty-text { font-size: 0.9rem; opacity: 0.7; }
+
+/* ── Misc helpers ───────────────────────────────────── */
+.text-muted { color: var(--text-muted, #94a3b8); }
+.time-cell { white-space: nowrap; font-size: 0.78rem; color: var(--text-muted, #94a3b8); }
+.action-cell { white-space: nowrap; }
+.table-btn { padding: 0.2rem 0.5rem; font-size: 0.72rem; border-radius: 5px; }
+</style>
+
+<script>
+var ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
+var INITIAL_TAB = '{{ initial_tab|default("active") }}';
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(isoStr) {
+    if (!isoStr) return '\u2014';
+    var d = new Date(isoStr), sec = Math.floor((new Date() - d) / 1000);
+    if (sec < 0) sec = 0;
+    if (sec < 60) return sec + 's ago';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+    if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+    return Math.floor(sec / 86400) + 'd ago';
+}
+
+function durationStr(fired, resolved) {
+    if (!fired || !resolved) return '\u2014';
+    var sec = Math.floor((new Date(resolved) - new Date(fired)) / 1000);
+    if (sec < 0) return '\u2014';
+    if (sec < 60) return sec + 's';
+    if (sec < 3600) return Math.floor(sec / 60) + 'm';
+    if (sec < 86400) return Math.floor(sec / 3600) + 'h';
+    return Math.floor(sec / 86400) + 'd';
+}
+
+var _labelKeys = ['hostname','agent_id','condition_name','metric_type','mountpoint','over_threshold'];
+
+function renderLabels(labels) {
+    if (!labels) return '\u2014';
+    var keys = Object.keys(labels);
+    if (!keys.length) return '\u2014';
+    var primary = [], extra = [];
+    keys.forEach(function(k) {
+        if (_labelKeys.indexOf(k) !== -1) {
+            var cls = (k === 'mountpoint') ? 'label-pill-mountpoint' : 'label-pill';
+            primary.push('<span class="' + cls + '">' + escapeHtml(k) + '=' + escapeHtml(labels[k]) + '</span>');
+        } else {
+            extra.push('<span class="label-pill">' + escapeHtml(k) + '=' + escapeHtml(labels[k]) + '</span>');
+        }
+    });
+    var html = primary.join(' ');
+    if (extra.length) {
+        html += ' <span class="label-more" onclick="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline\'">+' + extra.length + '</span>';
+        html += '<span class="label-extra" style="display:none;"> ' + extra.join(' ') + '</span>';
+    }
+    return html;
+}
+
+function toLocalISO(d) {
+    function p(n){return n<10?'0'+n:n}
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+}
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+
+function toast(msg, type) {
+    type = type || 'info';
+    var c = document.getElementById('toastContainer');
+    var el = document.createElement('div');
+    el.className = 'toast toast-' + type;
+    el.textContent = msg;
+    c.appendChild(el);
+    setTimeout(function() {
+        el.classList.add('toast-out');
+        setTimeout(function() { el.remove(); }, 200);
+    }, 3000);
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────────
+
+function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+// ── Confirm inline ─────────────────────────────────────────────────────────────
+
+function confirmAction(msg, onConfirm) {
+    var container = document.getElementById('toastContainer');
+    var el = document.createElement('div');
+    el.className = 'confirm-box';
+    el.innerHTML = '<span class="confirm-msg">' + escapeHtml(msg) + '</span>' +
+        '<div class="confirm-actions">' +
+        '<button class="btn btn-sm btn-primary" id="confirmYes">Yes</button>' +
+        '<button class="btn btn-sm btn-secondary" id="confirmNo">Cancel</button></div>';
+    container.appendChild(el);
+    document.getElementById('confirmYes').onclick = function() { el.remove(); onConfirm(); };
+    document.getElementById('confirmNo').onclick = function() { el.remove(); };
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────────
+
+var _loaded = {};
+var _lastActiveUpdate = null;
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.style.display = 'none'; });
+    document.querySelectorAll('.tab').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    document.getElementById('tab-' + tab).style.display = '';
+    if (!_loaded[tab]) {
+        _loaded[tab] = true;
+        if (tab === 'active') loadActiveAlerts();
+        else if (tab === 'history') loadHistory();
+        else if (tab === 'channels') loadChannels();
+        else if (tab === 'silences') loadSilences();
+    }
+}
+
+// ── Active Alerts ──────────────────────────────────────────────────────────────
+
+function renderSkeleton(target) {
+    target.innerHTML =
+        '<div style="padding:0.75rem;"><div class="skeleton skeleton-row" style="width:40%;"></div>' +
+        '<div class="skeleton skeleton-row" style="width:100%;"></div>' +
+        '<div class="skeleton skeleton-row" style="width:100%;"></div>' +
+        '<div class="skeleton skeleton-row" style="width:70%;"></div></div>';
+}
+
+function loadActiveAlerts() {
+    var container = document.getElementById('activeContent');
+    renderSkeleton(container);
+    fetch('/alerts/api/active')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var alerts = d.alerts || [];
+            updateSummary(alerts);
+            _lastActiveUpdate = new Date();
+            document.getElementById('liveText').textContent = 'Updated just now';
+            if (!alerts.length) {
+                container.innerHTML =
+                    '<div class="empty-state"><div class="empty-icon">\u2705</div>' +
+                    '<div class="empty-text">No active alerts \u2014 everything looks good</div></div>';
+                return;
+            }
+            var html = '<div class="table-wrap"><table><thead><tr>' +
+                '<th>Status</th><th>Fired</th><th>Severity</th><th>Rule</th><th>Labels</th><th>Value</th><th class="action-cell">Actions</th>' +
+                '</tr></thead><tbody>';
+            alerts.forEach(function(a) {
+                var cls = a.severity === 'critical' ? 'critical' : 'warning';
+                var isAcked = a.state === 'acknowledged';
+                var rowClass = 'tr-' + cls + (isAcked ? ' tr-acked' : '');
+                var statusHtml = isAcked
+                    ? '<span class="badge badge-ack">Ack</span>'
+                    : '<span class="sev-' + cls + '">' +
+                      '<span class="badge-dot ' + cls + '" style="margin-right:0.25rem;vertical-align:middle;"></span>' +
+                      escapeHtml(a.severity) + '</span>';
+                var sevDot = '<span class="badge-dot ' + cls + '"></span>';
+                html += '<tr class="' + rowClass + '">' +
+                    '<td>' + statusHtml + '</td>' +
+                    '<td class="time-cell">' + timeAgo(a.fired_at) + '</td>' +
+                    '<td>' + sevDot + '</td>' +
+                    '<td><strong>' + escapeHtml(a.rule_name) + '</strong></td>' +
+                    '<td>' + renderLabels(a.labels) + '</td>' +
+                    '<td>' + (a.value !== undefined ? Number(a.value).toFixed(2) : '\u2014') + '</td>' +
+                    '<td class="action-cell">' +
+                    (isAcked ? '' : '<button class="btn btn-sm table-btn btn-ack" onclick="ackAlert(' + a.id + ')">Ack</button> ') +
+                    '<button class="btn btn-sm table-btn btn-resolve" onclick="resolveAlert(' + a.id + ')">Resolve</button>' +
+                    '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            container.innerHTML = '<div class="flash flash-error">Failed to load alerts</div>';
+        });
+}
+
+function updateSummary(alerts) {
+    var total = alerts.length;
+    var firing = alerts.filter(function(a) { return a.state === 'firing'; });
+    var crit = firing.filter(function(a) { return a.severity === 'critical'; }).length;
+    var warn = firing.length - crit;
+    document.getElementById('statTotal').textContent = total;
+    document.getElementById('statCritical').textContent = alerts.filter(function(a) { return a.severity === 'critical'; }).length;
+    document.getElementById('statWarning').textContent = total - alerts.filter(function(a) { return a.severity === 'critical'; }).length;
+    document.querySelector('.stat-critical .stat-icon').classList.toggle('stat-icon-pulse', crit > 0);
+    document.querySelector('.stat-warning .stat-icon').classList.toggle('stat-icon-pulse', warn > 0);
+}
+
+window.ackAlert = function(id) {
+    fetch('/alerts/api/events/' + id + '/ack', {method: 'POST'})
+        .then(function(r) {
+            if (!r.ok) throw new Error();
+            toast('Alert acknowledged', 'success');
+            loadActiveAlerts();
+        })
+        .catch(function() { toast('Failed to acknowledge alert', 'error'); });
+};
+
+window.resolveAlert = function(id) {
+    fetch('/alerts/api/events/' + id + '/resolve', {method: 'POST'})
+        .then(function(r) {
+            if (!r.ok) throw new Error();
+            toast('Alert resolved', 'success');
+            loadActiveAlerts();
+        })
+        .catch(function() { toast('Failed to resolve alert', 'error'); });
+};
+
+setInterval(function() {
+    if (document.getElementById('tab-active').style.display !== 'none') {
+        loadActiveAlerts();
+    }
+}, 30000);
+
+// Tick the live indicator every 10s
+setInterval(function() {
+    if (_lastActiveUpdate && document.getElementById('tab-active').style.display !== 'none') {
+        document.getElementById('liveText').textContent = 'Updated ' + timeAgo(_lastActiveUpdate.toISOString());
+    }
+}, 10000);
+
+// ── History ────────────────────────────────────────────────────────────────────
+
+var _historyState = { page: 1, filter: 'all', search: '' };
+var _searchTimer = null;
+
+function loadHistory() {
+    var container = document.getElementById('tab-history');
+    renderSkeleton(container);
+    var params = 'page=' + _historyState.page + '&per_page=50';
+    if (_historyState.filter !== 'all') params += '&filter=' + _historyState.filter;
+    if (_historyState.search) params += '&q=' + encodeURIComponent(_historyState.search);
+    fetch('/alerts/api/history?' + params)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            renderHistory(container, d.events || [], d);
+        })
+        .catch(function() {
+            container.innerHTML = '<div class="flash flash-error">Failed to load history</div>';
+        });
+}
+
+function renderHistory(container, events, d) {
+    var searchVal = _historyState.search;
+    var html = '<div class="filters-bar">' +
+        '<div class="filter-group">' +
+        '<button class="filter-btn' + (_historyState.filter === 'all' ? ' active' : '') + '" onclick="setHistoryFilter(\'all\')">All</button>' +
+        '<button class="filter-btn' + (_historyState.filter === '24h' ? ' active' : '') + '" onclick="setHistoryFilter(\'24h\')">24h</button>' +
+        '<button class="filter-btn' + (_historyState.filter === '7d' ? ' active' : '') + '" onclick="setHistoryFilter(\'7d\')">7d</button>' +
+        '<button class="filter-btn' + (_historyState.filter === '30d' ? ' active' : '') + '" onclick="setHistoryFilter(\'30d\')">30d</button>' +
+        '</div>' +
+        '<div class="search-wrap">' +
+        '<svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
+        '<input type="text" id="historySearch" placeholder="Search by rule or label\u2026" value="' + escapeHtml(searchVal) + '" oninput="onSearchInput()">' +
+        '<button class="search-clear" id="searchClear" onclick="clearSearch()">&times;</button>' +
+        '</div>' +
+        '</div>';
+
+    if (!events.length) {
+        container.innerHTML = html +
+            '<div class="empty-state"><div class="empty-icon">\uD83D\uDCCB</div>' +
+            '<div class="empty-text">No alert history to show.</div></div>';
+        return;
+    }
+
+    html += '<div class="table-wrap"><table><thead><tr>' +
+        '<th>Status</th><th>Rule</th><th>Host</th><th>Group</th><th>Metric</th><th>Value</th><th>Fired</th><th>Resolved</th><th>Duration</th>' +
+        '</tr></thead><tbody>';
+
+    events.forEach(function(e) {
+        var labels = e.labels || {};
+        var host = labels.hostname || '\u2014';
+        var group = labels.group_name || '\u2014';
+        var metric = labels.metric_type || '\u2014';
+        var rule = e.rule_name || '\u2014';
+
+        var extraLabels = [];
+        for (var k in labels) {
+            if (['hostname','agent_id','condition_name','metric_type','mountpoint','over_threshold','group_name','condition_name'].indexOf(k) === -1) {
+                extraLabels.push('<span class="history-label-pill">' + escapeHtml(k) + '=' + escapeHtml(labels[k]) + '</span>');
+            }
+        }
+
+        var stateBadge = e.state === 'acknowledged'
+            ? '<span class="badge badge-warning">Acknowledged</span>'
+            : '<span class="badge badge-success">Resolved</span>';
+
+        var rowClass = e.state === 'acknowledged' ? ' tr-acked' : '';
+        html += '<tr class="' + rowClass + '">' +
+            '<td>' + stateBadge + '</td>' +
+            '<td>' +
+                '<div class="history-rule-cell"><strong>' + escapeHtml(rule) + '</strong></div>' +
+                (extraLabels.length ? '<div class="history-extra-labels">' + extraLabels.join('') + '</div>' : '') +
+            '</td>' +
+            '<td>' + escapeHtml(host) + '</td>' +
+            '<td>' + escapeHtml(group) + '</td>' +
+            '<td>' + escapeHtml(metric) + '</td>' +
+            '<td class="time-cell">' + (e.value !== undefined ? Number(e.value).toFixed(2) : '\u2014') + '</td>' +
+            '<td class="time-cell">' + timeAgo(e.fired_at) + '</td>' +
+            '<td class="time-cell">' + (e.resolved_at ? timeAgo(e.resolved_at) : '\u2014') + '</td>' +
+            '<td class="time-cell">' + durationStr(e.fired_at, e.resolved_at) + '</td></tr>';
+    });
+
+    html += '</tbody></table></div>';
+
+    if (d.total_pages > 1) {
+        html += '<div class="pagination">';
+        for (var i = 1; i <= d.total_pages; i++) {
+            html += '<button class="' + (i === d.page ? 'active' : '') + '" onclick="goHistoryPage(' + i + ')">' + i + '</button>';
+        }
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
+
+    // Sync clear button visibility
+    var clearBtn = document.getElementById('searchClear');
+    if (clearBtn) clearBtn.style.display = _historyState.search ? '' : 'none';
+}
+
+window.onSearchInput = function() {
+    var val = document.getElementById('historySearch').value.trim();
+    var clearBtn = document.getElementById('searchClear');
+    if (clearBtn) clearBtn.style.display = val ? '' : 'none';
+    clearTimeout(_searchTimer);
+    _searchTimer = setTimeout(function() {
+        _historyState.search = val;
+        _historyState.page = 1;
+        loadHistory();
+    }, 300);
+};
+
+window.clearSearch = function() {
+    document.getElementById('historySearch').value = '';
+    document.getElementById('searchClear').style.display = 'none';
+    clearTimeout(_searchTimer);
+    _historyState.search = '';
+    _historyState.page = 1;
+    loadHistory();
+};
+
+window.setHistoryFilter = function(f) {
+    _historyState.filter = f;
+    _historyState.page = 1;
+    loadHistory();
+};
+
+window.goHistoryPage = function(page) {
+    _historyState.page = page;
+    loadHistory();
+};
+
+// ── Channels (admin) ───────────────────────────────────────────────────────────
+
+var channelConfigTemplates = {
+    slack: [{key:'webhook_url', label:'Webhook URL', type:'url'}, {key:'channel', label:'Channel (optional)', type:'text'}],
+    discord: [{key:'webhook_url', label:'Webhook URL', type:'url'}],
+    email: [{key:'recipients', label:'Recipients (comma-separated)', type:'text'}, {key:'subject_prefix', label:'Subject Prefix', type:'text'}],
+    webhook: [{key:'url', label:'URL', type:'url'}, {key:'method', label:'Method', type:'text'}, {key:'headers', label:'Headers (JSON)', type:'text'}],
+    pagerduty: [{key:'routing_key', label:'Routing Key', type:'text'}]
+};
+
+function loadChannels() {
+    if (!ADMIN) return;
+    var container = document.getElementById('tab-channels');
+    renderSkeleton(container);
+    fetch('/alerts/api/channels')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var channels = d.channels || [];
+            if (!channels.length) {
+                container.innerHTML =
+                    '<div style="margin-bottom:0.75rem;"><button class="btn btn-primary btn-sm" onclick="showChannelModal()">+ New Channel</button></div>' +
+                    '<div class="empty-state"><div class="empty-icon">\uD83D\uDCEB</div>' +
+                    '<div class="empty-text">No notification channels configured.</div></div>';
+                return;
+            }
+            var html = '<div style="margin-bottom:0.75rem;"><button class="btn btn-primary btn-sm" onclick="showChannelModal()">+ New Channel</button></div>';
+            html += '<div class="table-wrap"><table><thead><tr>' +
+                '<th>Name</th><th>Type</th><th>Status</th><th class="action-cell">Actions</th></tr></thead><tbody>';
+            channels.forEach(function(c) {
+                html += '<tr>' +
+                    '<td><strong>' + escapeHtml(c.name) + '</strong></td>' +
+                    '<td><span class="label-pill">' + escapeHtml(c.type) + '</span></td>' +
+                    '<td>' + (c.enabled ? '<span style="color:var(--success);">On</span>' : '<span class="text-muted">Off</span>') + '</td>' +
+                    '<td class="action-cell">' +
+                    '<button class="btn btn-sm btn-secondary table-btn" onclick="testChannel(' + c.id + ')">Test</button> ' +
+                    '<button class="btn btn-sm btn-secondary table-btn" onclick="editChannel(' + c.id + ')">Edit</button> ' +
+                    '<button class="btn btn-sm btn-danger table-btn" onclick="deleteChannel(' + c.id + ')">Delete</button>' +
+                    '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            container.innerHTML = '<div class="flash flash-error">Failed to load channels</div>';
+        });
+}
+
+window.showChannelModal = function(ch) {
+    ch = ch || {};
+    document.getElementById('channelId').value = ch.id || '';
+    document.getElementById('channelName').value = ch.name || '';
+    document.getElementById('channelType').value = ch.type || 'slack';
+    document.getElementById('channelEnabled').checked = ch.enabled !== false;
+    document.getElementById('channelModalTitle').textContent = ch.id ? 'Edit Channel' : 'New Channel';
+    toggleChannelConfig();
+    setTimeout(function() {
+        var config = ch.config || {};
+        for (var key in config) {
+            var el = document.getElementById('cfg-' + key);
+            if (el) el.value = typeof config[key] === 'object' ? JSON.stringify(config[key]) : config[key];
+        }
+    }, 50);
+    openModal('channelModal');
+};
+
+window.editChannel = function(id) {
+    fetch('/alerts/api/channels')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var ch = (d.channels || []).find(function(c) { return c.id === id; });
+            if (ch) showChannelModal(ch);
+        });
+};
+
+window.toggleChannelConfig = function() {
+    var type = document.getElementById('channelType').value;
+    var fields = channelConfigTemplates[type] || [];
+    var html = '';
+    fields.forEach(function(f) {
+        html += '<div class="form-group"><label>' + f.label + '</label><input type="' + f.type + '" id="cfg-' + f.key + '" class="form-input"></div>';
+    });
+    document.getElementById('channelConfigFields').innerHTML = html;
+};
+
+window.saveChannel = function(e) {
+    e.preventDefault();
+    var id = document.getElementById('channelId').value;
+    var type = document.getElementById('channelType').value;
+    var config = {};
+    (channelConfigTemplates[type] || []).forEach(function(f) {
+        var val = document.getElementById('cfg-' + f.key).value;
+        if (f.key === 'headers') { try { config[f.key] = JSON.parse(val); } catch(e) { config[f.key] = {}; } }
+        else if (f.key === 'recipients') { config[f.key] = val.split(',').map(function(s) { return s.trim(); }).filter(Boolean); }
+        else { config[f.key] = val; }
+    });
+    var url = id ? '/alerts/api/channels/' + id : '/alerts/api/channels';
+    var method = id ? 'PUT' : 'POST';
+    fetch(url, {method: method, headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: document.getElementById('channelName').value, type: type, config: config, enabled: document.getElementById('channelEnabled').checked})})
+        .then(function(r) {
+            if (!r.ok) throw new Error();
+            closeModal('channelModal');
+            toast(id ? 'Channel updated' : 'Channel created', 'success');
+            loadChannels();
+        })
+        .catch(function() { toast('Failed to save channel', 'error'); });
+};
+
+window.testChannel = function(id) {
+    fetch('/alerts/api/channels/' + id + '/test', {method: 'POST'})
+        .then(function(r) {
+            if (!r.ok) throw new Error();
+            toast('Test notification sent', 'success');
+        })
+        .catch(function() { toast('Test failed', 'error'); });
+};
+
+window.deleteChannel = function(id) {
+    confirmAction('Delete this channel?', function() {
+        fetch('/alerts/api/channels/' + id, {method: 'DELETE'})
+            .then(function(r) {
+                if (!r.ok) throw new Error();
+                toast('Channel deleted', 'success');
+                loadChannels();
+            })
+            .catch(function() { toast('Failed to delete', 'error'); });
+    });
+};
+
+// ── Silences (admin) ───────────────────────────────────────────────────────────
+
+function loadSilences() {
+    if (!ADMIN) return;
+    var container = document.getElementById('tab-silences');
+    renderSkeleton(container);
+    fetch('/alerts/api/silences?include_expired=true')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var silences = d.silences || [];
+            if (!silences.length) {
+                container.innerHTML =
+                    '<div style="margin-bottom:0.75rem;"><button class="btn btn-primary btn-sm" onclick="showSilenceModal()">+ New Silence</button></div>' +
+                    '<div class="empty-state"><div class="empty-icon">\uD83D\uDD07</div>' +
+                    '<div class="empty-text">No silences configured.</div></div>';
+                return;
+            }
+            var now = new Date();
+            var html = '<div style="margin-bottom:0.75rem;"><button class="btn btn-primary btn-sm" onclick="showSilenceModal()">+ New Silence</button></div>';
+            html += '<div class="table-wrap"><table><thead><tr>' +
+                '<th>Status</th><th>Rule</th><th>Matchers</th><th>Reason</th><th>Starts</th><th>Ends</th><th class="action-cell">Actions</th>' +
+                '</tr></thead><tbody>';
+            silences.forEach(function(s) {
+                var start = new Date(s.starts_at), end = new Date(s.ends_at);
+                var active = now >= start && now <= end;
+                var statusHtml = active
+                    ? '<span style="color:var(--success);">Active</span>'
+                    : '<span class="text-muted">Expired</span>';
+                var matchers = (s.matchers || []).map(function(m) {
+                    return '<span class="label-pill">' + escapeHtml(m.label) + escapeHtml(m.op) + escapeHtml(m.value) + '</span>';
+                }).join(' ');
+                var fmt = {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'};
+                html += '<tr>' +
+                    '<td>' + statusHtml + '</td>' +
+                    '<td>' + (s.rule_id ? 'Rule #' + s.rule_id : 'All Rules') + '</td>' +
+                    '<td>' + matchers + '</td>' +
+                    '<td>' + escapeHtml(s.reason) + '</td>' +
+                    '<td class="time-cell">' + start.toLocaleString(undefined, fmt) + '</td>' +
+                    '<td class="time-cell">' + end.toLocaleString(undefined, fmt) + '</td>' +
+                    '<td class="action-cell"><button class="btn btn-sm btn-secondary table-btn" onclick="editSilence(' + s.id + ')" style="margin-right:0.35rem;">Edit</button><button class="btn btn-sm btn-danger table-btn" onclick="deleteSilence(' + s.id + ')">Remove</button></td></tr>';
+            });
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            container.innerHTML = '<div class="flash flash-error">Failed to load silences</div>';
+        });
+}
+
+var editingSilenceId = null;
+
+window.showSilenceModal = function() {
+    editingSilenceId = null;
+    document.getElementById('silenceEditId').value = '';
+    document.getElementById('silenceForm').reset();
+    document.getElementById('matchersContainer').innerHTML = '';
+    document.getElementById('silenceModalTitle').textContent = 'New Silence';
+    document.getElementById('silenceSubmitBtn').textContent = 'Create';
+    addMatcher();
+    var now = new Date();
+    document.getElementById('silenceStarts').value = toLocalISO(now);
+    document.getElementById('silenceEnds').value = toLocalISO(new Date(now.getTime() + 3600000));
+    openModal('silenceModal');
+    // Load rules for the dropdown
+    fetch('/alerts/api/rules')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var sel = document.getElementById('silenceRule');
+            sel.innerHTML = '<option value="">All Rules</option>';
+            (d.rules || []).forEach(function(rule) {
+                var opt = document.createElement('option');
+                opt.value = rule.id; opt.textContent = rule.name;
+                sel.appendChild(opt);
+            });
+        });
+};
+
+window.addMatcher = function() {
+    var c = document.getElementById('matchersContainer');
+    var div = document.createElement('div');
+    div.className = 'form-row matcher-row';
+    div.style.cssText = 'gap:0.35rem; margin-bottom:0.35rem;';
+    div.innerHTML =
+        '<input type="text" placeholder="label" class="form-input matcher-label" style="flex:1;">' +
+        '<select class="form-input matcher-op" style="width:auto; flex:0 0 60px;"><option value="=">=</option><option value="!=">!=</option><option value="=~">=~</option><option value="!~">!~</option></select>' +
+        '<input type="text" placeholder="value" class="form-input matcher-value" style="flex:1;">' +
+        '<button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()" style="font-size:0.8rem;">\u2715</button>';
+    c.appendChild(div);
+};
+
+window.editSilence = function(id) {
+    editingSilenceId = id;
+    document.getElementById('silenceEditId').value = id;
+    document.getElementById('silenceForm').reset();
+    document.getElementById('matchersContainer').innerHTML = '';
+    document.getElementById('silenceModalTitle').textContent = 'Edit Silence';
+    document.getElementById('silenceSubmitBtn').textContent = 'Update';
+
+    fetch('/alerts/api/silences/' + id)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var s = d.silence || d;
+            document.getElementById('silenceStarts').value = toLocalISO(new Date(s.starts_at));
+            document.getElementById('silenceEnds').value = toLocalISO(new Date(s.ends_at));
+            document.getElementById('silenceReason').value = s.reason || '';
+            if (s.rule_id) document.getElementById('silenceRule').value = s.rule_id;
+            (s.matchers || []).forEach(function(m) {
+                var c = document.getElementById('matchersContainer');
+                var div = document.createElement('div');
+                div.className = 'form-row matcher-row';
+                div.style.cssText = 'gap:0.35rem; margin-bottom:0.35rem;';
+                div.innerHTML =
+                    '<input type="text" placeholder="label" class="form-input matcher-label" style="flex:1;" value="' + escapeHtml(m.label) + '">' +
+                    '<select class="form-input matcher-op" style="width:auto; flex:0 0 60px;">' +
+                    '<option value="="' + (m.op === '=' ? ' selected' : '') + '>=</option>' +
+                    '<option value="!="' + (m.op === '!=' ? ' selected' : '') + '>!=</option>' +
+                    '<option value="=~"' + (m.op === '=~' ? ' selected' : '') + '>=~</option>' +
+                    '<option value="!~"' + (m.op === '!~' ? ' selected' : '') + '>!~</option>' +
+                    '</select>' +
+                    '<input type="text" placeholder="value" class="form-input matcher-value" style="flex:1;" value="' + escapeHtml(m.value) + '">' +
+                    '<button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()" style="font-size:0.8rem;">\u2715</button>';
+                c.appendChild(div);
+            });
+            openModal('silenceModal');
+        })
+        .catch(function() { toast('Failed to load silence', 'error'); });
+};
+
+window.saveSilence = function(e) {
+    e.preventDefault();
+    var matchers = [];
+    document.querySelectorAll('.matcher-row').forEach(function(row) {
+        var label = row.querySelector('.matcher-label').value.trim();
+        var op = row.querySelector('.matcher-op').value;
+        var value = row.querySelector('.matcher-value').value.trim();
+        if (label && value) matchers.push({label:label, op:op, value:value});
+    });
+    var payload = {matchers: matchers, rule_id: document.getElementById('silenceRule').value || null,
+        starts_at: new Date(document.getElementById('silenceStarts').value).toISOString(),
+        ends_at: new Date(document.getElementById('silenceEnds').value).toISOString(),
+        reason: document.getElementById('silenceReason').value};
+    var method = editingSilenceId ? 'PUT' : 'POST';
+    var url = editingSilenceId ? '/alerts/api/silences/' + editingSilenceId : '/alerts/api/silences';
+    fetch(url, {method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
+        .then(function(r) {
+            if (!r.ok) throw new Error();
+            closeModal('silenceModal');
+            var label = editingSilenceId ? 'updated' : 'created';
+            toast('Silence ' + label, 'success');
+            editingSilenceId = null;
+            loadSilences();
+        })
+        .catch(function() { toast('Failed to save silence', 'error'); });
+};
+
+window.deleteSilence = function(id) {
+    confirmAction('Remove this silence?', function() {
+        fetch('/alerts/api/silences/' + id, {method: 'DELETE'})
+            .then(function(r) { if (!r.ok) throw new Error(); toast('Silence removed', 'success'); loadSilences(); })
+            .catch(function() { toast('Failed to remove silence', 'error'); });
+    });
+};
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Always load active alerts so the summary bar is populated even when
+    // landing directly on another tab (e.g. history); zeros render as '0'.
+    _loaded['active'] = true;
+    loadActiveAlerts();
+    switchTab(INITIAL_TAB);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.modal-overlay').forEach(function(o) { o.style.display = 'none'; });
+        }
+    });
+    // Close modals on overlay click
+    document.querySelectorAll('.modal-overlay').forEach(function(o) {
+        o.addEventListener('click', function(e) { if (e.target === e.currentTarget) this.style.display = 'none'; });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,7 @@
+<tr class="node-row">
+    <td>{{ node.node_id }}</td>
+    <td>{{ node.last_event_at or '—' }}</td>
+    <td>{{ node.total_events }}</td>
+    <td><span class="badge badge-{{ node.health }}">{{ node.health }}</span></td>
+    <td>{{ node.location or '—' }}</td>
+</tr>

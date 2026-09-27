@@ -1,0 +1,18 @@
+{
+    "SECRET_KEY": "change-me-to-a-random-string",
+    "DATABASE_PATH": "/var/lib/shieldnode-server/shieldnode.db",
+    "HOST": "0.0.0.0",
+    "PORT": 8000,
+    "DEBUG": false,
+    "SESSION_LIFETIME_HOURS": 24,
+    "EVENTS_PER_PAGE": 50,
+    "SSE_HISTORY_SIZE": 500,
+    "NODE_HEALTHY_SECONDS": 300,
+    "NODE_DEGRADED_SECONDS": 900,
+    "RATELIMIT_ENABLED": true,
+    "RATELIMIT_EVENTS_INGEST": "60 per minute",
+    "RATELIMIT_HEARTBEAT": "30 per minute",
+    "RATELIMIT_COMMANDS": "60 per minute",
+    "RATELIMIT_EXPORT": "10 per minute",
+    "RATELIMIT_STORAGE_URI": "memory://"
+}

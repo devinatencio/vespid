@@ -1,0 +1,7 @@
+# Vespid test dependencies
+# Install with: pip install -r requirements-test.txt
+-r requirements-agent.txt
+pytest==8.3.4
+hypothesis==6.122.3
+ruff>=0.9.0
+mypy>=1.13

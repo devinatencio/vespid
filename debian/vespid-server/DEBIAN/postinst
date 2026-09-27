@@ -1,0 +1,73 @@
+#!/bin/bash
+set -e
+
+INSTALL_DIR=/opt/vespid-server
+CONFIG_DIR=/etc/vespid-server
+DATA_DIR=/var/lib/vespid-server
+LOG_DIR=/var/log/vespid-server
+
+# Set up Python virtual environment and install dependencies
+if [ ! -d "$INSTALL_DIR/.venv" ]; then
+    python3 -m venv "$INSTALL_DIR/.venv"
+fi
+"$INSTALL_DIR/.venv/bin/pip" install --quiet --upgrade pip
+"$INSTALL_DIR/.venv/bin/pip" install --quiet -r "$INSTALL_DIR/requirements.txt"
+
+# Fix ownership
+chown -R vespid:vespid "$INSTALL_DIR"
+chown -R vespid:vespid "$DATA_DIR"
+chown -R vespid:vespid "$LOG_DIR"
+chown -R vespid:vespid "$CONFIG_DIR"
+
+# Generate a random SECRET_KEY on first install (must be before init-db)
+if [ "$1" = "configure" ] && [ -z "$2" ]; then
+    SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
+    if [ -f "$CONFIG_DIR/config.yaml" ]; then
+        sed -i "s/change-me-to-a-random-string/${SECRET}/" "$CONFIG_DIR/config.yaml"
+    fi
+fi
+
+# Initialize the database (auto-discovers config.yaml)
+su -s /bin/bash vespid -c \
+    "cd $INSTALL_DIR && .venv/bin/python vespid_server.py --config $CONFIG_DIR/config.yaml init-db" \
+    2>/dev/null || true
+
+# Auto-create admin user on first install
+if [ "$1" = "configure" ] && [ -z "$2" ]; then
+    su -s /bin/bash vespid -c \
+        "cd $INSTALL_DIR && .venv/bin/python vespid_server.py --config $CONFIG_DIR/config.yaml create-admin --non-interactive" 2>&1 || true
+    ADMIN_OUTPUT=""
+    if [ -f "$CONFIG_DIR/.admin-password" ]; then
+        ADMIN_OUTPUT=$(cat "$CONFIG_DIR/.admin-password")
+        rm -f "$CONFIG_DIR/.admin-password"
+    fi
+fi
+
+# Reload systemd and enable the service
+systemctl daemon-reload
+systemctl enable vespid-server.service || true
+
+echo ""
+echo "=== Vespid Server installed ==="
+echo ""
+echo "Configuration:  $CONFIG_DIR/config.yaml"
+echo "Database:       $DATA_DIR/vespid.db"
+echo ""
+if [ -n "${ADMIN_OUTPUT:-}" ]; then
+    echo "Admin password: $ADMIN_OUTPUT"
+    echo ""
+fi
+echo "Next steps:"
+echo "  1. Edit $CONFIG_DIR/config.yaml (SECRET_KEY is auto-generated)"
+echo "  2. Start service: sudo systemctl start vespid-server"
+echo "  3. Login at http://localhost:8000/ (place nginx/Caddy in front for TLS)"
+echo "  4. View logs:    journalctl -u vespid-server -f"
+echo ""
+echo "For MySQL backend, see: $INSTALL_DIR/schema_mysql.sql"
+echo ""
+echo "GeoIP: DB-IP Lite databases are pre-installed in $CONFIG_DIR/geoip/"
+echo "  (country, city, ASN — updated monthly). To use MaxMind instead,"
+echo "  replace with GeoLite2-Country.mmdb, GeoLite2-City.mmdb, GeoLite2-ASN.mmdb."
+echo ""
+
+exit 0

@@ -1,0 +1,687 @@
+{% extends "base.html" %}
+{% block title %}Counters &amp; Blocks — Vespid Server{% endblock %}
+{% block content %}
+<h1 class="page-title">📊 Counters &amp; Blocks</h1>
+
+<!-- Controls -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <div class="counters-controls">
+        <div class="form-group" style="margin-bottom:0;">
+            <label for="node-filter">Filter by Node</label>
+            <select id="node-filter" onchange="loadCounters(); loadCounterSummary();">
+                <option value="">All Nodes</option>
+                {% for node in nodes %}
+                <option value="{{ node.node_id }}">{{ node.node_id|node_display_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="counters-legend">
+            <span class="text-muted">Data from last heartbeat · one bar per nftables set · stacked by node</span>
+        </div>
+    </div>
+</div>
+
+<!-- Historical Block Deltas -->
+<div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+        <h2 class="card-title" style="margin-bottom:0;">Historical Block Deltas</h2>
+        <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+            <div class="btn-group" id="history-range-btns" style="display:inline-flex; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;">
+                <button type="button" class="btn-range" data-range="1h" style="padding:0.35rem 0.75rem; background:var(--bg-input); color:var(--text-muted); border:none; border-right:1px solid var(--border); cursor:pointer; font-size:0.85rem;">1h</button>
+                <button type="button" class="btn-range" data-range="6h" style="padding:0.35rem 0.75rem; background:var(--bg-input); color:var(--text-muted); border:none; border-right:1px solid var(--border); cursor:pointer; font-size:0.85rem;">6h</button>
+                <button type="button" class="btn-range active" data-range="24h" style="padding:0.35rem 0.75rem; background:var(--accent); color:#fff; border:none; border-right:1px solid var(--border); cursor:pointer; font-size:0.85rem;">24h</button>
+                <button type="button" class="btn-range" data-range="7d" style="padding:0.35rem 0.75rem; background:var(--bg-input); color:var(--text-muted); border:none; cursor:pointer; font-size:0.85rem;">7d</button>
+            </div>
+            <span class="text-muted" style="font-size:0.8rem;">Node filter above also applies here</span>
+        </div>
+    </div>
+    <div class="chart-container" id="history-chart-container" style="height:350px; position:relative;">
+        <canvas id="historyChart"></canvas>
+    </div>
+    <div id="history-empty" style="display:none; text-align:center; padding:2rem 0; color:var(--text-muted);">
+        <div style="font-size:2rem; margin-bottom:0.5rem;">📈</div>
+        <p>No historical data available for the selected time range.</p>
+    </div>
+    <div id="history-lifetime-totals" style="display:none; margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border);">
+        <h3 style="font-size:0.9rem; color:var(--text-muted); margin-bottom:0.5rem;">Lifetime Totals (in range)</h3>
+        <div id="history-lifetime-totals-content" style="display:flex; flex-wrap:wrap; gap:0.75rem;"></div>
+    </div>
+</div>
+
+<!-- Block Set Stats (new panel) -->
+<div class="card">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+        <h2 class="card-title" style="margin-bottom:0;">Block Set Performance</h2>
+        <span class="text-muted" style="font-size:0.8rem;">Fleet blocks created per detection rule over the selected period</span>
+    </div>
+    <div id="block-set-stats-table">
+        <div class="empty-state">
+            <div class="empty-state-icon">🔒</div>
+            <p>Loading block set stats…</p>
+        </div>
+    </div>
+</div>
+
+<!-- Chart -->
+<div class="card">
+    <h2 class="card-title">Packets by Set (stacked by node)</h2>
+    <p style="margin-top:-0.5rem; margin-bottom:1rem; font-size:0.85rem; color:var(--warning);">⚠ Sets with 0 packets are hidden.</p>
+    <div class="chart-container" id="counters-chart-container" style="height:450px;">
+        <canvas id="countersChart"></canvas>
+    </div>
+</div>
+
+<!-- Summary Table -->
+<div class="card">
+    <h2 class="card-title">Counter Summary</h2>
+    <div id="counters-table">
+        <div class="empty-state">
+            <div class="empty-state-icon">📊</div>
+            <p>Loading counter data…</p>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='chart.min.js') }}"></script>
+<script>
+var countersChart = null;
+
+function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtNum(n) {
+    return n.toLocaleString();
+}
+
+function fmtBytes(n) {
+    var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(1)) + ' ' + units[i];
+}
+
+function friendlySetName(raw) {
+    var display = raw;
+    var icon = '';
+    if (display.indexOf('shield_feed_') === 0) {
+        display = display.substring(12);
+        icon = '📋 ';
+    } else if (display.indexOf('shield_local') === 0) {
+        display = display.substring(12);
+        if (display.charAt(0) === '_') display = display.substring(1);
+        icon = '🔒 ';
+        if (!display) display = 'Local Blocks';
+    }
+    display = display.replace(/_/g, ' ').trim();
+    display = display.replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    return icon + display;
+}
+
+
+function loadCounters() {
+    var nodeId = document.getElementById('node-filter').value;
+    var url = '{{ url_for("dashboard.counters_data") }}';
+    if (nodeId) url += '?node_id=' + encodeURIComponent(nodeId);
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderChart(data);
+        })
+        .catch(function(err) {
+            console.error('Failed to load counters:', err);
+        });
+
+    // Also reload history chart when node filter changes
+    if (typeof loadHistory === 'function') {
+        loadHistory();
+    }
+}
+
+function loadCounterSummary() {
+    var range = getSelectedRange();
+    var nodeId = document.getElementById('node-filter').value;
+    var url = '{{ url_for("dashboard.counters_summary") }}?range=' + encodeURIComponent(range);
+    if (nodeId) url += '&node_id=' + encodeURIComponent(nodeId);
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderTable(data);
+        })
+        .catch(function(err) {
+            console.error('Failed to load counter summary:', err);
+        });
+}
+
+function renderChart(data) {
+    var theme = getChartThemeColors();
+    var ctx = document.getElementById('countersChart').getContext('2d');
+
+    // Adjust chart height based on number of sets
+    var barCount = data.labels.length || 1;
+    var minHeight = Math.max(300, barCount * 42 + 80);
+    document.getElementById('counters-chart-container').style.height = minHeight + 'px';
+
+    if (countersChart) {
+        countersChart.destroy();
+    }
+
+    if (!data.labels.length) {
+        document.getElementById('counters-chart-container').innerHTML =
+            '<div class="empty-state"><div class="empty-state-icon">📊</div>' +
+            '<p>No counter data available yet. Nodes report counters with each heartbeat.</p></div>';
+        return;
+    }
+
+    // Re-create canvas if it was replaced by empty state
+    var container = document.getElementById('counters-chart-container');
+    if (!container.querySelector('canvas')) {
+        container.innerHTML = '<canvas id="countersChart"></canvas>';
+        ctx = document.getElementById('countersChart').getContext('2d');
+    }
+
+    countersChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.labels,
+            datasets: data.datasets
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: data.datasets.length > 1,
+                    position: 'top',
+                    labels: { color: theme.textMuted, font: { size: 11 } }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return ctx.dataset.label + ': ' + fmtNum(ctx.raw) + ' packets';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: { color: theme.gridLine },
+                    ticks: {
+                        color: theme.textMuted,
+                        callback: function(v) { return fmtNum(v); }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Packets',
+                        color: theme.textMuted
+                    }
+                },
+                y: {
+                    stacked: true,
+                    grid: { display: false },
+                    ticks: {
+                        color: theme.textHeading,
+                        crossAlign: 'far',
+                        font: { family: "'Inter', 'Segoe UI', sans-serif", size: 13, weight: 'bold' },
+                        padding: 8
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderTable(data) {
+    var el = document.getElementById('counters-table');
+
+    if (!data.summary || !data.summary.length) {
+        el.innerHTML =
+            '<div class="empty-state"><div class="empty-state-icon">📊</div>' +
+            '<p>No counter data available yet.</p></div>';
+        return;
+    }
+
+    var html = '<table><thead><tr>' +
+        '<th>Set</th><th>Total Packets</th><th>Total Bytes</th><th>Nodes</th>' +
+        '</tr></thead><tbody>';
+
+    var totalPkts = 0, totalBytes = 0;
+    for (var i = 0; i < data.summary.length; i++) {
+        var row = data.summary[i];
+        totalPkts += row.packets;
+        totalBytes += row.bytes;
+
+        var setDisplay = friendlySetName(row.set);
+
+        var pktStyle = '';
+        if (row.packets === 0) pktStyle = ' style="color:#64748b"';
+        else if (row.packets > 10000) pktStyle = ' style="color:#f87171;font-weight:700"';
+        else if (row.packets > 1000) pktStyle = ' style="color:#facc15;font-weight:700"';
+        else pktStyle = ' style="color:#4ade80"';
+
+        html += '<tr>' +
+            '<td><code>' + setDisplay + '</code></td>' +
+            '<td' + pktStyle + '>' + fmtNum(row.packets) + '</td>' +
+            '<td>' + fmtBytes(row.bytes) + '</td>' +
+            '<td>' + row.nodes + '</td>' +
+            '</tr>';
+    }
+
+    html += '</tbody></table>';
+    html += '<p class="text-muted" style="margin-top:0.5rem;">Total: ' +
+        fmtNum(totalPkts) + ' packets, ' + fmtBytes(totalBytes) + '</p>';
+
+    el.innerHTML = html;
+}
+
+// --- History Chart Controls ---
+function getSelectedRange() {
+    var active = document.querySelector('#history-range-btns .btn-range.active');
+    return active ? active.getAttribute('data-range') : '24h';
+}
+
+// Button click handlers for time range
+(function() {
+    var btns = document.querySelectorAll('#history-range-btns .btn-range');
+    for (var i = 0; i < btns.length; i++) {
+        btns[i].addEventListener('click', function() {
+            // Remove active from all
+            var all = document.querySelectorAll('#history-range-btns .btn-range');
+            for (var j = 0; j < all.length; j++) {
+                all[j].classList.remove('active');
+                all[j].style.background = 'var(--bg-input)';
+                all[j].style.color = 'var(--text-muted)';
+            }
+            // Set active on clicked
+            this.classList.add('active');
+            this.style.background = 'var(--accent)';
+            this.style.color = getChartThemeColors().isLight ? '#000' : '#fff';
+            // Reload all time-dependent panels
+            if (typeof loadHistory === 'function') {
+                loadHistory();
+            }
+            if (typeof loadBlockSetStats === 'function') {
+                loadBlockSetStats();
+            }
+            if (typeof loadCounterSummary === 'function') {
+                loadCounterSummary();
+            }
+        });
+    }
+})();
+
+// --- History Line Chart ---
+var historyChart = null;
+function getHistoryColors() {
+    return getChartPalette();
+}
+
+function loadHistory() {
+    var range = getSelectedRange();
+    var nodeId = document.getElementById('node-filter').value;
+    var url = '{{ url_for("dashboard.counters_history") }}?range=' + encodeURIComponent(range);
+    if (nodeId) {
+        url += '&node_id=' + encodeURIComponent(nodeId);
+    }
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderHistoryChart(data);
+        })
+        .catch(function(err) {
+            console.error('Failed to load history:', err);
+        });
+}
+
+function renderHistoryChart(data) {
+    var canvas = document.getElementById('historyChart');
+    var emptyMsg = document.getElementById('history-empty');
+    var container = document.getElementById('history-chart-container');
+    var lifetimeSection = document.getElementById('history-lifetime-totals');
+    var lifetimeContent = document.getElementById('history-lifetime-totals-content');
+
+    // Destroy previous chart instance
+    if (historyChart) {
+        historyChart.destroy();
+        historyChart = null;
+    }
+
+    // Check if we have data
+    var hasData = data.labels && data.labels.length > 0 && data.datasets && data.datasets.length > 0;
+
+    if (!hasData) {
+        canvas.style.display = 'none';
+        emptyMsg.style.display = 'block';
+        lifetimeSection.style.display = 'none';
+        return;
+    }
+
+    // Ensure canvas is visible and properly sized before rendering
+    emptyMsg.style.display = 'none';
+    canvas.style.display = 'block';
+
+    // Re-create canvas if needed (fixes rendering after hide/show cycle)
+    if (canvas.width === 0 || canvas.height === 0) {
+        var parent = canvas.parentNode;
+        var newCanvas = document.createElement('canvas');
+        newCanvas.id = 'historyChart';
+        parent.replaceChild(newCanvas, canvas);
+        canvas = newCanvas;
+    }
+
+    var theme = getChartThemeColors();
+
+    // Build Chart.js datasets with distinct colors and reset markers
+    var chartDatasets = [];
+    var colorIdx = 0;
+    for (var i = 0; i < data.datasets.length; i++) {
+        var ds = data.datasets[i];
+        var resets = ds.resets || [];
+
+        // Skip datasets where all values are zero (no activity in range)
+        var hasNonZero = false;
+        for (var k = 0; k < ds.data.length; k++) {
+            if (ds.data[k] !== 0) { hasNonZero = true; break; }
+        }
+        if (!hasNonZero) continue;
+
+        var historyColors = getHistoryColors();
+        var color = historyColors[colorIdx % historyColors.length];
+        colorIdx++;
+
+        // Build pointRadius and pointBackgroundColor arrays for reset markers
+        var pointRadiusArr = [];
+        var pointBgColorArr = [];
+        for (var j = 0; j < ds.data.length; j++) {
+            if (resets[j]) {
+                pointRadiusArr.push(8);
+                pointBgColorArr.push(getSemanticColors().danger);
+            } else {
+                pointRadiusArr.push(3);
+                pointBgColorArr.push(color);
+            }
+        }
+
+        chartDatasets.push({
+            label: ds.label,
+            data: ds.data,
+            borderColor: color,
+            backgroundColor: color + '1a',
+            tension: 0.3,
+            pointRadius: pointRadiusArr,
+            pointBackgroundColor: pointBgColorArr,
+            pointHoverRadius: 6,
+            borderWidth: 2,
+            fill: false
+        });
+    }
+
+    // If all datasets were filtered out (all zeros), show empty state
+    if (chartDatasets.length === 0) {
+        canvas.style.display = 'none';
+        emptyMsg.style.display = 'block';
+        lifetimeSection.style.display = 'none';
+        return;
+    }
+
+    // Format labels for display
+    var displayLabels = data.labels.map(function(ts) {
+        var normalized = ts.replace(' ', 'T');
+        if (normalized.indexOf('Z') === -1 && normalized.indexOf('+') === -1) {
+            normalized += 'Z';
+        }
+        var d = new Date(normalized);
+        if (isNaN(d.getTime())) {
+            return ts.substring(5, 16);
+        }
+        var month = (d.getMonth() + 1).toString().padStart(2, '0');
+        var day = d.getDate().toString().padStart(2, '0');
+        var hours = d.getHours().toString().padStart(2, '0');
+        var mins = d.getMinutes().toString().padStart(2, '0');
+        return month + '/' + day + ' ' + hours + ':' + mins;
+    });
+
+    var ctx = canvas.getContext('2d');
+    historyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: displayLabels,
+            datasets: chartDatasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: theme.textMuted,
+                        font: { size: 11 },
+                        usePointStyle: true,
+                        pointStyle: 'circle'
+                    }
+                },
+                tooltip: {
+                    enabled: true,
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        title: function(tooltipItems) {
+                            if (tooltipItems.length > 0) {
+                                var idx = tooltipItems[0].dataIndex;
+                                return data.labels[idx];
+                            }
+                            return '';
+                        },
+                        label: function(ctx) {
+                            var setName = ctx.dataset.label || '';
+                            var value = ctx.parsed.y;
+                            var dsIndex = ctx.datasetIndex;
+                            var ptIndex = ctx.dataIndex;
+                            var resets = data.datasets[dsIndex] ? data.datasets[dsIndex].resets : [];
+                            var suffix = (resets && resets[ptIndex]) ? ' \u26a0\ufe0f RESET' : '';
+                            return setName + ': ' + fmtNum(value) + ' packets' + suffix;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    display: true,
+                    grid: { color: theme.gridLine },
+                    ticks: {
+                        color: theme.textMuted,
+                        maxRotation: 45,
+                        maxTicksLimit: 12,
+                        font: { size: 10 }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Time',
+                        color: theme.textMuted
+                    }
+                },
+                y: {
+                    display: true,
+                    beginAtZero: true,
+                    grid: { color: theme.gridLine },
+                    ticks: {
+                        color: theme.textMuted,
+                        callback: function(v) { return fmtNum(v); }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Packet Deltas',
+                        color: theme.textMuted
+                    }
+                }
+            }
+        }
+    });
+
+    // Render lifetime totals (ranked)
+    if (data.lifetime_totals && Object.keys(data.lifetime_totals).length > 0) {
+        lifetimeSection.style.display = 'block';
+        var html = '';
+
+        // Sort by total descending (highest first)
+        var sorted = Object.keys(data.lifetime_totals)
+            .filter(function(k) { return data.lifetime_totals[k] > 0; })
+            .sort(function(a, b) { return data.lifetime_totals[b] - data.lifetime_totals[a]; });
+
+        var maxTotal = sorted.length ? data.lifetime_totals[sorted[0]] : 0;
+
+        var rankColors = ['#f59e0b', '#94a3b8', '#cd7f32'];  // gold, silver, bronze
+        var theme = getChartThemeColors();
+
+        for (var k = 0; k < sorted.length; k++) {
+            var setLabel = sorted[k];
+            var total = data.lifetime_totals[setLabel];
+            var rank = k + 1;
+            var rankColor = rank < 4 ? rankColors[rank - 1] : theme.textMuted;
+            var rankBadge = '<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:' + rankColor + ';color:#fff;font-size:0.65rem;font-weight:700;">' + rank + '</span>';
+
+            var barWidth = (total / maxTotal) * 100;
+            if (barWidth < 8) barWidth = 8;
+
+            html += '<span style="display:inline-flex; align-items:center; gap:0.4rem; background:var(--bg-input); padding:0.3rem 0.7rem; border-radius:var(--radius); font-size:0.85rem;">' +
+                rankBadge +
+                '<div style="width:50px; height:5px; background:var(--border); border-radius:3px; overflow:hidden; flex-shrink:0;">' +
+                '<div style="height:100%; width:' + barWidth.toFixed(0) + '%; background:' + rankColor + '; border-radius:3px;"></div>' +
+                '</div>' +
+                '<strong style="color:var(--text-heading);">' + setLabel + '</strong>' +
+                '<span style="color:var(--text-muted);">' + fmtNum(total) + ' pkts</span>' +
+                '</span>';
+        }
+        lifetimeContent.innerHTML = html || '<span class="text-muted">No active sets in range</span>';
+        lifetimeSection.style.display = html ? 'block' : 'none';
+    } else {
+        lifetimeSection.style.display = 'none';
+    }
+}
+
+// --- Block Set Stats ---
+function loadBlockSetStats() {
+    var range = getSelectedRange();
+    var url = '{{ url_for("dashboard.counters_block_set_stats") }}?range=' + encodeURIComponent(range);
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            renderBlockSetStats(data);
+        })
+        .catch(function(err) {
+            console.error('Failed to load block set stats:', err);
+        });
+}
+
+function renderBlockSetStats(data) {
+    var el = document.getElementById('block-set-stats-table');
+
+    if (!data || !data.length) {
+        el.innerHTML =
+            '<div class="empty-state"><div class="empty-state-icon">🔒</div>' +
+            '<p>No fleet blocks in this period.</p></div>';
+        return;
+    }
+
+    // Find the max block count for the mini bar scale
+    var maxBlocks = 0;
+    for (var i = 0; i < data.length; i++) {
+        if (data[i].total_blocks > maxBlocks) maxBlocks = data[i].total_blocks;
+    }
+
+    var html = '<table><thead><tr>' +
+        '<th>Block Rule</th>' +
+        '<th style="text-align:right;">Total</th>' +
+        '<th style="text-align:center;">Active</th>' +
+        '<th style="text-align:center;">Expired</th>' +
+        '<th style="text-align:right;">Removed</th>' +
+        '<th style="text-align:right;">Unique IPs</th>' +
+        '</tr></thead><tbody>';
+
+    for (var i = 0; i < data.length; i++) {
+        var row = data[i];
+        var displayName = row.rule_name
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, function(c) { return c.toUpperCase(); })
+            .trim();
+
+        // Mini bar width relative to max
+        var barWidth = (row.total_blocks / maxBlocks) * 100;
+        if (barWidth < 5) barWidth = 5;  // minimum visible bar
+
+        html += '<tr>' +
+            '<td style="white-space:nowrap;">' +
+            '<div style="display:flex; align-items:center; gap:0.5rem;">' +
+            '<div style="flex-shrink:0; width:80px; height:6px; background:var(--border); border-radius:3px; overflow:hidden;">' +
+            '<div style="height:100%; width:' + barWidth.toFixed(0) + '%; background:linear-gradient(90deg, var(--accent), #6366f1); border-radius:3px; transition:width 0.4s ease;"></div>' +
+            '</div>' +
+            '<span style="font-size:0.9rem; font-weight:600; color:var(--text-heading);">' + escapeHtml(displayName) + '</span>' +
+            '</div>' +
+            '</td>' +
+            '<td style="text-align:right; font-weight:700; color:var(--text-heading);">' + fmtNum(row.total_blocks) + '</td>' +
+            '<td style="text-align:center;">' +
+            (row.active > 0
+                ? '<span class="badge" style="background:var(--success); color:#fff;">' + row.active + '</span>'
+                : '<span class="text-muted">0</span>') +
+            '</td>' +
+            '<td style="text-align:center;">' +
+            (row.expired > 0
+                ? '<span class="badge" style="background:var(--text-muted); color:#fff;">' + row.expired + '</span>'
+                : '<span class="text-muted">0</span>') +
+            '</td>' +
+            '<td style="text-align:right;">' + fmtNum(row.removed) + '</td>' +
+            '<td style="text-align:right;">' + fmtNum(row.unique_ips) + '</td>' +
+            '</tr>';
+    }
+
+    html += '</tbody></table>';
+
+    var totalBlocks = 0, totalActive = 0, totalExpired = 0;
+    for (var i = 0; i < data.length; i++) {
+        totalBlocks += data[i].total_blocks;
+        totalActive += data[i].active;
+        totalExpired += data[i].expired;
+    }
+    html += '<p class="text-muted" style="margin-top:0.5rem;">Total blocks: ' +
+        fmtNum(totalBlocks) +
+        ' · Currently active: ' + totalActive +
+        ' · Expired: ' + totalExpired +
+        ' · Rules: ' + data.length +
+        '</p>';
+
+    el.innerHTML = html;
+}
+
+// Load on page ready
+loadCounters();
+loadCounterSummary();
+loadHistory();
+loadBlockSetStats();
+
+// Re-render charts when the theme changes so axis/grid colors pick up the new palette
+if (document.body) {
+    document.body.addEventListener('vespid:themechange', function() {
+        loadCounters();
+        loadCounterSummary();
+        loadBlockSetStats();
+    });
+}
+
+// Auto-refresh every 5 minutes
+setInterval(function() {
+    loadCounters();
+}, 5 * 60 * 1000);
+</script>
+{% endblock %}

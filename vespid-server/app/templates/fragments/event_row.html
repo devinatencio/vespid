@@ -1,0 +1,90 @@
+
+<tr class="event-row fade-in" onclick="toggleEventDetail(this)" data-event-id="{{ event.event_id }}" style="cursor: pointer;" title="Click to expand">
+    <td><span data-ts="{{ event.timestamp }}">{{ event.timestamp }}</span></td>
+    <td><code class="node-name">{{ event.node_id|node_display_name }}</code></td>
+    <td><code class="ip-copy" onclick="event.stopPropagation(); copyIpToClipboard('{{ event.source_ip }}', this)" title="Click to copy">{{ event.source_ip }}</code> <a href="#" class="ip-intel-icon" onclick="event.stopPropagation(); event.preventDefault(); openIpIntelModal('{{ event.source_ip }}')" title="View IP intelligence">🔍</a>{% if event.fleet_blocked %} <span class="badge badge-fleet">fleet</span>{% endif %}</td>
+    <td>
+        <span class="badge badge-event-{{ event.event_type|lower|replace('_','-') }}">{{ event.event_type }}</span>
+        {% if event.action_taken and event.action_taken != 'OBSERVED' %}
+        <span class="badge badge-action-{{ event.action_taken|lower }}">{{ event.action_taken }}</span>
+        {% endif %}
+        {% set meta = event.metadata|from_json %}
+        {% if meta.matched_rules %}
+            {% for rule in meta.matched_rules %}
+            <span class="badge badge-parser" title="Matched rule: {{ rule }}">{{ rule }}</span>
+            {% endfor %}
+        {% elif meta.parser %}
+        <span class="badge badge-parser" title="Matched rule: {{ meta.parser }}">{{ meta.parser }}</span>
+        {% endif %}
+    </td>
+    <td>{{ (event.geo_country|country_name) if event.geo_country else '—' }}</td>
+    {% set geo = event.geo_data|from_json if event.geo_data is string else (event.geo_data or {}) %}
+    {% set asn = event.geo_asn|default('', true) or geo.asn|default('', true) %}
+    {% set org = event.geo_org|default('', true) or geo.org|default('', true) %}
+    <td class="col-asn">
+        {%- if asn or org -%}
+            <span title="{{ asn }}{% if asn and org %} — {% endif %}{{ org }}">{{ org or asn }}</span>
+        {%- else -%}
+            —
+        {%- endif -%}
+    </td>
+    </tr>
+<tr class="event-detail-row" style="display: none;">
+    <td colspan="6" style="padding: 0;">
+        <div class="event-detail-content">
+            {% set meta_parsed = event.metadata|from_json if event.metadata else {} %}
+            {% set geo = event.geo_data|from_json if event.geo_data is string else (event.geo_data or {}) %}
+            {% set geo_country = event.geo_country or geo.country %}
+            {% set geo_asn = event.geo_asn or geo.asn %}
+            {% set geo_org = event.geo_org or geo.org %}
+            <dl class="event-details">
+                <dt>Event ID</dt>
+                <dd><code class="event-id">{{ event.event_id }}</code></dd>
+
+                <dt>Timestamp</dt>
+                <dd>{{ event.timestamp }}</dd>
+
+                <dt>Node</dt>
+                <dd><code class="node-name">{{ event.node_id|node_display_name }}</code> <span style="color:var(--text-muted);font-size:0.75rem;">({{ event.node_id }})</span></dd>
+
+                <dt>Source IP</dt>
+                <dd><code class="ip-copy" onclick="event.stopPropagation(); copyIpToClipboard('{{ event.source_ip }}', this)" title="Click to copy">{{ event.source_ip }}</code> <a href="#" class="ip-intel-icon" onclick="event.stopPropagation(); event.preventDefault(); openIpIntelModal('{{ event.source_ip }}')" title="View IP intelligence">🔍</a></dd>
+
+                <dt>Event Type</dt>
+                <dd><span class="badge badge-event-{{ event.event_type|lower|replace('_','-') }}">{{ event.event_type }}</span></dd>
+
+                <dt>Action</dt>
+                <dd><span class="badge badge-action-{{ event.action_taken|lower }}">{{ event.action_taken }}</span></dd>
+
+                <dt>Geo</dt>
+                <dd>{% if geo_country %}{{ geo_country|country_name }} · {% endif %}{% if geo_asn %}AS{{ geo_asn }}{% endif %}{% if geo_org %} {{ geo_org }}{% endif %}{% if not geo_country and not geo_asn %}—{% endif %}</dd>
+
+                {% for key, value in meta_parsed.items() %}
+                {% if key != 'surrounding_logs' and value is not none %}
+                <dt>{{ key|replace('_', ' ')|title }}</dt>
+                <dd>
+                    {%- if value is mapping -%}
+                        <pre class="meta-inline">{{ value|tojson }}</pre>
+                    {%- elif value is iterable and value is not string -%}
+                        {%- for item in value -%}
+                            <span class="badge badge-parser">{{ item }}</span>
+                        {%- endfor -%}
+                    {%- else -%}
+                        {%- if key == 'block_ttl_seconds' and value is number -%}
+                            {{ value|pretty_duration }}
+                        {%- elif key == 'window_seconds' and value is number and meta_parsed.attempts is defined -%}
+                            in {{ value }}s
+                        {%- else -%}
+                            <code>{{ value }}</code>
+                        {%- endif -%}
+                    {%- endif -%}
+                </dd>
+                {% endif %}
+                {% endfor %}
+            </dl>
+            <div class="log-context-container"
+                 data-event-id="{{ event.event_id }}"
+                 data-loaded="false"></div>
+        </div>
+    </td>
+</tr>

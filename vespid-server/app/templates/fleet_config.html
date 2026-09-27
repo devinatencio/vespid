@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Fleet Configuration — Vespid Server{% endblock %}
+{% block content %}
+<div class="admin-nav" style="display:flex; gap:0.5rem; margin-bottom:1.5rem;">
+    <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.blocks_page' %}btn{% else %}btn-secondary{% endif %}">Blocks</a>
+    <a href="{{ url_for('fleet_dashboard.allowlist_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.allowlist_page' %}btn{% else %}btn-secondary{% endif %}">Allow-List</a>
+    <a href="{{ url_for('fleet_dashboard.config_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.config_page' %}btn{% else %}btn-secondary{% endif %}">Configuration</a>
+</div>
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem;">
+    <h1 class="page-title" style="margin-bottom:0;">⚙️ Fleet Configuration</h1>
+    <div id="pause-toggle">
+        {% include "fragments/fleet_pause_toggle.html" %}
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Propagation Settings</h2>
+    <form method="POST" action="{{ url_for('fleet_dashboard.update_config') }}">
+        <div class="grid-2">
+            <div class="form-group">
+                <label for="corroboration_threshold">Corroboration Threshold</label>
+                <input type="number" id="corroboration_threshold" name="corroboration_threshold"
+                       value="{{ fleet_config.get('corroboration_threshold', 2) }}" min="1" required>
+                <span class="form-hint">Number of nodes that must report an IP before it is blocked fleet-wide</span>
+            </div>
+            <div class="form-group">
+                <label for="corroboration_window_seconds">Corroboration Window</label>
+                <input type="text" id="corroboration_window_seconds" name="corroboration_window_seconds"
+                       value="{{ fleet_config.get('corroboration_window_raw', '1h') }}"
+                       placeholder="1h" required>
+                <span class="form-hint">Time window for reports to count as corroboration. Use: 30s, 5m, 1h, 1d</span>
+            </div>
+            <div class="form-group">
+                <label for="fleet_block_ttl_seconds">Fleet Block TTL</label>
+                <input type="text" id="fleet_block_ttl_seconds" name="fleet_block_ttl_seconds"
+                       value="{{ fleet_config.get('fleet_block_ttl_raw', '1h') }}"
+                       placeholder="1h" required>
+                <span class="form-hint">How long a fleet block remains active before expiring. Use: 30m, 1h, 6h, 1d</span>
+            </div>
+            <div class="form-group">
+                <label for="max_fleet_blocks_per_hour">Max Fleet Blocks Per Hour</label>
+                <input type="number" id="max_fleet_blocks_per_hour" name="max_fleet_blocks_per_hour"
+                       value="{{ fleet_config.get('max_fleet_blocks_per_hour', 100) }}" min="1" required>
+                <span class="form-hint">Rate limit: maximum new fleet blocks allowed per hour</span>
+            </div>
+            <div class="form-group">
+                <label for="max_reports_per_node_per_hour">Max Reports Per Node Per Hour</label>
+                <input type="number" id="max_reports_per_node_per_hour" name="max_reports_per_node_per_hour"
+                       value="{{ fleet_config.get('max_reports_per_node_per_hour', 50) }}" min="1" required>
+                <span class="form-hint">Rate limit: maximum reports a single node can submit per hour</span>
+            </div>
+            <div class="form-group">
+                <label for="reaper_interval_seconds">Reaper Interval (seconds)</label>
+                <input type="number" id="reaper_interval_seconds" name="reaper_interval_seconds"
+                       value="{{ fleet_config.get('reaper_interval_seconds', 60) }}" min="1" required>
+                <span class="form-hint">How often the reaper checks for expired blocks</span>
+            </div>
+            <div class="form-group">
+                <label for="expired_block_retention_seconds">Expired Block Retention</label>
+                <input type="text" id="expired_block_retention_seconds" name="expired_block_retention_seconds"
+                       value="{{ fleet_config.get('expired_block_retention_raw', '1d') }}"
+                       placeholder="1d" required>
+                <span class="form-hint">How long expired/removed blocks are kept before purging. Use: 0m (immediate), 30m, 6h, 1d, 7d</span>
+            </div>
+        </div>
+        <div class="form-group" style="margin-top:1rem;">
+            <label for="excluded_event_types">Excluded Event Types</label>
+            <textarea id="excluded_event_types" name="excluded_event_types"
+                      rows="3" style="width:100%; padding:0.5rem 0.75rem; border:1px solid var(--border); border-radius:6px; font-size:0.875rem; background:var(--bg-input); color:var(--text); font-family:'JetBrains Mono', monospace;"
+                      placeholder='["WHITELIST_ADD", "WHITELIST_REMOVE"]'>{{ fleet_config.get('excluded_event_types', [])|tojson }}</textarea>
+            <span class="form-hint">JSON array of event types to exclude from fleet propagation</span>
+        </div>
+        <div class="card" style="margin-top:1.5rem;">
+            <h2 class="card-title">Unlock Webhook</h2>
+            <div class="form-group">
+                <label for="unlock_webhook_secret">Webhook Secret</label>
+                <input type="text" id="unlock_webhook_secret" name="unlock_webhook_secret"
+                       value="{{ fleet_config.get('unlock_webhook_secret', '') }}"
+                       placeholder="Leave empty to disable" style="width:100%; padding:0.5rem 0.75rem; border:1px solid var(--border); border-radius:6px; font-size:0.875rem; background:var(--bg-input); color:var(--text); font-family:'JetBrains Mono', monospace;">
+                <span class="form-hint">
+                    Set a secret to enable the unlock webhook at
+                    <code>POST /api/v1/unlock-webhook/&lt;ip&gt;</code>.
+                    Pass the secret in the <code>X-Unlock-Secret</code> header.
+                    Use this from another internet connection if you lock yourself out.
+                </span>
+            </div>
+        </div>
+        <div style="margin-top:1.25rem;">
+            <button type="submit" class="btn">Save Configuration</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

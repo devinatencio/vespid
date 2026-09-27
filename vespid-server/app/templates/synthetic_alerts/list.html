@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Synthetic Alert Rules — Vespid{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>Synthetic Alert Rules</h1>
+    <div class="page-actions">
+        <a href="/alerts/synthetic-alerts/new" class="btn btn-primary">+ New Rule</a>
+    </div>
+</div>
+
+<div id="rules-container">
+    <div class="loading">Loading rules…</div>
+</div>
+
+<script>
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+function loadRules() {
+    fetch('/api/v1/synthetic-alerts')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('rules-container');
+            var rules = data.rules || [];
+            if (!rules.length) {
+                container.innerHTML = '<div class="card" style="margin-top:1rem;"><div class="card-body" style="text-align:center;padding:3rem 2rem;">' +
+                    '<p style="font-size:0.9rem;color:var(--text-muted);margin:0;">No synthetic alert rules yet.</p>' +
+                    '</div></div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr>' +
+                '<th>Name</th><th>Check ID</th><th>Failing</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
+
+            rules.forEach(function(r) {
+                var editUrl = '/alerts/synthetic-alerts/' + r.id + '/edit';
+                html += '<tr>' +
+                    '<td>' + escapeHtml(r.name) + '</td>' +
+                    '<td>' + r.check_id + (r.location ? ' (' + escapeHtml(r.location) + ')' : '') + '</td>' +
+                    '<td>' + (r.firing ? '<span class="badge badge-critical">FIRING</span>' : '<span class="badge badge-ok">ok</span>') + '</td>' +
+                    '<td>' + (r.enabled ? 'Yes' : 'No') + '</td>' +
+                    '<td>' +
+                        '<button class="btn btn-sm btn-secondary" onclick="window.location.href=\'' + editUrl + '\'">Edit</button> ' +
+                        '<button class="btn btn-sm btn-danger" onclick="deleteRule(' + r.id + ')">Del</button>' +
+                    '</td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function() { document.getElementById('rules-container').innerHTML = '<div class="error">Failed to load rules.</div>'; });
+}
+
+function deleteRule(id) {
+    if (!confirm('Delete this alert rule?')) return;
+    fetch('/api/v1/synthetic-alerts/' + id, { method: 'DELETE', headers: {'X-CSRFToken': getCsrfToken()} })
+        .then(function() { loadRules(); })
+        .catch(function() { alert('Failed to delete rule.'); });
+}
+
+loadRules();
+</script>
+{% endblock %}

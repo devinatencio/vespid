@@ -1,0 +1,41 @@
+{% if entries %}
+<table>
+    <thead>
+        <tr>
+            <th>Entry</th>
+            <th>Reason</th>
+            <th>Created By</th>
+            <th>Created At</th>
+            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+            <th>Actions</th>
+            {% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for entry in entries %}
+        <tr>
+            <td><code>{{ entry.entry }}</code></td>
+            <td>{{ entry.reason or '—' }}</td>
+            <td><span class="rule-actor">{{ entry.created_by or '—' }}</span></td>
+            <td><span data-ts="{{ entry.created_at or '—' }}">{{ entry.created_at or '—' }}</span></td>
+            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+            <td>
+                <button class="btn btn-sm btn-danger"
+                        hx-delete="{{ url_for('fleet_dashboard.remove_allowlist', entry_id=entry.id) }}"
+                        hx-target="#allowlist-table"
+                        hx-swap="innerHTML"
+                        hx-confirm="Remove allow-list entry {{ entry.entry }}?">
+                    Remove
+                </button>
+            </td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">✅</div>
+    <p>No allow-list entries configured.</p>
+</div>
+{% endif %}

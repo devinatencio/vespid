@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Inventory Admin{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+{% set stale_count = stale_assets|length %}
+{% set dup_count = duplicates|length %}
+{% set orphan_count = orphans|length %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">🗄️</div>
+    <div style="flex:1;min-width:140px;">
+        <h1 style="margin:0;font-size:1.2rem;">Inventory Admin</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Clean up stale assets, merge duplicates, and manage orphans
+        </div>
+    </div>
+    <div style="display:flex;gap:1rem;text-align:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ all_assets|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">assets</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;{% if stale_count > 0 %}color:var(--warning);{% endif %}">{{ stale_count }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">stale</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;{% if dup_count > 0 %}color:var(--warning);{% endif %}">{{ dup_count }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">duplicates</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;{% if orphan_count > 0 %}color:var(--text-muted);{% endif %}">{{ orphan_count }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">orphans</div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Assets ({{ all_assets|length }})</h2>
+    {% if all_assets %}
+    <div style="margin-bottom:0.75rem;">
+        <input type="text" id="asset-search" placeholder="Search name, ID, type, source…"
+               style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg-input);color:var(--text);box-sizing:border-box;"
+               oninput="filterAssets()">
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="admin-table" id="asset-table">
+        <thead><tr><th>Name</th><th>ID</th><th>Type</th><th>Source</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          {% for a in all_assets %}
+          <tr class="asset-row">
+            <td><a href="{{ url_for('inventory.detail', asset_id=a.asset_id) }}">{{ a.display_name }}</a></td>
+            <td class="dt-value asset-id">{{ a.asset_id }}</td>
+            <td class="asset-type">{{ a.asset_type }}</td>
+            <td class="asset-source">{{ a.created_by_source }}</td>
+            <td><span class="badge {% if a.status == 'active' %}badge-ok{% else %}badge-danger{% endif %}">{{ a.status }}</span></td>
+            <td>
+              <form method="POST" action="{{ url_for('admin.inventory_delete_asset', asset_id=a.asset_id) }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-secondary" onclick="return confirm('Delete {{ a.display_name }}?')">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <p id="asset-no-results" style="display:none;text-align:center;padding:1rem;color:var(--text-muted);">No assets match your search.</p>
+    {% endif %}
+</div>
+
+<script>
+function filterAssets() {
+    var q = document.getElementById('asset-search').value.toLowerCase();
+    var rows = document.querySelectorAll('.asset-row');
+    var visible = 0;
+    rows.forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        var match = !q || text.indexOf(q) !== -1;
+        row.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+    document.getElementById('asset-no-results').style.display = (visible === 0 && q) ? 'block' : 'none';
+}
+</script>
+
+{% if stale_assets or duplicates or orphans %}
+<div class="card">
+    <h2 class="card-title">Maintenance</h2>
+
+    {% if stale_assets %}
+    <div class="inv-section">
+      <div class="inv-section-header">
+        <span>🗑️ Stale Assets ({{ stale_assets|length }})</span>
+        <form method="POST" action="{{ url_for('admin.inventory_purge_stale') }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete all {{ stale_assets|length }} stale assets?')">Purge All</button>
+        </form>
+      </div>
+      <table class="admin-table">
+        <thead><tr><th>Name</th><th>Type</th><th>Status</th><th>Last Seen</th><th>Aliases</th><th>Relationships</th><th></th></tr></thead>
+        <tbody>
+          {% for a in stale_assets %}
+          <tr>
+            <td><a href="{{ url_for('inventory.detail', asset_id=a.asset_id) }}">{{ a.display_name }}</a></td>
+            <td>{{ a.asset_type }}</td>
+            <td><span class="badge badge-danger">{{ a.status }}</span></td>
+            <td class="dt-value" data-ts="{{ a.last_seen_at or '' }}">{{ a.last_seen_at or '—' }}</td>
+            <td>{{ a.alias_count }}</td>
+            <td>{{ a.rel_count }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('admin.inventory_delete_asset', asset_id=a.asset_id) }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-secondary" onclick="return confirm('Delete {{ a.display_name }}?')">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if duplicates %}
+    <div class="inv-section">
+      <div class="inv-section-header">
+        <span>🔀 Potential Duplicates ({{ duplicates|length }})</span>
+      </div>
+      <table class="admin-table">
+        <thead><tr><th>Shared Value</th><th>Asset A</th><th>Source</th><th>Since</th><th>Asset B</th><th>Source</th><th>Since</th><th></th></tr></thead>
+        <tbody>
+          {% for d in duplicates %}
+          <tr>
+            <td><code>{{ d.shared_value }}</code></td>
+            <td><a href="{{ url_for('inventory.detail', asset_id=d.asset_id_1) }}">{{ d.name_1 }}</a></td>
+            <td>{{ d.source_1 }}</td>
+            <td class="dt-value" data-ts="{{ d.first_1 }}">{{ d.first_1[:10] }}</td>
+            <td><a href="{{ url_for('inventory.detail', asset_id=d.asset_id_2) }}">{{ d.name_2 }}</a></td>
+            <td>{{ d.source_2 }}</td>
+            <td class="dt-value" data-ts="{{ d.first_2 }}">{{ d.first_2[:10] }}</td>
+            <td>
+              <form method="POST" action="{{ url_for('admin.inventory_merge') }}" style="display:inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="keep_id" value="{{ d.asset_id_1 }}">
+                <input type="hidden" name="discard_id" value="{{ d.asset_id_2 }}">
+                <button type="submit" class="btn btn-sm btn-primary" onclick="return confirm('Merge {{ d.name_2 }} into {{ d.name_1 }}?')">Merge</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if orphans %}
+    <div class="inv-section">
+      <div class="inv-section-header">
+        <span>🕳️ Orphaned Aliases ({{ orphans|length }})</span>
+      </div>
+      <p class="muted" style="font-size:0.8rem;">These aliases reference assets that no longer exist — they can be safely deleted.</p>
+      <table class="admin-table">
+        <thead><tr><th>ID</th><th>Type</th><th>Value</th><th>Source</th></tr></thead>
+        <tbody>
+          {% for o in orphans %}
+          <tr>
+            <td>{{ o.id }}</td>
+            <td><code>{{ o.alias_type }}</code></td>
+            <td><code>{{ o.alias_value }}</code></td>
+            <td>{{ o.source }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="card" style="text-align:center;padding:2rem;">
+    <div style="font-size:2rem;margin-bottom:0.5rem;">✅</div>
+    <h3 style="margin:0 0 0.25rem 0;">No further action needed</h3>
+    <p class="muted" style="margin:0;">Stale assets, duplicates, and orphans are clean.</p>
+</div>
+{% endif %}
+
+<style>
+.inv-section { margin-bottom: 1.5rem; }
+.inv-section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 0.9rem; font-weight: 600;
+  padding: 0.5rem 0; margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.admin-table th {
+  text-align: left; font-weight: 600; font-size: 0.68rem;
+  text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--text-muted); padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.admin-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table tr:hover td { background: rgba(128,128,128,0.04); }
+.dt-value { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; color: var(--text-muted); }
+.badge { font-size: 0.7rem; padding: 0.12rem 0.4rem; border-radius: 100px; font-weight: 600; }
+.badge-danger { background: #ef444420; color: #ef4444; border: 1px solid #ef444440; }
+.badge-ok { background: #22c55e20; color: #22c55e; border: 1px solid #22c55e40; }
+.muted { color: var(--text-muted); }
+</style>
+{% endblock %}

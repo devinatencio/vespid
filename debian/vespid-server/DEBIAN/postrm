@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+
+systemctl daemon-reload
+
+if [ "$1" = "purge" ]; then
+    rm -rf /opt/vespid-server/.venv
+    rm -rf /var/lib/vespid-server
+    rm -rf /var/log/vespid-server
+    rm -rf /etc/vespid-server
+
+    # Remove the vespid user/group
+    if getent passwd vespid >/dev/null; then
+        deluser --system vespid 2>/dev/null || true
+    fi
+    if getent group vespid >/dev/null; then
+        delgroup --system vespid 2>/dev/null || true
+    fi
+fi
+
+exit 0

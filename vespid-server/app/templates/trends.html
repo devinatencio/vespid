@@ -1,0 +1,485 @@
+{% extends "base.html" %}
+{% block title %}Trends — Vespid Server{% endblock %}
+{% block content %}
+<h1 class="page-title">📈 Analytics &amp; Trends</h1>
+
+<!-- Controls -->
+<div class="card">
+    <h2 class="card-title">Controls</h2>
+    <form class="form-inline" id="trend-controls" onsubmit="event.preventDefault(); loadAllData();">
+        <div class="form-group">
+            <label for="interval">Time Range</label>
+            <select id="interval" name="interval" onchange="loadAllData()">
+                <option value="1h">Last 1 Hour</option>
+                <option value="6h">Last 6 Hours</option>
+                <option value="24h">Last 24 Hours</option>
+                <option value="7d" selected>Last 7 Days</option>
+                <option value="30d">Last 30 Days</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="group_by">Event Chart Group By</label>
+            <select id="group_by" name="group_by" onchange="loadTrendData()">
+                <option value="">None (total)</option>
+                <option value="event_type">Event Type</option>
+                <option value="node_id">Node ID</option>
+                <option value="source_ip">Source IP</option>
+            </select>
+        </div>
+    </form>
+</div>
+
+<!-- Summary Stats -->
+<div class="stats-grid" id="summary-stats">
+    <div class="stat-card">
+        <div class="stat-label">Total Events</div>
+        <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Unique Source IPs</div>
+        <div class="stat-value" id="stat-ips">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Active Nodes</div>
+        <div class="stat-value" id="stat-trends-nodes">—</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Top Event Type</div>
+        <div class="stat-value" id="stat-top-type" style="font-size:0.9rem;">—</div>
+    </div>
+</div>
+
+<!-- Event Volume Chart -->
+<div class="card">
+    <h2 class="card-title" id="chart-title">Event Volume — Last 24 Hours</h2>
+    <div class="chart-container">
+        <canvas id="trendChart"></canvas>
+    </div>
+    <p id="chart-empty" style="display:none; color:var(--text-muted); text-align:center; padding:2rem 0;">
+        No event data available for the selected time range.
+    </p>
+</div>
+
+<!-- Two-column layout for breakdown charts -->
+<div class="trends-grid">
+    <!-- Action Breakdown (Doughnut) -->
+    <div class="card">
+        <h2 class="card-title">Action Breakdown</h2>
+        <div class="chart-container chart-container-sm">
+            <canvas id="actionChart"></canvas>
+        </div>
+        <p id="action-empty" style="display:none; color:var(--text-muted); text-align:center; padding:1rem 0;">
+            No data available.
+        </p>
+    </div>
+
+    <!-- Event Type Breakdown (Doughnut) -->
+    <div class="card">
+        <h2 class="card-title">Event Types</h2>
+        <div class="chart-container chart-container-sm">
+            <canvas id="typeChart"></canvas>
+        </div>
+        <p id="type-empty" style="display:none; color:var(--text-muted); text-align:center; padding:1rem 0;">
+            No data available.
+        </p>
+    </div>
+
+    <!-- Geographic Breakdown (Horizontal Bar) -->
+    <div class="card">
+        <h2 class="card-title">Top Countries</h2>
+        <div class="chart-container chart-container-sm">
+            <canvas id="geoChart"></canvas>
+        </div>
+        <p id="geo-empty" style="display:none; color:var(--text-muted); text-align:center; padding:1rem 0;">
+            No geo data available.
+        </p>
+    </div>
+
+    <!-- Fleet Blocks Over Time -->
+    <div class="card">
+        <h2 class="card-title">Fleet Blocks Over Time</h2>
+        <div class="chart-container chart-container-sm">
+            <canvas id="fleetChart"></canvas>
+        </div>
+        <p id="fleet-empty" style="display:none; color:var(--text-muted); text-align:center; padding:1rem 0;">
+            No fleet block data available.
+        </p>
+    </div>
+</div>
+
+<!-- Top Offenders Table -->
+<div class="card">
+    <h2 class="card-title">Top Source IPs</h2>
+    <div class="table-responsive">
+        <table class="data-table" id="top-sources-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Source IP</th>
+                    <th>Country</th>
+                    <th>Events</th>
+                    <th>% of Total</th>
+                </tr>
+            </thead>
+            <tbody id="top-sources-body">
+                <tr><td colspan="5" style="text-align:center; color:var(--text-muted);">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.trends-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+@media (max-width: 900px) {
+    .trends-grid { grid-template-columns: 1fr; }
+}
+.chart-container-sm {
+    height: 250px;
+    position: relative;
+}
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.stat-card {
+    background: var(--card-bg, #1e293b);
+    border: 1px solid var(--border, #334155);
+    border-radius: 0.75rem;
+    padding: 1.25rem;
+    text-align: center;
+}
+.stat-card .stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted, #94a3b8);
+    margin-bottom: 0.5rem;
+}
+.stat-card .stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text, #f1f5f9);
+}
+.pct-bar {
+    display: inline-block;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--primary, #3b82f6);
+    vertical-align: middle;
+    margin-left: 0.5rem;
+}
+</style>
+
+<script>
+var trendChart = null;
+var actionChart = null;
+var typeChart = null;
+var geoChart = null;
+var fleetChart = null;
+
+function getTrendColors() {
+    var palette = getChartPalette();
+    return {
+        palette: palette,
+        bg: palette.map(function(c) { return colorWithAlpha(c, 0.7); }),
+        lineFill: palette.map(function(c) { return colorWithAlpha(c, 0.1); })
+    };
+}
+
+function loadAllData() {
+    loadTrendData();
+    loadAnalytics();
+}
+
+/* ── Event Volume Chart (existing) ─────────────────────────── */
+function loadTrendData() {
+    var interval = document.getElementById('interval').value;
+    var groupBy = document.getElementById('group_by').value;
+
+    var labels = {'1h': 'Last 1 Hour', '6h': 'Last 6 Hours', '24h': 'Last 24 Hours', '7d': 'Last 7 Days'};
+    document.getElementById('chart-title').textContent = 'Event Volume — ' + (labels[interval] || interval);
+
+    var url = '{{ url_for("dashboard.trends_data") }}?interval=' + interval;
+    if (groupBy) url += '&group_by=' + groupBy;
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) { renderTrendChart(data, groupBy); })
+        .catch(function(err) { console.error('Trend data error:', err); });
+}
+
+function renderTrendChart(data, groupBy) {
+    var canvas = document.getElementById('trendChart');
+    var emptyMsg = document.getElementById('chart-empty');
+    var ctx = canvas.getContext('2d');
+
+    if (trendChart) trendChart.destroy();
+
+    var hasData = data.labels && data.labels.length > 0;
+    canvas.style.display = hasData ? 'block' : 'none';
+    emptyMsg.style.display = hasData ? 'none' : 'block';
+    if (!hasData) return;
+
+    var theme = getChartThemeColors();
+    var colors = getTrendColors();
+    if (data.datasets) {
+        data.datasets.forEach(function(ds, i) {
+            var c = colors.palette[i % colors.palette.length];
+            ds.borderColor = c;
+            ds.backgroundColor = colors.lineFill[i % colors.lineFill.length];
+            ds.tension = 0.3;
+            ds.pointRadius = 3;
+            ds.borderWidth = 2;
+            ds.fill = true;
+        });
+        trendChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: data.labels, datasets: data.datasets },
+            options: chartLineOpts()
+        });
+    } else {
+        var barColor = colors.palette[0];
+        trendChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.labels,
+                datasets: [{
+                    label: 'Events',
+                    data: data.counts,
+                    backgroundColor: colorWithAlpha(barColor, 0.6),
+                    borderColor: barColor,
+                    borderWidth: 1,
+                    borderRadius: 4,
+                }]
+            },
+            options: chartBarOpts()
+        });
+    }
+}
+
+/* ── Analytics Data ────────────────────────────────────────── */
+function loadAnalytics() {
+    var interval = document.getElementById('interval').value;
+    var url = '{{ url_for("dashboard.trends_analytics") }}?interval=' + interval;
+
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) { renderAnalytics(data); })
+        .catch(function(err) { console.error('Analytics error:', err); });
+}
+
+function renderAnalytics(data) {
+    /* Summary stats */
+    var s = data.summary || {};
+    document.getElementById('stat-total').textContent = (s.total_events || 0).toLocaleString();
+    document.getElementById('stat-ips').textContent = (s.unique_ips || 0).toLocaleString();
+    document.getElementById('stat-trends-nodes').textContent = (s.unique_nodes || 0).toLocaleString();
+    var topType = s.top_event_type || '—';
+    if (s.top_event_type_count) topType += ' (' + s.top_event_type_count + ')';
+    document.getElementById('stat-top-type').textContent = topType;
+
+    /* Action breakdown doughnut */
+    renderDoughnut('actionChart', 'action-empty', data.action_breakdown || {});
+
+    /* Event type breakdown doughnut */
+    renderDoughnut('typeChart', 'type-empty', data.event_type_breakdown || {});
+
+    /* Geo breakdown horizontal bar */
+    renderGeoChart(data.geo_breakdown || {});
+
+    /* Fleet blocks over time */
+    renderFleetChart(data.fleet_blocks_over_time || {});
+
+    /* Top sources table */
+    renderTopSources(data.top_sources || [], data.summary ? data.summary.total_events : 0);
+}
+
+function renderDoughnut(canvasId, emptyId, breakdown) {
+    var canvas = document.getElementById(canvasId);
+    var emptyMsg = document.getElementById(emptyId);
+    var ctx = canvas.getContext('2d');
+
+    var chartRef = canvasId === 'actionChart' ? 'actionChart' : 'typeChart';
+    if (window[chartRef] && window[chartRef].destroy) window[chartRef].destroy();
+
+    var keys = Object.keys(breakdown);
+    var hasData = keys.length > 0;
+    canvas.style.display = hasData ? 'block' : 'none';
+    emptyMsg.style.display = hasData ? 'none' : 'block';
+    if (!hasData) return;
+
+    var values = keys.map(function(k) { return breakdown[k]; });
+    var colors = getTrendColors();
+    var theme = getChartThemeColors();
+
+    window[chartRef] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: keys,
+            datasets: [{
+                data: values,
+                backgroundColor: colors.bg.slice(0, keys.length),
+                borderColor: colors.palette.slice(0, keys.length),
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: theme.textMuted, padding: 12, usePointStyle: true }
+                }
+            }
+        }
+    });
+}
+
+function renderGeoChart(geoData) {
+    var canvas = document.getElementById('geoChart');
+    var emptyMsg = document.getElementById('geo-empty');
+    var ctx = canvas.getContext('2d');
+
+    if (geoChart) geoChart.destroy();
+
+    var keys = Object.keys(geoData);
+    var hasData = keys.length > 0;
+    canvas.style.display = hasData ? 'block' : 'none';
+    emptyMsg.style.display = hasData ? 'none' : 'block';
+    if (!hasData) return;
+
+    var values = keys.map(function(k) { return geoData[k]; });
+    var theme = getChartThemeColors();
+    var geoColor = getChartPalette()[3];
+
+    geoChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: keys,
+            datasets: [{
+                label: 'Events',
+                data: values,
+                backgroundColor: colorWithAlpha(geoColor, 0.6),
+                borderColor: geoColor,
+                borderWidth: 1,
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { beginAtZero: true, ticks: { color: theme.textMuted }, grid: { color: theme.gridLine } },
+                y: { ticks: { color: theme.text }, grid: { display: false } }
+            }
+        }
+    });
+}
+
+function renderFleetChart(fleetData) {
+    var canvas = document.getElementById('fleetChart');
+    var emptyMsg = document.getElementById('fleet-empty');
+    var ctx = canvas.getContext('2d');
+
+    if (fleetChart) fleetChart.destroy();
+
+    var hasData = fleetData.labels && fleetData.labels.length > 0;
+    canvas.style.display = hasData ? 'block' : 'none';
+    emptyMsg.style.display = hasData ? 'none' : 'block';
+    if (!hasData) return;
+
+    var fleetColor = getChartPalette()[1];
+    fleetChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: fleetData.labels,
+            datasets: [{
+                label: 'Fleet Blocks',
+                data: fleetData.counts,
+                borderColor: fleetColor,
+                backgroundColor: colorWithAlpha(fleetColor, 0.1),
+                tension: 0.3,
+                pointRadius: 3,
+                borderWidth: 2,
+                fill: true,
+            }]
+        },
+        options: chartLineOpts()
+    });
+}
+
+function renderTopSources(sources, totalEvents) {
+    var tbody = document.getElementById('top-sources-body');
+    if (!sources || sources.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted);">No data available.</td></tr>';
+        return;
+    }
+    var html = '';
+    sources.forEach(function(s, i) {
+        var pct = totalEvents > 0 ? ((s.count / totalEvents) * 100).toFixed(1) : '0.0';
+        var barWidth = totalEvents > 0 ? Math.max(2, (s.count / totalEvents) * 100) : 0;
+        html += '<tr>' +
+            '<td>' + (i + 1) + '</td>' +
+            '<td><code>' + s.ip + '</code></td>' +
+            '<td>' + s.country + '</td>' +
+            '<td><strong>' + s.count.toLocaleString() + '</strong></td>' +
+            '<td>' + pct + '%<span class="pct-bar" style="width:' + barWidth + 'px;"></span></td>' +
+            '</tr>';
+    });
+    tbody.innerHTML = html;
+}
+
+/* ── Chart option helpers ──────────────────────────────────── */
+function chartLineOpts() {
+    var theme = getChartThemeColors();
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: theme.textMuted } } },
+        scales: {
+            x: { ticks: { color: theme.textMuted, maxRotation: 45 }, grid: { color: theme.gridLine } },
+            y: { beginAtZero: true, ticks: { color: theme.textMuted }, grid: { color: theme.gridLine } }
+        }
+    };
+}
+
+function chartBarOpts() {
+    var theme = getChartThemeColors();
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: theme.textMuted } } },
+        scales: {
+            x: { ticks: { color: theme.textMuted, maxRotation: 45 }, grid: { color: theme.gridLine } },
+            y: { beginAtZero: true, ticks: { color: theme.textMuted, stepSize: 1 }, grid: { color: theme.gridLine } }
+        }
+    };
+}
+
+/* ── Init ──────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof Chart !== 'undefined') {
+        loadAllData();
+    } else {
+        document.getElementById('chart-empty').style.display = 'block';
+        document.getElementById('chart-empty').textContent = 'Chart.js library not loaded.';
+    }
+});
+
+document.body.addEventListener('vespid:themechange', function() {
+    if (typeof Chart !== 'undefined') {
+        loadAllData();
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,405 @@
+<!-- Per-Host Summary Cards Panel (HTMX fragment) -->
+<!-- Displays a grid of cards for all hosts with detections in the past 24h -->
+<!-- Each card shows: hostname, score gauge, mode badge, 24h event count, top 3 rules, last detection -->
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+        <h2 class="card-title" style="margin:0;">Host Summary</h2>
+        <span style="font-size:0.75rem; color:var(--text-muted);">Auto-refreshes every 60s</span>
+    </div>
+
+    <!-- HTMX container: loads summary data and renders cards -->
+    <div id="host-summary-grid"
+         hx-get="/admin/host-threats/summary"
+         hx-trigger="load, every 60s"
+         hx-swap="none"
+         hx-on::after-request="renderSummaryCards(event)">
+        <p style="color:var(--text-muted); text-align:center; padding:1.5rem 0;">Loading host summaries…</p>
+    </div>
+</div>
+
+<style>
+.host-summary-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.host-card {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    background: var(--bg-card, #fff);
+    transition: background 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    flex-wrap: wrap;
+    min-height: 2.6rem;
+}
+
+.host-card:hover {
+    background: var(--bg-hover, #f3f4f6);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.host-card-score {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.4rem;
+    height: 1.6rem;
+    padding: 0 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.host-card-score-green  { background: #22c55e; }
+.host-card-score-yellow { background: #EAB308; }
+.host-card-score-red    { background: #EF4444; }
+
+.host-card-hostname {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+}
+
+.host-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.host-card-mode {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 9999px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1.4;
+    border: 1px solid;
+    white-space: nowrap;
+}
+.host-card-mode-learning  { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+.host-card-mode-detecting { background: #e0e7ff; color: #4338ca; border-color: #a5b4fc; }
+.host-card-mode-alerting  { background: #fef3c7; color: #b45309; border-color: #fcd34d; }
+.host-card-mode-unknown   { background: var(--bg-input, #f3f4f6); color: var(--text-muted); border-color: var(--border); }
+
+.host-card-agent {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 9999px;
+    border: 1px solid;
+}
+.host-card-agent-online  { background: #dcfce7; color: #166534; border-color: #86efac; }
+.host-card-agent-offline { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+
+.host-card-stat {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.host-card-stat strong { color: var(--text); }
+
+.host-card-rule {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+.host-card-rule code {
+    font-size: 0.68rem;
+    background: var(--bg-input, #f3f4f6);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+}
+
+.host-card-learning-remaining {
+    font-size: 0.65rem;
+    color: #1d4ed8;
+    font-style: italic;
+}
+
+.host-card-empty {
+    text-align: center;
+    padding: 2rem 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.summary-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 0.75rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+}
+
+.summary-pagination button {
+    padding: 0.35rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    background: var(--bg-input, #fff);
+    color: var(--text);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+
+.summary-pagination button:hover:not(:disabled) { background: var(--bg-hover, #f3f4f6); }
+.summary-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.summary-pagination .page-info {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+</style>
+
+<script>
+(function() {
+    /* Gauge colors mapped to status */
+    var GAUGE_COLORS = {
+        green: '#22c55e',
+        yellow: '#EAB308',
+        red: '#EF4444'
+    };
+
+    /* Track current summary page */
+    var _summaryCurrentPage = 1;
+
+    /**
+     * Build a CSS conic-gradient string for the radial gauge.
+     * percent: 0-200 (capped at gauge display)
+     * color: hex color string
+     */
+    function gaugeGradient(percent, color) {
+        /* Clamp percent to 0-100 for the visual arc */
+        var displayPercent = Math.min(Math.max(percent, 0), 100);
+        var deg = (displayPercent / 100) * 360;
+        return 'conic-gradient(' + color + ' 0deg ' + deg + 'deg, rgba(128,128,128,0.15) ' + deg + 'deg 360deg)';
+    }
+
+    /**
+     * Format a score for compact display inside the gauge circle.
+     * < 100: show one decimal (e.g. "42.5")
+     * 100-999: show integer (e.g. "847")
+     * 1000+: show compact (e.g. "2.2k")
+     */
+    function formatScore(score) {
+        if (score == null) return '—';
+        var n = Number(score);
+        if (isNaN(n)) return '—';
+        if (n >= 10000) return (n / 1000).toFixed(0) + 'k';
+        if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+        if (n >= 100) return Math.round(n).toString();
+        return n.toFixed(1);
+    }
+
+    /**
+     * Format a timestamp for display.
+     */
+    function formatTimestamp(isoStr) {
+        if (!isoStr) return '—';
+        try {
+            var d = new Date(isoStr);
+            var month = String(d.getMonth() + 1).padStart(2, '0');
+            var day = String(d.getDate()).padStart(2, '0');
+            var hours = String(d.getHours()).padStart(2, '0');
+            var minutes = String(d.getMinutes()).padStart(2, '0');
+            return month + '-' + day + ' ' + hours + ':' + minutes;
+        } catch (e) {
+            return isoStr;
+        }
+    }
+
+    /**
+     * Check if an agent is alive based on last_seen_at timestamp.
+     * Returns true if seen within the last 5 minutes.
+     */
+    function isAgentAlive(lastSeenAt) {
+        if (!lastSeenAt) return false;
+        try {
+            var diff = (Date.now() - new Date(lastSeenAt).getTime()) / 1000;
+            return diff < 300;
+        } catch(e) { return false; }
+    }
+
+    /**
+     * Get the CSS class for a mode badge based on mode value.
+     */
+    function modeBadgeClass(mode) {
+        switch (mode) {
+            case 'learning': return 'mode-badge mode-badge-learning';
+            case 'detecting': return 'mode-badge mode-badge-detecting';
+            case 'alerting': return 'mode-badge mode-badge-alerting';
+            default: return 'mode-badge mode-badge-unknown';
+        }
+    }
+
+    /**
+     * Escape HTML to prevent XSS in dynamic content.
+     */
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    /**
+     * Navigate to a specific summary page via HTMX.
+     */
+    window.summaryGoToPage = function(page) {
+        _summaryCurrentPage = page;
+        var el = document.getElementById('host-summary-grid');
+        if (!el) return;
+
+        var currentVals = {};
+        try { currentVals = JSON.parse(el.getAttribute('hx-vals') || '{}'); } catch(ex) {}
+        currentVals.page = String(page);
+        el.setAttribute('hx-vals', JSON.stringify(currentVals));
+        htmx.trigger(el, 'load');
+    };
+
+    /**
+     * Render the card grid from JSON response data.
+     */
+    window.renderSummaryCards = function(event) {
+        var xhr = event.detail.xhr;
+        var container = document.getElementById('host-summary-grid');
+        if (!container) return;
+
+        if (!xhr || xhr.status !== 200) {
+            container.innerHTML = '<p class="host-card-empty">Failed to load host summaries.</p>';
+            return;
+        }
+
+        var data;
+        try {
+            data = JSON.parse(xhr.responseText);
+        } catch (e) {
+            container.innerHTML = '<p class="host-card-empty">Error parsing summary data.</p>';
+            return;
+        }
+
+        /* Support both paginated response { cards: [...], ... } and flat array */
+        var hosts;
+        var pagination = null;
+        if (data && Array.isArray(data.cards)) {
+            hosts = data.cards;
+            pagination = {
+                total: data.total || 0,
+                page: data.page || 1,
+                total_pages: data.total_pages || 1,
+                has_next: data.has_next || false,
+                has_prev: data.has_prev || false
+            };
+            _summaryCurrentPage = pagination.page;
+        } else if (Array.isArray(data)) {
+            hosts = data;
+        } else {
+            container.innerHTML = '<p class="host-card-empty">Error parsing summary data.</p>';
+            return;
+        }
+
+        if (!hosts || hosts.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding:2.5rem 1rem; background:var(--bg-input,#f9fafb); border:1px dashed var(--border); border-radius:8px; color:var(--text-muted); font-size:0.9rem;"><span style="font-size:2rem; display:block; margin-bottom:0.5rem;">&#x1F6E1;</span>No hosts with auditd enabled.</div>';
+            return;
+        }
+
+        var html = '<div class="host-summary-cards">';
+
+        hosts.forEach(function(host) {
+            var color = GAUGE_COLORS[host.gauge_color] || GAUGE_COLORS.green;
+            var score = host.effective_score || 0;
+            var scoreStr = score >= 100 ? Math.round(score).toString() : score.toFixed(1);
+            var gaugeClass = host.gauge_color || 'green';
+            var mode = host.mode || 'unknown';
+
+            html += '<div class="host-card"'
+                  + ' data-hostname="' + escapeHtml(host.hostname) + '"'
+                  + ' data-mode="' + escapeHtml(mode) + '"'
+                  + ' data-last-seen-at="' + escapeHtml(host.last_seen_at || '') + '"'
+                  + ' data-agent-version="' + escapeHtml(host.agent_version || '') + '"'
+                  + ' onclick="window.location.href=\'/admin/host-threats/host/\' + encodeURIComponent(this.getAttribute(\'data-hostname\'))"'
+                  + '>';
+
+            /* Score pill */
+            html += '<span class="host-card-score host-card-score-' + gaugeClass + '">' + scoreStr + '</span>';
+
+            /* Hostname */
+            html += '<span class="host-card-hostname">' + escapeHtml(host.hostname) + '</span>';
+
+            /* Meta group: mode badge, agent liveness, event count, top rule, learning remaining */
+            html += '<span class="host-card-meta">';
+            html += '<span class="host-card-mode host-card-mode-' + escapeHtml(mode) + '">' + escapeHtml(mode) + '</span>';
+
+            var agentAlive = isAgentAlive(host.last_seen_at);
+            if (agentAlive) {
+                html += '<span class="host-card-agent host-card-agent-online">Online</span>';
+            } else {
+                html += '<span class="host-card-agent host-card-agent-offline">Offline</span>';
+            }
+
+            html += '<span class="host-card-stat"><strong>' + host.event_count + '</strong> events</span>';
+
+            if (host.top_rules && host.top_rules.length > 0) {
+                var topName = typeof host.top_rules[0] === 'string' ? host.top_rules[0] : (host.top_rules[0].name || '');
+                html += '<span class="host-card-rule"><code>' + escapeHtml(topName) + '</code></span>';
+            }
+
+            if (mode === 'learning' && host.learning_remaining_hours != null) {
+                html += '<span class="host-card-learning-remaining">' + host.learning_remaining_hours + 'h</span>';
+            }
+
+            html += '</span>'; /* .host-card-meta */
+
+            html += '</div>'; /* .host-card */
+        });
+
+        html += '</div>'; /* .host-summary-cards */
+
+        /* Pagination controls */
+        if (pagination && pagination.total_pages > 1) {
+            html += '<div class="summary-pagination">';
+            html += '<button onclick="summaryGoToPage(' + (pagination.page - 1) + ')" ' +
+                    (pagination.has_prev ? '' : 'disabled') + '>&laquo; Prev</button>';
+            html += '<span class="page-info">Page ' + pagination.page + ' of ' + pagination.total_pages +
+                    ' (' + pagination.total + ' hosts)</span>';
+            html += '<button onclick="summaryGoToPage(' + (pagination.page + 1) + ')" ' +
+                    (pagination.has_next ? '' : 'disabled') + '>Next &raquo;</button>';
+            html += '</div>';
+        }
+
+        container.innerHTML = html;
+    };
+})();
+
+/**
+ * Legacy alias: openNoiseAnalysis now delegates to openHostDetail.
+ * Retained for backwards compatibility.
+ */
+window.openNoiseAnalysis = function(cardEl) {
+    var hostname = cardEl.getAttribute('data-hostname');
+    if (!hostname) return;
+    window.openHostDetail(hostname);
+};
+</script>

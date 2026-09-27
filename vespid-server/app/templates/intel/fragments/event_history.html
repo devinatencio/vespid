@@ -1,0 +1,76 @@
+{% if error == "malformed_ip" %}
+<p class="text-muted">Cannot load events: invalid IP address.</p>
+{% elif events_total == 0 %}
+<p class="text-muted">No events have been recorded for this IP address.</p>
+{% else %}
+<table class="table" role="table">
+        <thead>
+            <tr>
+                <th scope="col">Timestamp</th>
+                <th scope="col">Node ID</th>
+                <th scope="col">Event Type</th>
+                <th scope="col">Event Kind</th>
+                <th scope="col">Detection Rule</th>
+                <th scope="col">Requests</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr class="event-history-row{% if event.log_context %} has-context{% endif %}"
+                {% if event.log_context %}onclick="toggleIntelEventDetail(this)" title="Click to view matching requests"{% endif %}>
+                <td><span data-ts="{{ event.timestamp }}">{% if event.log_context %}<span class="expand-arrow">▶</span> {% endif %}{{ event.timestamp }}</span></td>
+            <td><code>{{ event.node_display or event.node_id }}</code></td>
+            <td>{{ event.event_type }}</td>
+            <td>
+                {% if event.event_kind == 'block' %}
+                <span class="badge badge-danger">block</span>
+                {% elif event.event_kind == 'sighting' %}
+                <span class="badge badge-info">sighting</span>
+                {% elif event.event_kind == 'fleet_block' %}
+                <span class="badge badge-warning">fleet block</span>
+                {% else %}
+                <span class="badge badge-secondary">{{ event.event_kind }}</span>
+                {% endif %}
+            </td>
+            <td>{{ event.detection_rule or '' }}</td>
+            <td>{% if event.event_kind == 'fleet_block' %}—{% else %}{{ event.request_count or 1 }}{% endif %}</td>
+        </tr>
+        {% if event.log_context %}
+        <tr class="event-detail-row" style="display: none;">
+            <td colspan="6" style="padding: 0;">
+                <div class="event-detail-content">
+                    <strong>Matching Requests</strong>
+                    <pre>{% for line in event.log_context %}
+{% if line.trigger %}<span class="log-trigger-line">▸ {{ line.raw }}{% if line.repeat and line.repeat > 1 %} [x{{ line.repeat }}]{% endif %}</span>{% else %}{{ line.raw }}{% if line.repeat and line.repeat > 1 %} [x{{ line.repeat }}]{% endif %}{% endif %}{% if not loop.last %}
+{% endif %}{% endfor %}</pre>
+                </div>
+            </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Pagination Controls -->
+{% if events_total_pages > 1 %}
+<nav class="pagination" aria-label="Event history pagination">
+    <span class="pagination-info">Page {{ events_page }} of {{ events_total_pages }} ({{ events_total }} events)</span>
+    <div class="pagination-controls">
+        {% if events_page > 1 %}
+        <a href="#" class="btn btn-sm btn-secondary"
+           hx-get="{{ url_for('intel_dashboard.ip_events_fragment', ip_address=ip_address, page=events_page - 1) }}"
+           hx-target="#event-history-container"
+           hx-swap="innerHTML"
+           aria-label="Previous page">← Prev</a>
+        {% endif %}
+        {% if events_page < events_total_pages %}
+        <a href="#" class="btn btn-sm btn-secondary"
+           hx-get="{{ url_for('intel_dashboard.ip_events_fragment', ip_address=ip_address, page=events_page + 1) }}"
+           hx-target="#event-history-container"
+           hx-swap="innerHTML"
+           aria-label="Next page">Next →</a>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}
+{% endif %}

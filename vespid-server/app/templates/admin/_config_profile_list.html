@@ -1,0 +1,38 @@
+<!-- Profile List Fragment (HTMX) -->
+{% if profiles %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Version</th>
+            <th>Description</th>
+            <th>Assigned Agents</th>
+            <th>Created</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for profile in profiles %}
+        <tr>
+            <td><strong>{{ profile.name }}</strong></td>
+            <td><span class="badge">v{{ profile.version }}</span></td>
+            <td>{{ profile.description or '—' }}</td>
+            <td>{{ profile.assignment_count }}</td>
+            <td><span data-ts="{{ profile.created_at }}">{{ profile.created_at }}</span></td>
+            <td>
+                <button class="btn btn-sm"
+                        hx-get="{{ url_for('config_dashboard.fragment_profile_detail', profile_id=profile.id) }}"
+                        hx-target="#profile-detail-panel"
+                        hx-swap="innerHTML">View</button>
+                <form method="POST" action="{{ url_for('config_dashboard.delete_profile', profile_id=profile.id) }}" style="display:inline;">
+                    <button type="submit" class="btn btn-sm btn-danger"
+                            onclick="return confirm('Delete profile \'{{ profile.name }}\'?')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No configuration profiles yet.</p>
+{% endif %}

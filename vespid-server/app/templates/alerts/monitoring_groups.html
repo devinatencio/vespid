@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Host Monitoring — Vespid{% endblock %}
+{% block content %}
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">🖥️</div>
+    <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">Host Monitoring</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Monitoring groups and health checks
+        </div>
+    </div>
+    <div id="grp-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    <a href="/alerts/groups/new" class="btn btn-primary" style="white-space:nowrap;">+ New Group</a>
+</div>
+
+<div id="groups-container">
+    <div class="loading">Loading groups…</div>
+</div>
+
+<style>
+.grp-stat { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.grp-stat .grp-stat-n { font-weight:700; font-size:0.95rem; line-height:1; }
+.grp-stat .grp-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+</style>
+<script>
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+function deleteGroup(id, name) {
+    if (!confirm('Delete monitoring group "' + name + '" permanently?')) return;
+    if (!confirm('This will also resolve all active alerts from this group. Are you sure?')) return;
+    fetch('/alerts/api/groups/' + id, {
+        method: 'DELETE',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) { alert('Error: ' + data.error); return; }
+        loadGroups();
+    })
+    .catch(function() { alert('Failed to delete group.'); });
+}
+
+function renderGroupStats(groups) {
+    var total = groups.length;
+    var enabled = 0, active = 0;
+    groups.forEach(function(g) {
+        if (g.enabled) enabled++;
+        if (g.active_count > 0) active++;
+    });
+    var html = '';
+    html += '<div class="grp-stat"><span class="grp-stat-n">' + total + '</span> <span class="grp-stat-l">Total</span></div>';
+    html += '<div class="grp-stat"><span class="grp-stat-n">' + enabled + '</span> <span class="grp-stat-l">Enabled</span></div>';
+    if (active > 0) html += '<div class="grp-stat"><span class="grp-stat-n">' + active + '</span> <span class="grp-stat-l">Active</span></div>';
+    document.getElementById('grp-panel-stats').innerHTML = html;
+}
+
+function loadGroups() {
+    fetch('/alerts/api/groups')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('groups-container');
+            var groups = data.groups || [];
+            renderGroupStats(groups);
+            if (!groups.length) {
+                container.innerHTML = '<div class="empty-state">No monitoring groups yet. <a href="/alerts/groups/new">Create one</a>.</div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr>' +
+                '<th>Name</th><th>Description</th><th>Conditions</th><th>Active</th><th>Instances</th><th>Status</th><th></th>' +
+                '</tr></thead><tbody>';
+            groups.forEach(function(g) {
+                var status = g.enabled ? '<span class="badge badge-success">Enabled</span>' : '<span class="badge badge-secondary">Disabled</span>';
+                html += '<tr>' +
+                    '<td><a href="/alerts/groups/' + g.id + '"><strong>' + escapeHtml(g.name) + '</strong></a></td>' +
+                    '<td>' + escapeHtml(g.description) + '</td>' +
+                    '<td>' + (g.condition_count || 0) + '</td>' +
+                    '<td>' + (g.active_count || 0) + '</td>' +
+                    '<td>' + (g.instance_count || 0) + '</td>' +
+                    '<td>' + status + '</td>' +
+                    '<td>' +
+                    '<button class="btn btn-sm btn-secondary" onclick="window.location.href=\'/alerts/groups/' + g.id + '/edit\'">Edit</button> ' +
+                    '<button class="btn btn-sm btn-danger" onclick="deleteGroup(' + g.id + ', \'' + escapeHtml(g.name) + '\')">Delete</button>' +
+                    '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('groups-container').innerHTML = '<div class="error">Failed to load groups.</div>';
+        });
+}
+
+document.addEventListener('DOMContentLoaded', loadGroups);
+</script>
+{% endblock %}

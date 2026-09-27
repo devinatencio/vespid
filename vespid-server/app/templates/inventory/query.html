@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}CMDB Query{% endblock %}
+{% block content %}
+<div class="page-container">
+  <div class="content-card">
+    <div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+      <div style="font-size:1.5rem;line-height:1;">🔍</div>
+      <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">CMDB Query</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+          Query assets with full-text search and filters.
+          <a href="{{ url_for('inventory.overview') }}" style="margin-left:0.75rem;font-size:0.78rem;">← Inventory</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;">
+      <div class="qc-controls" style="margin-bottom:0;">
+        <div class="qc-row">
+          <input type="text" id="q" class="qc-input qc-input-wide" placeholder="Search name or alias…" autocomplete="off" onkeydown="if(event.key==='Enter')doQuery()">
+          <select id="t" class="qc-select">
+            <option value="">All types</option><option value="host">Host</option><option value="vm">VM</option>
+            <option value="container">Container</option><option value="hypervisor">Hypervisor</option>
+            <option value="cluster">Cluster</option>
+          </select>
+          <select id="s" class="qc-select">
+            <option value="">All sources</option><option value="monitor">Monitor</option>
+            <option value="agent">Agent</option><option value="sync">Sync</option>
+          </select>
+          <select id="st" class="qc-select">
+            <option value="">All statuses</option><option value="active">Active</option>
+            <option value="stale">Stale</option><option value="gone">Gone</option>
+          </select>
+        </div>
+        <div class="qc-row" style="margin-bottom:0;">
+          <input type="text" id="lbl" class="qc-input" placeholder="Label (key=value)" style="max-width:360px;flex:1;" onkeydown="if(event.key==='Enter')doQuery()">
+          <input type="number" id="lim" class="qc-input" value="25" style="max-width:70px;" min="5" max="500">
+          <button class="btn btn-primary" onclick="doQuery()">▶ Run</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="missing" class="qc-empty" style="display:none;">
+      <h3>No results</h3><p class="muted">Try adjusting filters.</p>
+    </div>
+
+    <div id="results" class="card" style="padding:0;display:none;">
+      <div class="qc-bar" style="padding:0.75rem 1.25rem;border-bottom:1px solid var(--border);">
+        <span id="meta" class="qc-meta" style="font-weight:600;"></span>
+        <span id="timing" class="qc-meta" style="opacity:0.5;"></span>
+        <div class="qc-bar-actions">
+          <a id="exportBtn" href="#" class="btn btn-sm btn-secondary" style="text-decoration:none;">CSV</a>
+          <button class="btn btn-sm btn-secondary" onclick="showRaw()">Raw</button>
+        </div>
+      </div>
+      <div id="tableWrap" style="overflow-x:auto;">
+        <table class="qc-table">
+          <thead><tr>
+            <th>Name</th><th style="width:90px;">ID</th><th style="width:60px;">Type</th>
+            <th style="width:65px;">Status</th><th>Labels</th><th>Aliases</th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div id="pages" class="qc-pages" style="display:none;padding:0.75rem 1.25rem;text-align:center;">
+        <button class="btn btn-sm btn-secondary" id="prevBtn" onclick="page(-1)">← Prev</button>
+        <span id="pageInfo" class="qc-meta" style="margin:0 0.75rem;"></span>
+        <button class="btn btn-sm btn-secondary" id="nextBtn" onclick="page(1)">Next →</button>
+      </div>
+      <pre id="rawJson" style="display:none;font-size:0.7rem;max-height:400px;overflow:auto;background:var(--bg-card);padding:0.75rem;border-radius:8px;border:1px solid var(--border-color);margin:0 0.75rem 0.75rem;"></pre>
+    </div>
+  </div>
+</div>
+
+<div id="assetModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)closeAssetModal()">
+  <div style="background:var(--bg-card); border-radius:8px; max-width:600px; width:90%; max-height:80vh; overflow-y:auto; padding:1.5rem; box-shadow:0 8px 32px rgba(0,0,0,0.3); position:relative;">
+    <button style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--text-muted);" onclick="closeAssetModal()">&times;</button>
+    <div id="assetModalContent"><p style="color:var(--text-muted);">Loading…</p></div>
+  </div>
+</div>
+
+<style>
+.qc-controls { margin-bottom: 0.5rem; }
+.qc-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.4rem; }
+.qc-input, .qc-select {
+  padding: 0.4rem 0.65rem; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text);
+  font-size: 0.8rem; font-family: inherit; outline: none;
+}
+.qc-input:focus, .qc-select:focus { border-color: var(--accent); }
+.qc-input-wide { flex: 1; min-width: 180px; }
+.qc-select { cursor: pointer; appearance: auto; }
+.qc-bar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.qc-meta { font-size: 0.78rem; color: var(--text-muted); }
+.qc-bar-actions { margin-left: auto; display: flex; gap: 0.4rem; }
+.qc-empty { text-align: center; padding: 2rem; }
+.qc-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.qc-table th {
+  text-align: left; font-weight: 600; font-size: 0.65rem; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-muted); padding: 0.5rem 0.6rem;
+  background: var(--bg-card); border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+.qc-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.qc-table tbody tr:hover { background: rgba(128,128,128,0.04); }
+.qc-table tbody tr:last-child td { border-bottom: none; }
+.qc-pages { display: flex; align-items: center; justify-content: center; }
+.result-pill { display:inline-block; padding:0.15rem 0.6rem; border-radius:100px; font-size:0.75rem; font-weight:600; background:var(--bg-card); border:1px solid var(--border); }
+.qc-tag {
+  display: inline-block; font-size: 0.62rem; font-family: 'SF Mono','Fira Code',monospace;
+  padding: 0 5px; margin: 1px; border-radius: 4px;
+  background: rgba(128,128,128,0.06); border: 1px solid rgba(128,128,128,0.08);
+  white-space: nowrap; color: var(--text-muted);
+}
+.qc-tag-val { color: var(--text); }
+.qc-pill {
+  display: inline-block; font-size: 0.62rem; padding: 0 5px; margin: 1px;
+  border-radius: 100px; white-space: nowrap;
+}
+</style>
+
+<script>
+var S = { q:'', type:'', source:'', status:'', label:'', limit:25, offset:0 };
+var lastData = null;
+
+function read() {
+  S.q = document.getElementById('q').value.trim();
+  S.type = document.getElementById('t').value;
+  S.source = document.getElementById('s').value;
+  S.status = document.getElementById('st').value;
+  S.label = document.getElementById('lbl').value.trim();
+  S.limit = parseInt(document.getElementById('lim').value) || 25;
+}
+
+function qs() {
+  var p = new URLSearchParams();
+  if (S.q) p.set('q', S.q);
+  if (S.type) p.set('type', S.type);
+  if (S.source) p.set('source', S.source);
+  if (S.status) p.set('status', S.status);
+  if (S.label) p.set('label', S.label);
+  p.set('limit', S.limit);
+  p.set('offset', S.offset);
+  p.set('aliases', 'true');
+  return '/inventory/api/query?' + p.toString();
+}
+
+function doQuery() {
+  read();
+  S.offset = 0;
+  _fetch();
+}
+
+function page(d) {
+  read();
+  S.offset = Math.max(0, S.offset + d * S.limit);
+  _fetch();
+}
+
+function _fetch() {
+  var url = qs();
+  document.getElementById('results').style.display = 'none';
+  document.getElementById('missing').style.display = 'none';
+
+  fetch(url)
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      lastData = d;
+      render(d);
+    })
+    .catch(function() {
+      alert('Query failed');
+    });
+}
+
+function render(d) {
+  var total = d.total, assets = d.assets, offset = d.offset, limit = d.limit;
+
+  if (!assets || total === 0) {
+    document.getElementById('missing').style.display = 'block';
+    return;
+  }
+
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('meta').innerHTML = '<span class="result-pill">' + assets.length + ' of ' + total + '</span>';
+
+  // Pagination
+  document.getElementById('pages').style.display = (offset > 0 || (offset + limit) < total) ? 'flex' : 'none';
+  document.getElementById('pageInfo').textContent = 'Page ' + (Math.floor(offset / limit) + 1) + ' / ' + Math.max(1, Math.ceil(total / limit));
+  document.getElementById('prevBtn').style.visibility = (offset > 0) ? 'visible' : 'hidden';
+  document.getElementById('nextBtn').style.visibility = ((offset + limit) < total) ? 'visible' : 'hidden';
+
+  // Raw
+  document.getElementById('rawJson').textContent = JSON.stringify(d, null, 2);
+
+  // CSV link
+  document.getElementById('exportBtn').href = qs().replace('/api/query', '/api/export').replace('&aliases=true', '&format=csv');
+
+  // Table
+  var html = '';
+  for (var i = 0; i < assets.length; i++) {
+    var a = assets[i];
+
+    var lblHtml = '';
+    try {
+      var lbs = (typeof a.labels === 'string' ? JSON.parse(a.labels) : a.labels) || {};
+      var keys = Object.keys(lbs);
+      for (var j = 0; j < keys.length; j++) {
+        var c = lblColor(keys[j]);
+        lblHtml += '<span class="qc-pill" style="background:' + c + '20;border-color:' + c + '40;color:' + c + ';">' + esc(keys[j]) + '=' + esc(lbs[keys[j]]) + '</span>';
+      }
+    } catch(e) {}
+
+    var al = a.aliases || [];
+    var aliasHtml = '';
+    for (var j = 0; j < Math.min(al.length, 5); j++) {
+      aliasHtml += '<span class="qc-tag">' + esc(al[j].alias_type) + ' <span class="qc-tag-val">' + esc((al[j].alias_value || '').substr(0, 24)) + '</span></span>';
+    }
+    if (al.length > 5) aliasHtml += '<span class="qc-tag" style="opacity:0.4;">+' + (al.length - 5) + '</span>';
+
+    var sc = a.status === 'active' ? 'color:#22c55e;border-color:#22c55e40;background:#22c55e20' :
+             (a.status === 'stale' ? 'color:#eab308;border-color:#eab30840;background:#eab30820' :
+              'color:#ef4444;border-color:#ef444440;background:#ef444420');
+
+    html += '<tr data-asset-id="' + a.asset_id + '" style="cursor:pointer;" onclick="showAssetModal(\'' + a.asset_id + '\')">' +
+      '<td><a href="/inventory/' + a.asset_id + '" style="font-weight:500;text-decoration:none;color:var(--text);" onclick="event.stopPropagation();">' + esc(a.display_name) + '</a></td>' +
+      '<td style="font-family:monospace;font-size:0.68rem;color:var(--text-muted);">' + a.asset_id.substr(0, 10) + '…</td>' +
+      '<td><span style="font-size:0.62rem;text-transform:uppercase;padding:0.1rem 0.45rem;border-radius:100px;background:rgba(128,128,128,0.1);color:var(--text-muted);">' + esc(a.asset_type) + '</span></td>' +
+      '<td><span style="font-size:0.65rem;font-weight:600;padding:0.1rem 0.45rem;border-radius:100px;' + sc + '">' + esc(a.status) + '</span></td>' +
+      '<td>' + lblHtml + '</td>' +
+      '<td>' + aliasHtml + '</td>' +
+      '</tr>';
+  }
+  document.getElementById('tbody').innerHTML = html;
+}
+
+function lblColor(k) {
+  var colors = ['#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899','#f43f5e','#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#06b6d4','#3b82f6','#0ea5e9'];
+  var h = 0;
+  for (var i = 0; i < k.length; i++) h = ((h << 5) - h) + k.charCodeAt(i);
+  return colors[Math.abs(h) % colors.length];
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function showRaw() {
+  var el = document.getElementById('rawJson');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function showAssetModal(id) {
+  var el = document.getElementById('assetModal');
+  var body = document.getElementById('assetModalContent');
+  body.innerHTML = '<p style="color:var(--text-muted);">Loading…</p>';
+  el.style.display = 'flex';
+  fetch('/inventory/api/asset/' + id)
+    .then(function(r) { return r.json(); })
+    .then(function(a) {
+      if (a.error) { body.innerHTML = '<p>Not found.</p>'; return; }
+      meta = a.meta_parsed || {};
+      var ifaces = meta.interfaces || [];
+      var html = '';
+      html += '<h3 style="margin-top:0;">' + esc(a.display_name) + '</h3>';
+      html += '<table style="width:100%;font-size:0.82rem;">';
+      html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);width:110px;">Asset ID</td><td style="padding:0.25rem 0.5rem;"><code>' + esc(a.asset_id) + '</code></td></tr>';
+      html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);">Type</td><td style="padding:0.25rem 0.5rem;">' + esc(a.asset_type) + '</td></tr>';
+      html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);">Status</td><td style="padding:0.25rem 0.5rem;">' + esc(a.status) + '</td></tr>';
+      html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);">Source</td><td style="padding:0.25rem 0.5rem;">' + esc(a.created_by_source) + '</td></tr>';
+      html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);">First Seen</td><td style="padding:0.25rem 0.5rem;">' + esc(a.first_seen_at) + '</td></tr>';
+      html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);">Last Seen</td><td style="padding:0.25rem 0.5rem;">' + (a.last_seen_at ? esc(a.last_seen_at) : '—') + '</td></tr>';
+      if (a.ip_address) html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);">IP</td><td style="padding:0.25rem 0.5rem;"><code>' + esc(a.ip_address) + '</code></td></tr>';
+      if (ifaces.length) {
+        html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);vertical-align:top;">Interfaces</td><td style="padding:0.25rem 0.5rem;">';
+        for (var i = 0; i < ifaces.length; i++) {
+          var f = ifaces[i];
+          html += '<div style="margin-bottom:0.3rem;font-size:0.75rem;"><strong>' + esc(f.name || '?') + '</strong>';
+          if (f.mac) html += ' <code style="font-size:0.65rem;">' + esc(f.mac) + '</code>';
+          var ips = (f.ipv4 || []).concat(f.ipv6 || []);
+          for (var j = 0; j < ips.length; j++) html += ' <span style="background:rgba(128,128,128,0.1);padding:0 4px;border-radius:3px;">' + esc(ips[j]) + '</span>';
+          html += '</div>';
+        }
+        html += '</td></tr>';
+      }
+      if (a.aliases && a.aliases.length) {
+        html += '<tr><td style="padding:0.25rem 0.5rem;color:var(--text-muted);vertical-align:top;">Aliases</td><td style="padding:0.25rem 0.5rem;">';
+        for (var i = 0; i < a.aliases.length; i++) {
+          html += '<span class="qc-tag" style="margin:1px;">' + esc(a.aliases[i].alias_type) + ' <span class="qc-tag-val">' + esc(a.aliases[i].alias_value) + '</span></span>';
+        }
+        html += '</td></tr>';
+      }
+      html += '</table>';
+      html += '<div style="margin-top:1rem;"><a href="/inventory/' + a.asset_id + '" class="btn btn-sm btn-primary" style="text-decoration:none;">View Full Details</a></div>';
+      body.innerHTML = html;
+    })
+    .catch(function() { body.innerHTML = '<p>Failed to load asset details.</p>'; });
+}
+
+function closeAssetModal() {
+  document.getElementById('assetModal').style.display = 'none';
+}
+</script>
+{% endblock %}

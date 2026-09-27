@@ -1,0 +1,26 @@
+[Unit]
+Description=Vespid Monitor Synthetic Check Worker
+After=network.target
+
+[Service]
+Type=simple
+User=vespid-agent
+ExecStart=/usr/bin/vespid-agent --mode=worker --config=/etc/vespid-agent/worker.yaml
+Restart=on-failure
+RestartSec=5
+
+# systemd creates and owns these (mode 0750) on every start.
+StateDirectory=vespid-agent
+StateDirectoryMode=0750
+LogsDirectory=vespid-agent
+LogsDirectoryMode=0750
+
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+ReadOnlyPaths=/etc/vespid-agent
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,75 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.spec~
+*.deb
+*.rpm
+rpmbuild/
+
+# PyInstaller / cx_Freeze / Nuitka build artifacts
+build_freeze/
+*.manifest
+*.so
+*.dll
+*.dylib
+*.bin
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+.hypothesis/
+test.db
+*.db-journal
+
+# Lint / format caches
+.ruff_cache/
+
+# Logs
+logs/
+*.log
+
+# GeoIP databases (download at install/build time, do not commit)
+*.mmdb
+
+# Generated documentation
+site/
+website/docs/
+docs/site/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment / secrets overrides
+.env
+.envrc
+.secrets
+credentials.json
+
+# Runtime sockets
+*.sock

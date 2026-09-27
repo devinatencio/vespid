@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}User Management — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+{% set admins = users|selectattr('role', 'equalto', 'admin')|list|length %}
+{% set analysts = users|selectattr('role', 'equalto', 'analyst')|list|length %}
+{% set viewers = users|selectattr('role', 'equalto', 'viewer')|list|length %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">👤</div>
+    <div style="flex:1;min-width:140px;">
+        <h1 style="margin:0;font-size:1.2rem;">User Management</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Operator accounts and role assignments
+        </div>
+    </div>
+    <div style="display:flex;gap:1rem;text-align:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ users|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">total</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;color:var(--danger);">{{ admins }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">admins</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;color:var(--warning);">{{ analysts }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">analysts</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ viewers }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">viewers</div>
+        </div>
+    </div>
+    <button type="button" class="btn" onclick="openCreateUserModal()">+ Add User</button>
+</div>
+
+<div style="margin-bottom:0.75rem;"></div>
+
+<!-- Create User Modal -->
+<div id="create-user-modal" class="event-modal-overlay" style="display:none;" onclick="if(event.target===this)closeCreateUserModal()">
+    <div class="event-modal" style="max-width:600px;padding:1.5rem;" onclick="event.stopPropagation()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h2 style="margin:0;">Create User</h2>
+            <button class="btn btn-sm btn-secondary" onclick="closeCreateUserModal()" style="font-size:1.2rem;line-height:1;">✕</button>
+        </div>
+        <form method="POST" action="{{ url_for('admin.create_user_endpoint') }}" style="display:flex;flex-direction:column;gap:0.75rem;">
+            <div class="form-group" style="margin:0;">
+                <label for="modal-username">Username</label>
+                <input type="text" id="modal-username" name="username" required style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label for="modal-password">Password</label>
+                <input type="password" id="modal-password" name="password" required style="width:100%;box-sizing:border-box;">
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label for="modal-role">Role</label>
+                <select id="modal-role" name="role" style="width:100%;box-sizing:border-box;">
+                    <option value="viewer">Viewer</option>
+                    <option value="analyst">Analyst</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label for="modal-display_name">Display Name</label>
+                <input type="text" id="modal-display_name" name="display_name" maxlength="128" placeholder="Optional" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeCreateUserModal()">Cancel</button>
+                <button type="submit" class="btn">Create User</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Operators ({{ users|length }})</h2>
+    {% if users %}
+    <div style="overflow-x:auto;">
+    <table style="width:100%;">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Display Name</th>
+                <th>Role</th>
+                <th>Theme</th>
+                <th>Created</th>
+                <th>Last Login</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr>
+                <td>{{ user.id }}</td>
+                <td>{{ user.username }}</td>
+                <td>
+                    <div id="dn-display-{{ user.id }}">
+                        <span style="cursor:pointer;user-select:none;{% if not user.display_name %}color:var(--fg-muted);{% endif %}" onclick="this.parentElement.style.display='none';document.getElementById('dn-form-{{ user.id }}').style.display='flex';" title="Click to edit">{{ user.display_name or '—' }}&nbsp;✎</span>
+                    </div>
+                    <form id="dn-form-{{ user.id }}" hx-put="{{ url_for('admin.change_user_display_name', user_id=user.id) }}"
+                          hx-target="#dn-display-{{ user.id }}" hx-swap="innerHTML"
+                          style="display:none; gap:0.25rem; align-items:center;"
+                          hx-on::after-request="this.style.display='none';">
+                        <input type="text" name="display_name" value="{{ user.display_name or '' }}" maxlength="128" style="padding:0.2rem; font-size:0.8rem; width:120px;" autofocus>
+                        <button type="submit" class="btn btn-sm">Save</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="this.parentElement.style.display='none';document.getElementById('dn-display-{{ user.id }}').style.display='block';">Cancel</button>
+                    </form>
+                </td>
+                <td id="role-badge-{{ user.id }}">
+                    <span class="badge badge-{{ user.role }}">{{ user.role }}</span>
+                </td>
+                <td id="theme-{{ user.id }}">
+                    <form hx-put="{{ url_for('admin.change_user_theme', user_id=user.id) }}"
+                          hx-target="#theme-{{ user.id }}"
+                          hx-swap="innerHTML"
+                          style="display:inline-flex; gap:0.25rem; align-items:center;">
+                        <select name="theme" style="padding:0.2rem; font-size:0.75rem;">
+                            <option value="dark" {% if user.theme == 'dark' %}selected{% endif %}>Dark</option>
+                            <option value="light" {% if user.theme == 'light' %}selected{% endif %}>Light</option>
+                            <option value="nord" {% if user.theme == 'nord' %}selected{% endif %}>Nord</option>
+                            <option value="vespid" {% if user.theme == 'vespid' %}selected{% endif %}>Vespid</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm">Save</button>
+                    </form>
+                </td>
+                <td>{{ user.created_at }}</td>
+                <td>{% if user.last_login_at %}{{ user.last_login_at }}{% else %}<span class="badge">Never logged in</span>{% endif %}</td>
+                <td>
+                    <form hx-put="{{ url_for('admin.change_user_role', user_id=user.id) }}"
+                          hx-target="#role-badge-{{ user.id }}"
+                          hx-swap="innerHTML"
+                          style="display:inline-flex; gap:0.25rem; align-items:center;">
+                        <select name="role" style="padding:0.2rem; font-size:0.8rem;">
+                            <option value="viewer" {% if user.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                            <option value="analyst" {% if user.role == 'analyst' %}selected{% endif %}>Analyst</option>
+                            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm">Update</button>
+                    </form>
+                    <button class="btn btn-sm btn-password" onclick="document.getElementById('pw-form-{{ user.id }}').style.display = document.getElementById('pw-form-{{ user.id }}').style.display === 'none' ? 'flex' : 'none'" style="margin-left:0.25rem;">Change Password</button>
+                    <form method="POST" action="{{ url_for('admin.reset_user_onboarding_endpoint', user_id=user.id) }}" style="display:inline;margin-left:0.25rem;" onsubmit="return confirm('Re-show the welcome dialog for {{ user.username }} on their next login?');">
+                        <button type="submit" class="btn btn-sm btn-secondary" title="Show onboarding dialog on next login">↻</button>
+                    </form>
+                    <form id="pw-form-{{ user.id }}" method="POST" action="{{ url_for('admin.change_user_password_endpoint', user_id=user.id) }}"
+                          style="display:none; gap:0.25rem; align-items:center; margin-top:0.5rem;">
+                        <input type="password" name="new_password" placeholder="New password" required minlength="8" style="padding:0.2rem; font-size:0.8rem; width:120px;">
+                        <input type="password" name="confirm_password" placeholder="Confirm" required minlength="8" style="padding:0.2rem; font-size:0.8rem; width:120px;">
+                        <button type="submit" class="btn btn-sm">Save</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p>No users found.</p>
+    {% endif %}
+</div>
+
+<script>
+function openCreateUserModal() {
+    document.getElementById('create-user-modal').style.display = 'flex';
+}
+function closeCreateUserModal() {
+    document.getElementById('create-user-modal').style.display = 'none';
+}
+</script>
+{% endblock %}

@@ -1,0 +1,261 @@
+{% if error %}
+<div class="empty-state">
+    <p class="text-muted">{{ error }}</p>
+</div>
+{% elif not results %}
+{% set _qtype = query_type or '' %}
+{% set _filter_count = (1 if filters.repeat_offender else 0) + (1 if filters.geo_country else 0) + (1 if filters.min_sighting_count else 0) %}
+<style>
+.intel-empty { padding: 2.5rem 1.5rem; text-align: center; }
+.intel-radar { position: relative; width: 64px; height: 64px; margin: 0 auto 1rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 1.8rem;
+    background: radial-gradient(circle, color-mix(in srgb, var(--info, #3b82f6) 22%, transparent) 0%, transparent 70%);
+    border: 1px solid color-mix(in srgb, var(--info, #3b82f6) 40%, transparent); }
+.intel-radar::before, .intel-radar::after { content: ''; position: absolute; inset: 0; border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--info, #3b82f6) 55%, transparent); animation: intel-ping 1.6s cubic-bezier(0,0,.2,1) infinite; }
+.intel-radar::after { animation-delay: .5s; }
+@keyframes intel-ping { 0% { transform: scale(1); opacity: .7; } 80%,100% { transform: scale(1.9); opacity: 0; } }
+.intel-empty-query { display: inline-block; margin: 0.5rem 0 0.25rem; padding: 0.15rem 0.6rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 1rem;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--accent); }
+.intel-empty-title { margin: 0.35rem 0 0.15rem; font-size: 1.1rem; color: var(--text); font-weight: 600; }
+.intel-empty-sub { margin: 0 0 1.1rem; font-size: 0.85rem; color: var(--text-muted); }
+.intel-empty-tips { display: flex; flex-direction: column; gap: 0.5rem; max-width: 560px; margin: 0 auto;
+    text-align: left; font-size: 0.82rem; color: var(--text-muted); }
+.intel-empty-tips code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.75rem;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.05rem 0.35rem; }
+.intel-empty-tips a { color: var(--info, #3b82f6); }
+.intel-empty-tip { display: flex; gap: 0.6rem; align-items: baseline; }
+.intel-empty-tip .tip-num { flex: none; width: 1.25rem; height: 1.25rem; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 700; color: #fff; border-radius: 999px;
+    background: color-mix(in srgb, var(--info, #3b82f6) 75%, transparent); }
+</style>
+<div class="empty-state intel-empty" role="status">
+    <div class="intel-radar" aria-hidden="true">📡</div>
+    {% if query %}
+        {% if _qtype == 'exact_ip' %}
+        <p class="intel-empty-title">No intelligence on <span class="intel-empty-query">{{ query }}</span></p>
+        <p class="intel-empty-sub">This IP has never been observed by your fleet — no events, blocks, or sightings on record.</p>
+        {% elif _qtype == 'cidr' %}
+        <p class="intel-empty-title">No sightings in <span class="intel-empty-query">{{ query }}</span></p>
+        <p class="intel-empty-sub">No fleet events fall within this network range.</p>
+        {% elif _qtype == 'prefix' %}
+        <p class="intel-empty-title">No sightings for prefix <span class="intel-empty-query">{{ query }}</span></p>
+        <p class="intel-empty-sub">No fleet events match this address prefix.</p>
+        {% elif _qtype == 'threat_tag' %}
+        <p class="intel-empty-title">No IPs tagged <span class="intel-empty-query">{{ query }}</span></p>
+        <p class="intel-empty-sub">No records currently carry this threat tag.</p>
+        {% else %}
+        <p class="intel-empty-title">Nothing found for <span class="intel-empty-query">{{ query }}</span></p>
+        <p class="intel-empty-sub">No matching IP records found.</p>
+        {% endif %}
+    {% else %}
+    <p class="intel-empty-title">No IP records yet</p>
+    <p class="intel-empty-sub">Your fleet hasn't reported any events to build intelligence from.</p>
+    {% endif %}
+    <div class="intel-empty-tips">
+        {% if query and _filter_count %}
+        <div class="intel-empty-tip"><span class="tip-num">!</span><span>Active filters are excluding matches — <a href="{{ url_for('intel_dashboard.search_page') }}" hx-get="{{ url_for('intel_dashboard.search_page') }}" hx-target="#intel-search-results" hx-swap="innerHTML">clear all filters</a> and search again.</span></div>
+        {% endif %}
+        {% if _qtype == 'exact_ip' and query.count('.') >= 3 %}
+        {% set _prefix = query.split('.')[0] ~ '.' ~ query.split('.')[1] ~ '.' %}
+        <div class="intel-empty-tip"><span class="tip-num">1</span><span>Try a shorter prefix to find nearby ranges: <code>{{ _prefix }}</code></span></div>
+        <div class="intel-empty-tip"><span class="tip-num">2</span><span>New activity can take a few minutes to appear — search again shortly.</span></div>
+        {% elif _qtype == 'threat_tag' %}
+        <div class="intel-empty-tip"><span class="tip-num">1</span><span>Tags match common attacker behaviours (e.g. <code>scan</code>, <code>brute-force</code>, <code>exfiltration</code>).</span></div>
+        <div class="intel-empty-tip"><span class="tip-num">2</span><span>Search an exact IP instead to see its full threat profile.</span></div>
+        {% elif _qtype == 'cidr' or _qtype == 'prefix' %}
+        <div class="intel-empty-tip"><span class="tip-num">1</span><span>Try an exact IP inside this range for its full intelligence record.</span></div>
+        <div class="intel-empty-tip"><span class="tip-num">2</span><span>Widen the range (e.g. <code>/16</code> instead of <code>/24</code>) to include more sightings.</span></div>
+        {% else %}
+        <div class="intel-empty-tip"><span class="tip-num">1</span><span>Search by exact IP, prefix (e.g. <code>203.0.113.</code>), CIDR, or a threat tag.</span></div>
+        {% endif %}
+    </div>
+</div>
+{% elif results %}
+<style>
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.78rem;
+    border-radius: 999px;
+    background: var(--primary-color, #3b82f6);
+    color: #fff;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.filter-chip .chip-remove {
+    cursor: pointer;
+    font-size: 0.7rem;
+    line-height: 1;
+    opacity: 0.8;
+    color:#fff;
+    text-decoration:none;
+}
+.filter-chip .chip-remove:hover { opacity: 1; }
+</style>
+
+{% set _pa = dict(q=query, repeat_offender=filters.repeat_offender, geo_country=filters.geo_country, min_sighting_count=filters.min_sighting_count, per_page=per_page, sort_by=sort_by, sort_order=sort_order) %}
+
+{% set has_chips = query or filters.repeat_offender or filters.geo_country or filters.min_sighting_count %}
+{% if has_chips %}
+<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center;">
+    {% if query %}
+    {% set url_q = url_for('intel_dashboard.search_page', **dict(_pa, q='')) %}
+    <span class="filter-chip">
+        Query: {{ query }}
+        <a href="{{ url_q }}" class="chip-remove" hx-get="{{ url_q }}" hx-target="#intel-search-results" hx-swap="innerHTML">✕</a>
+    </span>
+    {% endif %}
+    {% if filters.repeat_offender %}
+    {% set url_r = url_for('intel_dashboard.search_page', **dict(_pa, repeat_offender='')) %}
+    <span class="filter-chip">
+        Repeat: {{ 'Yes' if filters.repeat_offender == 'true' else 'No' }}
+        <a href="{{ url_r }}" class="chip-remove" hx-get="{{ url_r }}" hx-target="#intel-search-results" hx-swap="innerHTML">✕</a>
+    </span>
+    {% endif %}
+    {% if filters.geo_country %}
+    {% set url_c = url_for('intel_dashboard.search_page', **dict(_pa, geo_country='')) %}
+    <span class="filter-chip">
+        Country: {{ filters.geo_country }}
+        <a href="{{ url_c }}" class="chip-remove" hx-get="{{ url_c }}" hx-target="#intel-search-results" hx-swap="innerHTML">✕</a>
+    </span>
+    {% endif %}
+    {% if filters.min_sighting_count %}
+    {% set url_m = url_for('intel_dashboard.search_page', **dict(_pa, min_sighting_count='')) %}
+    <span class="filter-chip">
+        Min Sightings: {{ filters.min_sighting_count }}
+        <a href="{{ url_m }}" class="chip-remove" hx-get="{{ url_m }}" hx-target="#intel-search-results" hx-swap="innerHTML">✕</a>
+    </span>
+    {% endif %}
+</div>
+{% endif %}
+
+<p class="result-count">{{ total }} result{{ 's' if total != 1 else '' }} found (page {{ page }} of {{ total_pages }})</p>
+<table class="table" role="table" aria-label="IP intelligence search results">
+    <thead>
+        <tr>
+            <th scope="col">IP Address</th>
+            <th scope="col" data-sort-col="last_seen_at" role="button" tabindex="0" aria-label="Sort by last seen{% if sort_by == 'last_seen_at' %}, currently sorted {{ sort_order }}ending{% endif %}">
+                Last Seen<span class="sort-arrow">{% if sort_by == 'last_seen_at' %}{{ ' ▼' if sort_order == 'desc' else ' ▲' }}{% endif %}</span>
+            </th>
+            <th scope="col" data-sort-col="total_times_seen" role="button" tabindex="0" aria-label="Sort by total events{% if sort_by == 'total_times_seen' %}, currently sorted {{ sort_order }}ending{% endif %}">
+                Events<span class="sort-arrow">{% if sort_by == 'total_times_seen' %}{{ ' ▼' if sort_order == 'desc' else ' ▲' }}{% endif %}</span>
+            </th>
+            <th scope="col" data-sort-col="total_requests" role="button" tabindex="0" aria-label="Sort by total requests{% if sort_by == 'total_requests' %}, currently sorted {{ sort_order }}ending{% endif %}">
+                Requests<span class="sort-arrow">{% if sort_by == 'total_requests' %}{{ ' ▼' if sort_order == 'desc' else ' ▲' }}{% endif %}</span>
+            </th>
+            <th scope="col" data-sort-col="total_times_blocked" role="button" tabindex="0" aria-label="Sort by times blocked{% if sort_by == 'total_times_blocked' %}, currently sorted {{ sort_order }}ending{% endif %}">
+                Blocked<span class="sort-arrow">{% if sort_by == 'total_times_blocked' %}{{ ' ▼' if sort_order == 'desc' else ' ▲' }}{% endif %}</span>
+            </th>
+            <th scope="col" data-sort-col="total_reporting_nodes" role="button" tabindex="0" aria-label="Sort by reporting nodes{% if sort_by == 'total_reporting_nodes' %}, currently sorted {{ sort_order }}ending{% endif %}">
+                Nodes<span class="sort-arrow">{% if sort_by == 'total_reporting_nodes' %}{{ ' ▼' if sort_order == 'desc' else ' ▲' }}{% endif %}</span>
+            </th>
+            <th scope="col">Status</th>
+            <th scope="col" data-sort-col="block_episode_count" role="button" tabindex="0" aria-label="Sort by block episodes{% if sort_by == 'block_episode_count' %}, currently sorted {{ sort_order }}ending{% endif %}">
+                Episodes<span class="sort-arrow">{% if sort_by == 'block_episode_count' %}{{ ' ▼' if sort_order == 'desc' else ' ▲' }}{% endif %}</span>
+            </th>
+            <th scope="col" data-sort-col="reputation_score" role="button" tabindex="0" aria-label="Sort by reputation score{% if sort_by == 'reputation_score' %}, currently sorted {{ sort_order }}ending{% endif %}">
+                Score<span class="sort-arrow">{% if sort_by == 'reputation_score' %}{{ ' ▼' if sort_order == 'desc' else ' ▲' }}{% endif %}</span>
+            </th>
+            <th scope="col">Country</th>
+            <th scope="col">Primary Threat</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for result in results %}
+        <tr>
+            <td>
+                <a href="{{ url_for('intel_dashboard.ip_detail', ip_address=result.ip_address) }}">
+                    <code>{{ result.ip_address }}</code>
+                </a>
+            </td>
+            <td>
+                <span data-ts="{{ result.last_seen_at or '' }}" title="{{ result.last_seen_at or '' }}">{{ result.last_seen_at or '—' }}</span>
+            </td>
+            <td>{{ result.total_times_seen or 0 }}</td>
+            <td>{{ result.total_requests or 0 }}</td>
+            <td>{{ result.total_times_blocked or 0 }}</td>
+            <td>{{ result.total_reporting_nodes or 0 }}</td>
+            <td>
+                {% if result.last_blocked_at and (not result.last_unblocked_at or result.last_blocked_at > result.last_unblocked_at) %}
+                <span class="badge badge-healthy">● Active</span>
+                {% else %}
+                <span class="badge">● Inactive</span>
+                {% endif %}
+                {% if result.threat_tags and result.threat_tags | length >= 3 %}
+                <span class="badge badge-warning">Multi-Vector</span>
+                {% endif %}
+                {% if result.repeat_offender %}
+                <span class="badge badge-danger">↻ OFFENDER</span>
+                {% endif %}
+            </td>
+            <td>{{ result.block_episode_count or 0 }}</td>
+            <td>
+                {% if result.reputation_score is not none %}
+                    {% set score = result.reputation_score | int %}
+                    {% if score <= 30 %}
+                    <span style="color: var(--success);">{{ score }}</span>
+                    {% elif score <= 60 %}
+                    <span style="color: var(--warning);">{{ score }}</span>
+                    {% else %}
+                    <span style="color: var(--danger); font-weight: 600;">{{ score }}</span>
+                    {% endif %}
+                {% else %}
+                —
+                {% endif %}
+            </td>
+            <td>{{ result.geo_country or '—' }}</td>
+            <td>
+                {% if result.primary_threat_tag %}
+                <span class="badge badge-secondary">{{ result.primary_threat_tag }}</span>
+                {% elif result.threat_tags and result.threat_tags | length > 0 %}
+                <span class="badge badge-secondary">{{ result.threat_tags[0] }}</span>
+                {% else %}
+                —
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Pagination Controls -->
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Search results pagination">
+    <span class="pagination-info">Page {{ page }} of {{ total_pages }} ({{ total }} total)</span>
+    <div class="pagination-controls">
+        {% if page > 1 %}
+        <a href="#" class="btn btn-sm btn-secondary"
+           hx-get="{{ url_for('intel_dashboard.search_page', q=query, repeat_offender=filters.repeat_offender, geo_country=filters.geo_country, min_sighting_count=filters.min_sighting_count, page=page - 1, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
+           hx-target="#intel-search-results"
+           hx-swap="innerHTML"
+           aria-label="Previous page">← Prev</a>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="btn btn-sm btn-primary current" aria-current="page">{{ p }}</span>
+            {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+            <a href="#" class="btn btn-sm btn-secondary"
+               hx-get="{{ url_for('intel_dashboard.search_page', q=query, repeat_offender=filters.repeat_offender, geo_country=filters.geo_country, min_sighting_count=filters.min_sighting_count, page=p, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
+               hx-target="#intel-search-results"
+               hx-swap="innerHTML">{{ p }}</a>
+            {% elif p == 4 or p == total_pages - 3 %}
+            <span class="pagination-ellipsis">…</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <a href="#" class="btn btn-sm btn-secondary"
+           hx-get="{{ url_for('intel_dashboard.search_page', q=query, repeat_offender=filters.repeat_offender, geo_country=filters.geo_country, min_sighting_count=filters.min_sighting_count, page=page + 1, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
+           hx-target="#intel-search-results"
+           hx-swap="innerHTML"
+           aria-label="Next page">Next →</a>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}
+{% endif %}

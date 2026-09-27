@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Check Detail — Vespid{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1 id="check-name">Check Detail</h1>
+    <div class="page-actions">
+        <a id="edit-link" href="#" class="btn">Edit</a>
+        <a href="/alerts/synthetic-checks" class="btn">Back</a>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+    <div class="card-body" id="check-summary">
+        <div class="loading">Loading…</div>
+    </div>
+</div>
+
+<h3>Recent Job History</h3>
+<div id="history-container">
+    <div class="loading">Loading history…</div>
+</div>
+
+<script>
+var CHECK_ID = {{ check_id }};
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function loadDetail() {
+    fetch('/api/v1/synthetic-checks/' + CHECK_ID)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) { return; }
+            var c = data.check;
+            document.getElementById('check-name').textContent = c.name;
+            document.getElementById('edit-link').href = '/alerts/synthetic-checks/' + CHECK_ID + '/edit';
+
+            var locs = (c.locations || []).join(', ') || 'any';
+            var st = c.last_result_status || '—';
+            var dur = c.last_duration_ms != null ? c.last_duration_ms + 'ms' : '—';
+            var err = c.last_error || '';
+            var lastAt = c.last_result_at ? new Date(c.last_result_at).toLocaleString() : '—';
+
+            var stCls = st === 'completed' ? 'ok' : (st === 'failed' ? 'critical' : 'unknown');
+            document.getElementById('check-summary').innerHTML =
+                '<table style="width:100%;border:none;margin:0;">' +
+                '<tr><td style="padding:4px 12px;font-weight:600;width:120px;">Type</td><td><code>' + escapeHtml(c.check_type) + '</code></td></tr>' +
+                '<tr><td style="padding:4px 12px;font-weight:600;">Target</td><td><code>' + escapeHtml(c.target) + '</code></td></tr>' +
+                '<tr><td style="padding:4px 12px;font-weight:600;">Locations</td><td>' + escapeHtml(locs) + '</td></tr>' +
+                '<tr><td style="padding:4px 12px;font-weight:600;">Interval</td><td>' + c.interval_secs + 's</td></tr>' +
+                '<tr><td style="padding:4px 12px;font-weight:600;">Timeout</td><td>' + c.timeout_secs + 's</td></tr>' +
+                '<tr><td style="padding:4px 12px;font-weight:600;">Last Status</td><td><span class="badge badge-' + stCls + '">' + escapeHtml(st) + '</span></td></tr>' +
+                '<tr><td style="padding:4px 12px;font-weight:600;">Last Duration</td><td>' + dur + '</td></tr>' +
+                (err ? '<tr><td style="padding:4px 12px;font-weight:600;">Last Error</td><td style="color:var(--badge-clr,#f87171);">' + escapeHtml(err) + '</td></tr>' : '') +
+                '<tr><td style="padding:4px 12px;font-weight:600;">Last Run</td><td>' + lastAt + '</td></tr>' +
+                '</table>';
+        });
+
+    loadHistory();
+}
+
+function loadHistory() {
+    fetch('/api/v1/synthetic-checks/' + CHECK_ID + '/history?limit=50')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('history-container');
+            var jobs = data.jobs || [];
+            if (!jobs.length) {
+                container.innerHTML = '<div class="text-muted">No job history yet.</div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr>' +
+                '<th>Location</th><th>Status</th><th>Duration</th><th>Error</th><th>Time</th></tr></thead><tbody>';
+
+            jobs.forEach(function(j) {
+                var st = j.status;
+                var stCls = st === 'completed' ? 'ok' : (st === 'failed' ? 'critical' : (st === 'timed_out' ? 'critical' : 'unknown'));
+                var labels = {completed: 'OK', failed: 'FAIL', timed_out: 'TIMEOUT', pending: 'pending', assigned: 'assigned', running: 'running'};
+                var dur = j.duration_ms != null ? j.duration_ms + 'ms' : '—';
+                var err = j.error_message || '';
+                var time = j.completed_at ? new Date(j.completed_at).toLocaleString() : '—';
+
+                html += '<tr>' +
+                    '<td>' + escapeHtml(j.location || '—') + '</td>' +
+                    '<td><span class="badge badge-' + stCls + '">' + (labels[st] || st) + '</span></td>' +
+                    '<td>' + dur + '</td>' +
+                    '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(err) + '">' + escapeHtml(err || '—') + '</td>' +
+                    '<td>' + escapeHtml(time) + '</td>' +
+                    '</tr>';
+
+                var resultJson = null;
+                try { resultJson = j.result_json ? JSON.parse(j.result_json) : null; } catch(e) {}
+                if (resultJson && resultJson.steps && Array.isArray(resultJson.steps) && resultJson.steps.length > 0) {
+                    html += '<tr><td colspan="5" style="padding:4px 0 8px 0;">' +
+                        '<div style="margin-left:24px;border-left:3px solid var(--border,#ddd);padding-left:12px;">';
+                    resultJson.steps.forEach(function(s) {
+                        var sCls = s.success === false ? 'critical' : 'ok';
+                        var sLabel = s.success === false ? 'FAIL' : 'OK';
+                        var sName = s.name || ('Step ' + s.step);
+                        var sMethod = s.method || 'GET';
+                        var sUrl = s.url || '';
+                        var sStatus = s.status_code != null ? s.status_code : '—';
+                        var sDur = s.duration_ms != null ? s.duration_ms + 'ms' : '—';
+                        html += '<div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;padding:2px 0;">' +
+                            '<span class="badge badge-' + sCls + '" style="font-size:0.7rem;">' + sLabel + '</span>' +
+                            '<span style="font-weight:600;">' + escapeHtml(sName) + '</span>' +
+                            '<span style="color:var(--text-muted,#888);">' + escapeHtml(sMethod) + '</span>' +
+                            '<code style="font-size:0.8rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(sUrl) + '">' + escapeHtml(sUrl) + '</code>' +
+                            '<span style="color:var(--text-muted,#888);">HTTP ' + sStatus + '</span>' +
+                            '<span style="color:var(--text-muted,#888);">' + sDur + '</span>' +
+                            (s.body_match != null ? '<span>' + (s.body_match ? 'body ✓' : 'body ✗') + '</span>' : '') +
+                            '</div>';
+                        if (s.error) {
+                            html += '<div style="font-size:0.8rem;color:var(--badge-clr,#f87171);padding-left:40px;">' + escapeHtml(s.error) + '</div>';
+                        }
+                    });
+                    html += '</div></td></tr>';
+                }
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('history-container').innerHTML = '<div class="error">Failed to load history.</div>';
+        });
+}
+
+loadDetail();
+</script>
+{% endblock %}

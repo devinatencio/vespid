@@ -1,0 +1,921 @@
+{% extends "base.html" %}
+{% block title %}Synthetic Checks — Vespid{% endblock %}
+{% block content %}
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">🧪</div>
+    <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">Synthetic Checks</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Programmatic endpoint monitoring
+        </div>
+    </div>
+    <div id="sc-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    <a href="/alerts/synthetic-checks/new" class="btn btn-primary" style="white-space:nowrap;">+ New Check</a>
+</div>
+
+<div id="checks-container">
+    <div class="loading">Loading checks…</div>
+</div>
+
+<!-- Alert Policies Section -->
+<div class="card" style="padding:0.85rem 1.25rem;margin:1.25rem 0 0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.2rem;line-height:1;">⚙️</div>
+    <div style="flex:1;min-width:0;">
+        <h2 style="margin:0;font-size:1rem;">Default Alert Policies</h2>
+    </div>
+    <div id="policy-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    <a href="#" class="btn btn-sm btn-primary" onclick="reconcilePolicies(this); return false;" style="white-space:nowrap;">Sync All</a>
+</div>
+<div id="policies-container">
+    <div class="loading">Loading policies…</div>
+</div>
+
+<!-- Alert Rules Section -->
+<div class="card" style="padding:0.85rem 1.25rem;margin:1.25rem 0 0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.2rem;line-height:1;">🔔</div>
+    <div style="flex:1;min-width:0;">
+        <h2 style="margin:0;font-size:1rem;">Alert Rules</h2>
+    </div>
+    <div id="rule-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    <a href="/alerts/synthetic-alerts/new" class="btn btn-sm btn-primary" style="white-space:nowrap;">+ New Rule</a>
+</div>
+<div id="rules-container">
+    <div class="loading">Loading rules…</div>
+</div>
+
+<!-- Check Detail Modal -->
+<div id="check-detail-modal" class="event-modal-overlay" style="display:none;" onclick="closeCheckModal(event)">
+    <div class="event-modal" style="max-width:1100px;" onclick="event.stopPropagation()">
+        <div class="event-modal-header">
+            <h3 class="event-modal-title" id="modal-title">Check Details</h3>
+            <button class="event-modal-close" onclick="closeCheckModal()">&times;</button>
+        </div>
+        <div class="event-modal-body" id="modal-body">
+            <div class="event-modal-loading">Loading…</div>
+        </div>
+        <div class="event-modal-actions" style="display:none;" id="modal-actions">
+            <a id="modal-edit-link" href="#" class="btn btn-primary">Edit Check</a>
+            <a id="modal-detail-link" href="#" class="btn">Full Page</a>
+            <span style="flex:1;"></span>
+            <button class="btn btn-sm" id="modal-load-more" style="display:none;" onclick="loadMoreResults()">Load 10 more results</button>
+        </div>
+    </div>
+</div>
+
+<!-- Graph Chart Modal -->
+<div id="check-graph-modal" class="event-modal-overlay" style="display:none;" onclick="closeCheckGraph(event)">
+    <div class="event-modal" style="max-width:800px;" onclick="event.stopPropagation()">
+        <div class="event-modal-header">
+            <h3 class="event-modal-title" id="graph-modal-title">Metrics</h3>
+            <button class="event-modal-close" onclick="closeCheckGraph()">&times;</button>
+        </div>
+        <div id="graph-modal-meta" style="padding:0 1.5rem 0.5rem;font-size:0.78rem;color:var(--text-muted);display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;"></div>
+        <div style="display:flex;gap:0.25rem;padding:0 1.5rem 0.5rem;">
+            <button class="cp-btn active" data-crange="1d" onclick="setGraphRange(this)">1d</button>
+            <button class="cp-btn" data-crange="7d" onclick="setGraphRange(this)">7d</button>
+            <button class="cp-btn" data-crange="30d" onclick="setGraphRange(this)">30d</button>
+            <button class="cp-btn" data-crange="90d" onclick="setGraphRange(this)">90d</button>
+        </div>
+        <div style="display:flex;gap:0.5rem;padding:0 1.5rem 0.5rem;" id="graph-stats"></div>
+        <div class="event-modal-body" style="padding:0 1.5rem 1.5rem;">
+            <div style="margin-bottom:0.5rem;">
+                <div style="font-size:0.72rem;font-weight:600;color:var(--text-muted,#94a3b8);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.25rem;">Duration (ms)</div>
+                <div style="height:160px;position:relative;">
+                    <canvas id="chart-duration"></canvas>
+                </div>
+            </div>
+            <div style="margin-bottom:0.5rem;">
+                <div style="font-size:0.72rem;font-weight:600;color:var(--text-muted,#94a3b8);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.25rem;">Result</div>
+                <div style="height:60px;position:relative;">
+                    <canvas id="chart-success"></canvas>
+                </div>
+            </div>
+            <div id="chart-type-section" style="display:none;margin-bottom:0;">
+                <div style="font-size:0.72rem;font-weight:600;color:var(--text-muted,#94a3b8);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:0.25rem;" id="chart-type-label"></div>
+                <div style="height:80px;position:relative;">
+                    <canvas id="chart-type"></canvas>
+                </div>
+            </div>
+        </div>
+        <div id="graph-modal-status" style="text-align:center;padding:0 1.5rem 1rem;font-size:0.78rem;color:var(--text-muted);"></div>
+    </div>
+</div>
+
+<!-- Sync All Confirm Modal -->
+<div id="reconcile-confirm-modal" class="event-modal-overlay" style="display:none;" onclick="closeReconcileConfirm(event)">
+    <div class="event-modal" style="max-width:480px;" onclick="event.stopPropagation()">
+        <div class="event-modal-header">
+            <h3 class="event-modal-title">⚠ Sync All Policies</h3>
+            <button class="event-modal-close" onclick="closeReconcileConfirm()">&times;</button>
+        </div>
+        <div class="event-modal-body" style="padding:1.5rem;">
+            <p style="margin:0 0 1rem;line-height:1.6;">This will create alert rules from default policies for <strong>all checks</strong> that don't already have one.</p>
+            <p style="margin:0 0 1.5rem;line-height:1.6;color:var(--text-muted);font-size:0.85rem;">Existing custom and overridden rules will not be modified.</p>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="btn btn-secondary" onclick="closeReconcileConfirm()">Cancel</button>
+                <button class="btn btn-primary" onclick="proceedReconcile(this)">Sync All</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.sc-stat { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.sc-stat .sc-stat-n { font-weight:700; font-size:0.95rem; line-height:1; }
+.sc-stat .sc-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+</style>
+<script>
+var _modalCheckId = null;
+var _resultOffset = 10;
+var _resultLimit = 10;
+var _totalResults = 0;
+
+var DUR_CHART = null;
+var SUCC_CHART = null;
+var TYPE_CHART = null;
+var _graphCheck = null;
+var _graphRange = '1d';
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+function statusBadge(status) {
+    if (!status) return '';
+    var map = {completed: 'ok', failed: 'critical', timed_out: 'critical', pending: 'unknown', assigned: 'unknown', running: 'unknown'};
+    var s = map[status] || 'unknown';
+    var labels = {completed: 'OK', failed: 'FAIL', timed_out: 'TIMEOUT', pending: 'pending', assigned: 'assigned', running: 'running'};
+    return '<span class="badge badge-' + s + '">' + (labels[status] || status) + '</span>';
+}
+
+function durationPill(durMs, check) {
+    if (durMs == null) return '<span class="dur-pill none">—</span>';
+    var threshold = check.timeout_secs ? check.timeout_secs * 1000 : 30000;
+    var maxDur = (check.check_config || {}).max_duration_ms;
+    if (maxDur) threshold = Math.min(threshold, maxDur);
+    var ratio = durMs / threshold;
+    var cls = ratio < 0.5 ? 'good' : (ratio < 0.8 ? 'warn' : 'bad');
+    return '<span class="dur-pill ' + cls + '">' + durMs + 'ms</span>';
+}
+
+function metricBadges(result) {
+    if (!result || typeof result !== 'object') return '';
+    var badges = [];
+    if (result.rtt_avg_ms != null) badges.push('<span class="modal-metric"><span class="modal-metric-label">RTT</span><span class="modal-metric-val">' + escapeHtml(String(result.rtt_avg_ms)) + 'ms</span></span>');
+    if (result.status_code != null) badges.push('<span class="modal-metric"><span class="modal-metric-label">HTTP</span><span class="modal-metric-val">' + escapeHtml(String(result.status_code)) + '</span></span>');
+    if (result.body_match != null) badges.push('<span class="modal-metric"><span class="modal-metric-label">Match</span><span class="modal-metric-val">' + (result.body_match ? 'yes' : 'no') + '</span></span>');
+    if (result.answer_count != null) badges.push('<span class="modal-metric"><span class="modal-metric-label">Answers</span><span class="modal-metric-val">' + escapeHtml(String(result.answer_count)) + '</span></span>');
+    if (result.connect_time_ms != null) badges.push('<span class="modal-metric"><span class="modal-metric-label">Connect</span><span class="modal-metric-val">' + escapeHtml(String(result.connect_time_ms)) + 'ms</span></span>');
+    if (result.days_remaining != null) {
+        var days = parseInt(result.days_remaining);
+        var cls = days > 30 ? '' : (days > 7 ? 'style="color:#facc15;"' : 'style="color:#f87171;"');
+        badges.push('<span class="modal-metric"><span class="modal-metric-label">Cert Expires</span><span class="modal-metric-val" ' + cls + '>' + days + 'd</span></span>');
+    }
+    if (result.chain_valid != null) {
+        badges.push('<span class="modal-metric"><span class="modal-metric-label">Chain</span><span class="modal-metric-val">' + (result.chain_valid ? '✅' : '❌') + '</span></span>');
+    }
+    if (!badges.length) {
+        var keys = Object.keys(result);
+        if (keys.length) badges.push('<span class="modal-metric"><span class="modal-metric-label">data</span><span class="modal-metric-val">' + escapeHtml(keys.join(', ')) + '</span></span>');
+    }
+    return '<div class="modal-metrics">' + badges.join('') + '</div>';
+}
+
+function timeAgo(iso) {
+    if (!iso) return '—';
+    var then = new Date(iso);
+    var now = new Date();
+    var diff = now - then;
+    if (diff < 0) return 'just now';
+    var s = Math.floor(diff / 1000);
+    if (s < 60) return s + 's ago';
+    var m = Math.floor(s / 60);
+    if (m < 60) return m + 'm ago';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    var d = Math.floor(h / 24);
+    if (d < 30) return d + 'd ago';
+    return then.toLocaleDateString();
+}
+
+// ═══ Detail Modal ═══════════════════════════════════════════════════════════
+
+function openCheckModal(checkId) {
+    _modalCheckId = checkId;
+    _resultOffset = 10;
+    _totalResults = 0;
+    document.getElementById('modal-title').textContent = 'Check #' + checkId;
+    document.getElementById('modal-body').innerHTML = '<div class="event-modal-loading">Loading…</div>';
+    document.getElementById('modal-actions').style.display = 'none';
+    document.getElementById('check-detail-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    var detailFetch = fetch('/api/v1/synthetic-checks/' + checkId).then(function(r) { return r.json(); });
+    var historyFetch = fetch('/api/v1/synthetic-checks/' + checkId + '/history?limit=10').then(function(r) { return r.json(); });
+
+    Promise.all([detailFetch, historyFetch]).then(function(results) {
+        renderModalContent(results[0].check, results[1].jobs || []);
+    }).catch(function() {
+        document.getElementById('modal-body').innerHTML = '<div class="error">Failed to load check details.</div>';
+    });
+}
+
+function renderModalContent(check, jobs) {
+    if (!check) { document.getElementById('modal-body').innerHTML = '<div class="error">Check not found.</div>'; return; }
+
+    _totalResults = jobs.length;
+
+    document.getElementById('modal-title').textContent = check.name || ('Check #' + check.id);
+    document.getElementById('modal-edit-link').href = '/alerts/synthetic-checks/' + check.id + '/edit';
+    document.getElementById('modal-detail-link').href = '/alerts/synthetic-checks/' + check.id;
+    document.getElementById('modal-actions').style.display = 'flex';
+
+    var st = check.last_result_status || '—';
+    var stCls = st === 'completed' ? 'ok' : (st === 'failed' ? 'critical' : 'unknown');
+    var dur = check.last_duration_ms != null ? check.last_duration_ms + 'ms' : '—';
+    var err = check.last_error || '';
+    var lastAt = check.last_result_at ? new Date(check.last_result_at).toLocaleString() : '—';
+    var locs = (check.locations || []).join(', ') || 'any';
+    var cfg = check.check_config || {};
+    var nextRun = check.next_run_at ? timeAgo(check.next_run_at) : '—';
+
+    var configExtra = '';
+    if (check.check_type === 'http') {
+        if (cfg.expected_status) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Expected Status</span><span class="event-modal-meta-value">' + escapeHtml(cfg.expected_status) + '</span></div>';
+        if (cfg.max_duration_ms) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Max Duration</span><span class="event-modal-meta-value">' + cfg.max_duration_ms + 'ms</span></div>';
+        if (cfg.body_match) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Body Match</span><span class="event-modal-meta-value">' + escapeHtml(cfg.body_match) + '</span></div>';
+    } else if (check.check_type === 'icmp') {
+        if (cfg.max_rtt_ms) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Max RTT</span><span class="event-modal-meta-value">' + cfg.max_rtt_ms + 'ms</span></div>';
+    } else if (check.check_type === 'tcp') {
+        if (cfg.port) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Port</span><span class="event-modal-meta-value">' + cfg.port + '</span></div>';
+        if (cfg.max_connect_ms) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Max Connect</span><span class="event-modal-meta-value">' + cfg.max_connect_ms + 'ms</span></div>';
+    } else if (check.check_type === 'dns') {
+        if (cfg.nameserver) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Nameserver</span><span class="event-modal-meta-value">' + escapeHtml(cfg.nameserver) + '</span></div>';
+        if (cfg.expected_value) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Expected Value</span><span class="event-modal-meta-value">' + escapeHtml(cfg.expected_value) + '</span></div>';
+    } else if (check.check_type === 'ssl') {
+        if (cfg.port) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Port</span><span class="event-modal-meta-value">' + cfg.port + '</span></div>';
+        if (cfg.sni) configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">SNI</span><span class="event-modal-meta-value"><code>' + escapeHtml(cfg.sni) + '</code></span></div>';
+        configExtra += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Chain Validation</span><span class="event-modal-meta-value">' + (cfg.check_chain !== false ? 'Yes' : 'No') + '</span></div>';
+    }
+
+    var html = '';
+    html += '<div class="event-modal-section">';
+    html += '<div class="event-modal-section-title">Check Info</div>';
+    html += '<div class="event-modal-meta">';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Type</span><span class="event-modal-meta-value"><code>' + escapeHtml(check.check_type) + '</code></span></div>';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Target</span><span class="event-modal-meta-value"><code>' + escapeHtml(check.target) + '</code></span></div>';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Locations</span><span class="event-modal-meta-value">' + escapeHtml(locs) + '</span></div>';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Interval</span><span class="event-modal-meta-value">' + check.interval_secs + 's</span></div>';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Timeout</span><span class="event-modal-meta-value">' + check.timeout_secs + 's</span></div>';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Next Run</span><span class="event-modal-meta-value">' + nextRun + '</span></div>';
+    html += configExtra;
+    html += '</div></div>';
+
+    html += '<div class="event-modal-section">';
+    html += '<div class="event-modal-section-title">Last Run</div>';
+    html += '<div class="event-modal-meta">';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Status</span><span class="event-modal-meta-value"><span class="badge badge-' + stCls + '">' + escapeHtml(st) + '</span></span></div>';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Duration</span><span class="event-modal-meta-value">' + dur + '</span></div>';
+    if (err) html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Error</span><span class="event-modal-meta-value" style="color:var(--badge-clr,#f87171);">' + escapeHtml(err) + '</span></div>';
+    html += '<div class="event-modal-meta-item"><span class="event-modal-meta-label">Time</span><span class="event-modal-meta-value">' + lastAt + '</span></div>';
+    html += '</div></div>';
+
+    html += '<div class="event-modal-section">';
+    html += '<div class="event-modal-section-title">Recent Results <span style="font-weight:400;font-size:0.75rem;color:var(--text-muted);">(last ' + Math.min(jobs.length, 10) + ')</span></div>';
+
+    if (!jobs.length) {
+        html += '<div class="text-muted">No results yet.</div>';
+    } else {
+        html += '<table class="data-table" style="font-size:0.8rem;"><thead><tr>';
+        html += '<th>Location</th><th>Status</th><th>Duration</th><th>Metrics</th><th>Time</th>';
+        html += '</tr></thead><tbody id="results-tbody">';
+        html += buildResultRows(jobs);
+        html += '</tbody></table>';
+    }
+    html += '</div>';
+
+    document.getElementById('modal-body').innerHTML = html;
+
+    var loadMore = document.getElementById('modal-load-more');
+    loadMore.style.display = jobs.length >= 10 ? '' : 'none';
+}
+
+function buildResultRows(jobs) {
+    var html = '';
+    jobs.forEach(function(j) {
+        var st = j.status;
+        var stCls = st === 'completed' ? 'ok' : (st === 'failed' ? 'critical' : (st === 'timed_out' ? 'critical' : 'unknown'));
+        var labels = {completed: 'OK', failed: 'FAIL', timed_out: 'TIMEOUT', pending: 'pending', assigned: 'assigned', running: 'running'};
+        var dur = j.duration_ms != null ? j.duration_ms + 'ms' : '—';
+        var err = j.error_message || '';
+        var time = timeAgo(j.completed_at) || '—';
+        var result = j.result_json || null;
+        var metrics = metricBadges(result);
+
+        html += '<tr>';
+        html += '<td>' + escapeHtml(j.location || '—') + '</td>';
+        html += '<td><span class="badge badge-' + stCls + '">' + (labels[st] || st) + '</span></td>';
+        html += '<td style="white-space:nowrap;">' + dur + '</td>';
+        html += '<td>' + (metrics || '<span class="text-muted">—</span>') + '</td>';
+        html += '<td style="white-space:nowrap;">' + escapeHtml(time) + '</td>';
+        html += '</tr>';
+    });
+    return html;
+}
+
+function loadMoreResults() {
+    var tbody = document.getElementById('results-tbody');
+    var btn = document.getElementById('modal-load-more');
+    if (!tbody || !_modalCheckId) return;
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+
+    fetch('/api/v1/synthetic-checks/' + _modalCheckId + '/history?limit=' + _resultLimit + '&offset=' + _resultOffset)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var jobs = data.jobs || [];
+            tbody.insertAdjacentHTML('beforeend', buildResultRows(jobs));
+            _resultOffset += jobs.length;
+            _totalResults += jobs.length;
+            var sectionTitle = document.querySelector('.event-modal-section:last-child .event-modal-section-title span');
+            if (sectionTitle) sectionTitle.textContent = '(last ' + _totalResults + ')';
+            btn.style.display = jobs.length < _resultLimit ? 'none' : '';
+            btn.disabled = false;
+            btn.textContent = 'Load 10 more results';
+        })
+        .catch(function() {
+            btn.textContent = 'Failed. Retry?';
+            btn.disabled = false;
+        });
+}
+
+function closeCheckModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('check-detail-modal').style.display = 'none';
+    document.body.style.overflow = '';
+    _modalCheckId = null;
+}
+
+// ═══ Graph Modal ════════════════════════════════════════════════════════════
+
+function openCheckGraph(checkId, checkName, checkType) {
+    _graphCheck = {id: checkId, name: checkName, type: checkType};
+    _graphRange = document.querySelector('#check-graph-modal .cp-btn.active')?.dataset?.crange || '1d';
+    document.getElementById('graph-modal-title').textContent = checkName || ('Check #' + checkId);
+    document.getElementById('graph-modal-meta').innerHTML = '';
+    document.getElementById('graph-stats').innerHTML = '';
+    document.getElementById('graph-modal-status').textContent = '';
+    document.getElementById('check-graph-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    fetchCheckGraph();
+}
+
+function fetchCheckGraph() {
+    var id = _graphCheck.id;
+    var range = _graphRange;
+    var step = range === '1d' ? '60s' : range === '7d' ? '300s' : '3600s';
+    var start = '-' + (range === '1d' ? '24' : range === '7d' ? '168' : range === '30d' ? '720' : '2160') + 'h';
+
+    document.getElementById('graph-modal-meta').innerHTML = '<span>Loading…</span>';
+    document.getElementById('graph-stats').innerHTML = '';
+    document.getElementById('graph-modal-status').textContent = '';
+
+    var durQ = 'vespid_synthetic_check_duration_ms{check_id="' + id + '"}';
+    var succQ = 'vespid_synthetic_check_success{check_id="' + id + '"}';
+
+    var durFetch = fetch('/metrics/api/query_range?q=' + encodeURIComponent(durQ) + '&start=' + start + '&step=' + step)
+        .then(function(r) { return r.json(); })
+        .catch(function() { return null; });
+
+    var succFetch = fetch('/metrics/api/query_range?q=' + encodeURIComponent(succQ) + '&start=' + start + '&step=' + step)
+        .then(function(r) { return r.json(); })
+        .catch(function() { return null; });
+
+    var typeQ = null;
+    if (_graphCheck.type === 'http') {
+        typeQ = 'vespid_synthetic_check_status_code{check_id="' + id + '"}';
+    } else if (_graphCheck.type === 'dns') {
+        typeQ = 'vespid_synthetic_check_dns_answers{check_id="' + id + '"}';
+    } else if (_graphCheck.type === 'ssl') {
+        typeQ = 'vespid_synthetic_check_days_remaining{check_id="' + id + '"}';
+    }
+
+    var typeFetch = null;
+    if (typeQ) {
+        typeFetch = fetch('/metrics/api/query_range?q=' + encodeURIComponent(typeQ) + '&start=' + start + '&step=' + step)
+            .then(function(r) { return r.json(); })
+            .catch(function() { return null; });
+    }
+
+    Promise.all([durFetch, succFetch, typeFetch]).then(function(results) {
+        renderCheckGraph(results[0], results[1], results[2]);
+    }).catch(function() {
+        document.getElementById('graph-modal-status').textContent = 'Failed to load metrics.';
+    });
+}
+
+function renderCheckGraph(durData, succData, typeData) {
+    var durPoints = extractPoints(durData);
+    var succPoints = extractPoints(succData);
+    var typePoints = typeData ? extractPoints(typeData) : [];
+
+    if (!durPoints.length && !succPoints.length && !typePoints.length) {
+        document.getElementById('graph-modal-status').textContent = 'No historical data for this time range.';
+        document.getElementById('graph-modal-meta').innerHTML = '';
+        return;
+    }
+
+    var meta = [];
+    if (durPoints.length) meta.push('Duration: ' + durPoints.length + ' points');
+    if (succPoints.length) meta.push('Result: ' + succPoints.length + ' points');
+    if (typePoints.length) meta.push(_graphCheck.type === 'http' ? 'Status' : 'Answers');
+    meta.push('<code style="font-size:0.72rem;">' + escapeHtml(_graphCheck.type) + '</code>');
+    document.getElementById('graph-modal-meta').innerHTML = meta.join(' &middot; ');
+
+    // stat cards
+    var statsHtml = '';
+    if (durPoints.length) {
+        var durVals = durPoints.map(function(p) { return p.v; });
+        var sorted = durVals.slice().sort(function(a,b) { return a - b; });
+        var min = sorted[0];
+        var max = sorted[sorted.length - 1];
+        var avg = durVals.reduce(function(s,v) { return s + v; }, 0) / durVals.length;
+        statsHtml += '<div class="stat-card"><span class="stat-num">' + Math.round(min) + 'ms</span><span class="stat-label">Min</span></div>';
+        statsHtml += '<div class="stat-card"><span class="stat-num">' + Math.round(avg) + 'ms</span><span class="stat-label">Avg</span></div>';
+        statsHtml += '<div class="stat-card"><span class="stat-num">' + Math.round(max) + 'ms</span><span class="stat-label">Max</span></div>';
+    }
+    if (succPoints.length) {
+        var pass = succPoints.filter(function(p) { return p.v >= 1; }).length;
+        var uptime = succPoints.length ? Math.round((pass / succPoints.length) * 1000) / 10 : 100;
+        var cls = uptime >= 99.9 ? 'ok' : (uptime >= 99 ? '' : 'critical');
+        statsHtml += '<div class="stat-card ' + cls + '"><span class="stat-num">' + uptime + '%</span><span class="stat-label">Uptime</span></div>';
+    }
+    document.getElementById('graph-stats').innerHTML = statsHtml;
+
+    // build labels from available data
+    var allLabels = buildTimeLabels(durPoints.length ? durPoints : succPoints);
+
+    // Destroy old charts
+    if (DUR_CHART) { DUR_CHART.destroy(); DUR_CHART = null; }
+    if (SUCC_CHART) { SUCC_CHART.destroy(); SUCC_CHART = null; }
+    if (TYPE_CHART) { TYPE_CHART.destroy(); TYPE_CHART = null; }
+
+    var theme = window.getChartThemeColors();
+    var palette = window.getChartPalette();
+
+    // Duration chart
+    if (durPoints.length) {
+        var labels = buildTimeLabels(durPoints);
+        var values = durPoints.map(function(p) { return p.v; });
+        DUR_CHART = renderLineChart('chart-duration', labels, values, theme.chartLine, 'Duration (ms)');
+    }
+
+    // Success chart
+    if (succPoints.length) {
+        var labels = buildTimeLabels(succPoints);
+        var values = succPoints.map(function(p) { return p.v; });
+        SUCC_CHART = renderStepChart('chart-success', labels, values);
+    }
+
+    // Type-specific chart (HTTP: status_code, DNS: dns_answers)
+    var typeSection = document.getElementById('chart-type-section');
+    if (typePoints.length) {
+        var labels = buildTimeLabels(typePoints);
+        var values = typePoints.map(function(p) { return p.v; });
+        var isHttp = _graphCheck.type === 'http';
+        var isSsl = _graphCheck.type === 'ssl';
+        var typeLabel = document.getElementById('chart-type-label');
+        var axisLabel = isHttp ? 'status' : (isSsl ? 'days' : 'answers');
+        typeLabel.textContent = isHttp ? 'Status Code' : (isSsl ? 'Days Remaining' : 'DNS Answers');
+        var typeColor = isHttp ? palette[3] : (isSsl ? palette[2] : palette[4]);
+        TYPE_CHART = renderLineChart('chart-type', labels, values, typeColor, typeLabel.textContent, axisLabel);
+        typeSection.style.display = '';
+    } else {
+        typeSection.style.display = 'none';
+    }
+}
+
+function renderLineChart(canvasId, labels, values, color, label, yLabel) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+    var ctx = canvas.getContext('2d');
+    var theme = window.getChartThemeColors();
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: label,
+                data: values,
+                borderColor: color,
+                backgroundColor: window.colorWithAlpha(color, 0.12),
+                fill: true,
+                tension: 0.35,
+                pointRadius: 0,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            interaction: { intersect: false, mode: 'index' },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 6, maxRotation: 0, font: { size: 10 }, color: theme.textMuted }
+                },
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: yLabel || 'ms', font: { size: 10 }, color: theme.textMuted },
+                    grid: { color: theme.gridLine },
+                    ticks: { font: { size: 10 }, color: theme.textMuted }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: function(items) { return items[0].label; },
+                        label: function(ctx) {
+                            var v = ctx.parsed.y;
+                            return (typeof v === 'number' ? (Number.isInteger(v) ? v.toString() : v.toFixed(1)) : v) + (yLabel ? '' : 'ms');
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderStepChart(canvasId, labels, values) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return null;
+    var ctx = canvas.getContext('2d');
+    var palette = window.getChartPalette();
+
+    var bgColors = values.map(function(v) {
+        return v >= 1 ? window.colorWithAlpha(palette[2], 0.15) : window.colorWithAlpha(palette[1], 0.15);
+    });
+    var borderColors = values.map(function(v) {
+        return v >= 1 ? palette[2] : palette[1];
+    });
+
+    return new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Result',
+                data: values.map(function(v) { return v >= 1 ? 1 : 0; }),
+                backgroundColor: bgColors,
+                borderColor: borderColors,
+                borderWidth: 1,
+                borderRadius: 0,
+                barPercentage: 1.0,
+                categoryPercentage: 1.0,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { display: false }
+                },
+                y: {
+                    display: false,
+                    min: 0,
+                    max: 1.5,
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: function(items) { return items[0].label; },
+                        label: function(ctx) {
+                            return ctx.parsed.y >= 1 ? 'PASS' : 'FAIL';
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function buildTimeLabels(points) {
+    return points.map(function(p) {
+        var d = new Date(p.t * 1000);
+        var now = new Date();
+        var diffHours = (now - d) / 3600000;
+        if (diffHours <= 24) {
+            return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        }
+        return d.toLocaleDateString([], {month:'short',day:'numeric'}) + ' ' +
+               d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    });
+}
+
+function extractPoints(vmResponse) {
+    var points = [];
+    if (!vmResponse || vmResponse.status !== 'success' || !vmResponse.data) return points;
+    var results = vmResponse.data.result || [];
+    results.forEach(function(series) {
+        (series.values || []).forEach(function(tv) {
+            points.push({t: Number(tv[0]), v: Number(tv[1])});
+        });
+    });
+    points.sort(function(a, b) { return a.t - b.t; });
+    return points;
+}
+
+function setGraphRange(btn) {
+    document.querySelectorAll('#check-graph-modal .cp-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    _graphRange = btn.dataset.crange;
+    fetchCheckGraph();
+}
+
+function closeCheckGraph(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('check-graph-modal').style.display = 'none';
+    document.body.style.overflow = '';
+    if (DUR_CHART) { DUR_CHART.destroy(); DUR_CHART = null; }
+    if (SUCC_CHART) { SUCC_CHART.destroy(); SUCC_CHART = null; }
+    if (TYPE_CHART) { TYPE_CHART.destroy(); TYPE_CHART = null; }
+    _graphCheck = null;
+}
+
+// ═══ Lists ══════════════════════════════════════════════════════════════════
+
+function renderCheckStats(checks) {
+    var total = checks.length;
+    var passing = 0, failing = 0, pending = 0;
+    checks.forEach(function(c) {
+        var s = c.last_result_status || 'pending';
+        if (s === 'completed') passing++;
+        else if (s === 'failed' || s === 'timed_out') failing++;
+        else pending++;
+    });
+    var html = '';
+    html += '<div class="sc-stat"><span class="sc-stat-n">' + total + '</span> <span class="sc-stat-l">Total</span></div>';
+    html += '<div class="sc-stat"><span class="sc-stat-n">' + passing + '</span> <span class="sc-stat-l">Passing</span></div>';
+    if (failing > 0) html += '<div class="sc-stat"><span class="sc-stat-n">' + failing + '</span> <span class="sc-stat-l">Failing</span></div>';
+    if (pending > 0) html += '<div class="sc-stat"><span class="sc-stat-n">' + pending + '</span> <span class="sc-stat-l">Pending</span></div>';
+    document.getElementById('sc-panel-stats').innerHTML = html;
+}
+
+function loadChecks() {
+    fetch('/api/v1/synthetic-checks')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('checks-container');
+            var checks = data.checks || [];
+            renderCheckStats(checks);
+            if (!checks.length) {
+                container.innerHTML = '<div class="empty-state">No synthetic checks configured yet. <a href="/alerts/synthetic-checks/new">Create one</a>.</div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr>' +
+                '<th>Name</th><th>Status</th><th>Last Duration</th><th>Type</th><th>Target</th><th>Locations</th>' +
+                '<th>Actions</th></tr></thead><tbody>';
+
+            checks.forEach(function(c) {
+                var locs = (c.locations || []).join(', ') || 'any';
+                var editUrl = '/alerts/synthetic-checks/' + c.id + '/edit';
+                var stBadge = c.last_result_status ? statusBadge(c.last_result_status) : statusBadge('pending');
+
+                html += '<tr class="check-row" onclick="openCheckModal(' + c.id + ')">' +
+                    '<td style="white-space:nowrap;">' +
+                        '<button class="graph-btn" onclick="event.stopPropagation();openCheckGraph(' + c.id + ',\'' + escapeHtml(c.name) + '\',\'' + escapeHtml(c.check_type) + '\')" title="Metrics graph">' +
+                            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>' +
+                        '</button> ' +
+                        '<span style="font-weight:600;color:var(--accent,#60a5fa);">' + escapeHtml(c.name) + '</span>' +
+                    '</td>' +
+                    '<td>' + stBadge + '</td>' +
+                    '<td>' + durationPill(c.last_duration_ms, c) + '</td>' +
+                    '<td><code>' + escapeHtml(c.check_type) + '</code></td>' +
+                    '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(c.target) + '">' + escapeHtml(c.target) + '</td>' +
+                    '<td>' + escapeHtml(locs) + '</td>' +
+                    '<td style="white-space:nowrap;">' +
+                        '<button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();window.location.href=\'' + editUrl + '\'">Edit</button> ' +
+                        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteCheck(' + c.id + ',\'' + escapeHtml(c.name) + '\')">Delete</button>' +
+                    '</td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('checks-container').innerHTML = '<div class="error">Failed to load checks.</div>';
+        });
+}
+
+function deleteCheck(id, name) {
+    if (!confirm('Archive check "' + name + '"? It will stop running.')) return;
+    fetch('/api/v1/synthetic-checks/' + id, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    })
+    .then(function(r) { return r.json(); })
+    .then(function() { loadChecks(); })
+    .catch(function() { alert('Failed to archive check.'); });
+}
+
+function loadRules() {
+    fetch('/api/v1/synthetic-alerts')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var container = document.getElementById('rules-container');
+            var rules = data.rules || [];
+            renderRuleStats(rules);
+            if (!rules.length) {
+                container.innerHTML = '<div class="card" style="margin-top:0;"><div class="card-body" style="text-align:center;padding:3rem 2rem;">' +
+                    '<p style="font-size:0.9rem;color:var(--text-muted);margin:0;">No alert rules configured yet.</p>' +
+                    '</div></div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr>' +
+                '<th>Name</th><th>Check</th><th>Type</th><th>Source</th><th>Firing</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
+
+            rules.forEach(function(r) {
+                var typeLabel = r.condition_type === 'metric' ? 'Metric' : r.condition_type === 'dns_answer_change' ? 'DNS Change' : 'Failure Count';
+                var editUrl = '/alerts/synthetic-alerts/' + r.id + '/edit';
+                var firingHtml = r.firing ? '<span class="badge badge-critical">FIRING</span>' : '<span class="badge badge-ok">ok</span>';
+                var sourceBadge = '';
+                if (r.policy_id && r.policy_overridden) {
+                    sourceBadge = '<span class="source-badge overridden">overridden</span>';
+                } else if (r.policy_id) {
+                    sourceBadge = '<span class="source-badge auto">auto</span>';
+                } else {
+                    sourceBadge = '<span class="source-badge custom">custom</span>';
+                }
+                var actionsHtml = '';
+                if (r.firing && r.condition_type === 'dns_answer_change' && r.dns_change_persist) {
+                    actionsHtml += '<button class="btn btn-sm btn-secondary" onclick="resolveAlert(' + r.id + ')">Resolve</button> ';
+                }
+                actionsHtml += '<button class="btn btn-sm btn-secondary" onclick="window.location.href=\'' + editUrl + '\'">Edit</button> ' +
+                    '<button class="btn btn-sm btn-danger" onclick="deleteRule(' + r.id + ')">Del</button>';
+                html += '<tr>' +
+                    '<td><span style="font-weight:600;">' + escapeHtml(r.name) + '</span></td>' +
+                    '<td>' + escapeHtml(r.check_name || ('#' + r.check_id)) + (r.location ? ' (' + escapeHtml(r.location) + ')' : '') + (r.check_target ? '<br><span style="font-size:0.75rem;color:var(--text-muted);">' + escapeHtml(r.check_target) + '</span>' : '') + '</td>' +
+                    '<td><code>' + typeLabel + '</code></td>' +
+                    '<td>' + sourceBadge + '</td>' +
+                    '<td>' + firingHtml + '</td>' +
+                    '<td>' + (r.enabled ? 'Yes' : 'No') + '</td>' +
+                    '<td>' + actionsHtml + '</td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function() { document.getElementById('rules-container').innerHTML = '<div class="error">Failed to load rules.</div>'; });
+}
+
+function deleteRule(id) {
+    if (!confirm('Delete this alert rule? It will not be recreated by any policy.')) return;
+    fetch('/api/v1/synthetic-alerts/' + id, { method: 'DELETE', headers: {'Accept': 'application/json', 'X-CSRFToken': getCsrfToken()} })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function() { loadRules(); })
+        .catch(function(e) { alert('Failed to delete rule: ' + e.message); });
+}
+
+function resolveAlert(id) {
+    if (!confirm('Resolve this firing alert?')) return;
+    fetch('/api/v1/synthetic-alerts/' + id + '/resolve', { method: 'POST', headers: {'Accept': 'application/json', 'X-CSRFToken': getCsrfToken()} })
+        .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(function() { loadRules(); })
+        .catch(function(e) { alert('Failed to resolve alert: ' + e.message); });
+}
+
+function renderPolicyStats(policies) {
+    var total = policies.length;
+    var enabled = 0, firing = 0;
+    policies.forEach(function(p) {
+        if (p.enabled) enabled++;
+        if (p.firing_count > 0) firing++;
+    });
+    var html = '';
+    html += '<div class="sc-stat"><span class="sc-stat-n">' + total + '</span> <span class="sc-stat-l">Total</span></div>';
+    html += '<div class="sc-stat"><span class="sc-stat-n">' + enabled + '</span> <span class="sc-stat-l">Enabled</span></div>';
+    if (firing > 0) html += '<div class="sc-stat"><span class="sc-stat-n">' + firing + '</span> <span class="sc-stat-l">Firing</span></div>';
+    document.getElementById('policy-panel-stats').innerHTML = html;
+}
+
+function renderRuleStats(rules) {
+    var total = rules.length;
+    var firing = 0, enabled = 0;
+    rules.forEach(function(r) {
+        if (r.enabled) enabled++;
+        if (r.firing) firing++;
+    });
+    var html = '';
+    html += '<div class="sc-stat"><span class="sc-stat-n">' + total + '</span> <span class="sc-stat-l">Total</span></div>';
+    html += '<div class="sc-stat"><span class="sc-stat-n">' + enabled + '</span> <span class="sc-stat-l">Enabled</span></div>';
+    if (firing > 0) html += '<div class="sc-stat"><span class="sc-stat-n">' + firing + '</span> <span class="sc-stat-l">Firing</span></div>';
+    document.getElementById('rule-panel-stats').innerHTML = html;
+}
+
+function loadPolicies() {
+    var container = document.getElementById('policies-container');
+    fetch('/api/v1/synthetic-alert-policies')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var policies = data.policies || [];
+            renderPolicyStats(policies);
+            if (!policies.length) {
+                container.innerHTML = '<div class="card" style="margin-top:0;"><div class="card-body" style="text-align:center;padding:2rem;"><p style="font-size:0.85rem;color:var(--text-muted);margin:0;">No default policies configured.</p></div></div>';
+                return;
+            }
+            var html = '<table class="data-table"><thead><tr>' +
+                '<th>Policy</th><th>Type</th><th>Condition</th><th>Rules</th><th>Firing</th><th>Enabled</th></tr></thead><tbody>';
+            policies.forEach(function(p) {
+                var cond = p.condition_config || {};
+                var condLabel = cond.type === 'metric' ? (cond.metric_name + ' ' + cond.metric_operator + ' ' + cond.metric_threshold) : cond.type === 'dns_answer_change' ? (cond.consecutive_occurrences + ' consecutive changes') : (cond.failures + ' consecutive failures');
+                html += '<tr>' +
+                    '<td><span style="font-weight:600;">' + escapeHtml(p.name) + '</span></td>' +
+                    '<td><code>' + escapeHtml(p.check_type) + '</code></td>' +
+                    '<td><code style="font-size:0.75rem;">' + escapeHtml(condLabel) + '</code></td>' +
+                    '<td>' + (p.rule_count || 0) + '</td>' +
+                    '<td>' + (p.firing_count ? '<span class="badge badge-critical">' + p.firing_count + '</span>' : '0') + '</td>' +
+                    '<td><label class="pol-toggle"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="togglePolicy(' + p.id + ', this.checked)"><span class="slider"></span></label></td></tr>';
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(function() { container.innerHTML = '<div class="error">Failed to load policies.</div>'; });
+}
+
+function togglePolicy(id, enabled) {
+    fetch('/api/v1/synthetic-alert-policies/' + id, {
+        method: 'PUT',
+        headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken()},
+        body: JSON.stringify({enabled: enabled ? 1 : 0}),
+    })
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function() { loadPolicies(); loadRules(); })
+    .catch(function(e) { alert('Failed to update policy: ' + e.message); loadPolicies(); });
+}
+
+function reconcilePolicies(btn) {
+    document.getElementById('reconcile-confirm-modal').style.display = 'flex';
+}
+
+function closeReconcileConfirm(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('reconcile-confirm-modal').style.display = 'none';
+}
+
+function proceedReconcile(btn) {
+    closeReconcileConfirm();
+    var orig = btn.textContent;
+    btn.textContent = 'Syncing...';
+    btn.disabled = true;
+    fetch('/api/v1/synthetic-alert-policies/reconcile-all', {
+        method: 'POST',
+        headers: {'Accept': 'application/json', 'X-CSRFToken': getCsrfToken()},
+    })
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function() { loadPolicies(); loadRules(); btn.textContent = 'Synced'; })
+    .catch(function(e) { btn.textContent = 'Failed'; alert('Failed to reconcile policies: ' + e.message); })
+    .finally(function() { setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 2000); });
+}
+
+loadChecks();
+loadPolicies();
+loadRules();
+
+// Re-render charts when the theme changes while the graph modal is open.
+document.body.addEventListener('vespid:themechange', function() {
+    if (_graphCheck && document.getElementById('check-graph-modal').style.display !== 'none') {
+        fetchCheckGraph();
+    }
+});
+
+// Global escape handler for both modals
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var detailOverlay = document.getElementById('check-detail-modal');
+        var graphOverlay = document.getElementById('check-graph-modal');
+        var reconcilOverlay = document.getElementById('reconcile-confirm-modal');
+        if (reconcilOverlay && reconcilOverlay.style.display !== 'none') {
+            closeReconcileConfirm();
+            e.preventDefault();
+        } else if (graphOverlay && graphOverlay.style.display !== 'none') {
+            closeCheckGraph();
+            e.preventDefault();
+        } else if (detailOverlay && detailOverlay.style.display !== 'none') {
+            closeCheckModal();
+            e.preventDefault();
+        }
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,22 @@
+# Combined agent + test dependencies.
+#
+# The server is a separate project with its own environment — see
+# vespid-server/pyproject.toml. It cannot share this environment because
+# Flask-Limiter pins rich<14 while the agent requires rich>=14.
+#
+# For targeted installs, use one of:
+#   requirements-agent.txt  — agent (node client) only
+#   requirements-test.txt    — test framework (includes the agent)
+
+# Agent
+typer==0.25.1
+rich==14.3.3
+httpx==0.28.1
+
+# Shared
+PyYAML==6.0.2
+maxminddb>=2.0.0
+
+# Test
+pytest==8.3.4
+hypothesis==6.122.3

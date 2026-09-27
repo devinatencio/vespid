@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Metrics — {{ agent_id }}{% endblock %}
+{% block content %}
+<div class="page-container">
+    <div class="content-card">
+        <h2>📊 Metrics</h2>
+        <p class="muted">Agent <code>{{ agent_id }}</code> has not reported any metrics yet.</p>
+        <p><a href="{{ url_for('metrics.overview') }}" class="btn">&larr; Back to Overview</a></p>
+    </div>
+</div>
+{% endblock %}

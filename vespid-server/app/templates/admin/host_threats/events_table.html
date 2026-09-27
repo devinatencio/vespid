@@ -1,0 +1,284 @@
+<!-- Timeline Table Panel (HTMX fragment) -->
+<!-- Displays paginated host detection events loaded from /admin/host-threats/events -->
+<!-- Columns: Timestamp, Hostname, Rule Name, Command Line, PID, PPID -->
+<!-- Each row links to the process tree view for that host -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 class="card-title" style="margin:0;">Detection Events</h2>
+        <span style="font-size:0.75rem; color:var(--text-muted);">Auto-refreshes every 60s</span>
+    </div>
+
+    <!-- HTMX container: loads paginated event data -->
+    <div id="events-table-container"
+         hx-get="/admin/host-threats/events"
+         hx-trigger="load, every 60s"
+         hx-swap="none"
+         hx-on::after-request="renderEventsTable(event)">
+        <p style="color:var(--text-muted); text-align:center; padding:2rem 0;">Loading detection events…</p>
+    </div>
+</div>
+
+<style>
+.events-table-wrap {
+    overflow-x: auto;
+}
+
+.events-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.events-table th,
+.events-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+.events-table th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    background: var(--bg-input, #f9fafb);
+}
+
+.events-table tbody tr:hover {
+    background: rgba(128,128,128,0.05);
+}
+
+.events-table .col-cmdline {
+    max-width: 500px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.8rem;
+}
+
+.events-table .col-pid {
+    font-family: monospace;
+    font-size: 0.8rem;
+    text-align: right;
+}
+
+.events-pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.events-pagination-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.events-pagination-controls button {
+    padding: 0.35rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-input, #fff);
+    color: var(--text);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.events-pagination-controls button:hover:not(:disabled) {
+    background: var(--bg-card, #f3f4f6);
+}
+
+.events-pagination-controls button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.process-tree-link {
+    color: var(--link, #3B82F6);
+    text-decoration: none;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.process-tree-link:hover {
+    text-decoration: underline;
+}
+
+.events-table-empty {
+    text-align: center;
+    padding: 2rem 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+</style>
+
+<script>
+(function() {
+    /* Current page state for the events table */
+    var eventsCurrentPage = 1;
+    var eventsTotalPages = 1;
+
+    /**
+     * Format ISO timestamp for compact display.
+     */
+    function formatTimestamp(isoStr) {
+        if (!isoStr) return '—';
+        try {
+            var d = new Date(isoStr);
+            var month = String(d.getMonth() + 1).padStart(2, '0');
+            var day = String(d.getDate()).padStart(2, '0');
+            var hours = String(d.getHours()).padStart(2, '0');
+            var minutes = String(d.getMinutes()).padStart(2, '0');
+            var seconds = String(d.getSeconds()).padStart(2, '0');
+            return month + '-' + day + ' ' + hours + ':' + minutes + ':' + seconds;
+        } catch (e) {
+            return isoStr;
+        }
+    }
+
+    /**
+     * Truncate a string with ellipsis.
+     */
+    function truncate(str, maxLen) {
+        if (!str) return '—';
+        if (str.length <= maxLen) return str;
+        return str.substring(0, maxLen) + '…';
+    }
+
+    /**
+     * Escape HTML entities for safe insertion.
+     */
+    function escapeHtml(str) {
+        if (!str) return '';
+        var div = document.createElement('div');
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+    /**
+     * Load events for a specific page via HTMX.
+     */
+    window.loadEventsPage = function(page) {
+        eventsCurrentPage = page;
+        var container = document.getElementById('events-table-container');
+        if (!container) return;
+
+        /* Build URL with current hostname filter and page */
+        var hostname = '';
+        var hostnameFilter = document.getElementById('global-hostname-filter');
+        if (hostnameFilter) {
+            hostname = hostnameFilter.value || '';
+        }
+
+        var url = '/admin/host-threats/events?page=' + page;
+        if (hostname) {
+            url += '&hostname=' + encodeURIComponent(hostname);
+        }
+
+        container.setAttribute('hx-get', url);
+        htmx.trigger(container, 'load');
+    };
+
+    /**
+     * Render the events table from JSON response.
+     */
+    window.renderEventsTable = function(event) {
+        var xhr = event.detail.xhr;
+        var container = document.getElementById('events-table-container');
+        if (!container) return;
+
+        if (!xhr || xhr.status !== 200) {
+            container.innerHTML = '<p class="events-table-empty">Failed to load events.</p>';
+            return;
+        }
+
+        var data;
+        try {
+            data = JSON.parse(xhr.responseText);
+        } catch (e) {
+            container.innerHTML = '<p class="events-table-empty">Error parsing events data.</p>';
+            return;
+        }
+
+        eventsCurrentPage = data.page || 1;
+        eventsTotalPages = data.total_pages || 1;
+
+        if (!data.events || data.events.length === 0) {
+            container.innerHTML = '<p class="events-table-empty">No detection events found.</p>';
+            return;
+        }
+
+        var html = '<div class="events-table-wrap">';
+        html += '<table class="events-table">';
+        html += '<thead><tr>';
+        html += '<th>Timestamp</th>';
+        html += '<th>Hostname</th>';
+        html += '<th>Rule Name</th>';
+        html += '<th>Command Line</th>';
+        html += '<th>PID</th>';
+        html += '<th>PPID</th>';
+        html += '<th></th>';
+        html += '</tr></thead>';
+        html += '<tbody>';
+
+        data.events.forEach(function(evt) {
+            html += '<tr>';
+            html += '<td>' + formatTimestamp(evt.timestamp) + '</td>';
+            html += '<td>' + escapeHtml(evt.hostname) + '</td>';
+            html += '<td><span class="badge badge-warning">' + escapeHtml(evt.rule_name) + '</span></td>';
+            html += '<td class="col-cmdline" title="' + escapeHtml(evt.command_line) + '" style="max-width:60rem;">' + escapeHtml(truncate(evt.command_line, 120)) + '</td>';
+            html += '<td class="col-pid">' + (evt.pid != null ? evt.pid : '—') + '</td>';
+            html += '<td class="col-pid">' + (evt.ppid != null ? evt.ppid : '—') + '</td>';
+            html += '<td><a class="process-tree-link" href="/admin/host-threats/process-tree?hostname=' + encodeURIComponent(evt.hostname || '') + '" title="View process tree for ' + escapeHtml(evt.hostname) + '">🌳 Tree</a></td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        /* Pagination controls */
+        html += '<div class="events-pagination">';
+        html += '<span>Page ' + data.page + ' of ' + data.total_pages + ' (' + data.total + ' events)</span>';
+        html += '<div class="events-pagination-controls">';
+
+        if (data.has_prev) {
+            html += '<button onclick="loadEventsPage(' + (data.page - 1) + ')">← Prev</button>';
+        } else {
+            html += '<button disabled>← Prev</button>';
+        }
+
+        html += '<span>' + data.page + ' / ' + data.total_pages + '</span>';
+
+        if (data.has_next) {
+            html += '<button onclick="loadEventsPage(' + (data.page + 1) + ')">Next →</button>';
+        } else {
+            html += '<button disabled>Next →</button>';
+        }
+
+        html += '</div></div>';
+
+        container.innerHTML = html;
+    };
+
+    /**
+     * Listen for global hostname filter changes to reset to page 1 and reload.
+     */
+    document.addEventListener('hostname-filter-changed', function(e) {
+        var hostname = (e.detail && e.detail.hostname) || '';
+        var container = document.getElementById('events-table-container');
+        if (!container) return;
+
+        var url = '/admin/host-threats/events?page=1';
+        if (hostname) {
+            url += '&hostname=' + encodeURIComponent(hostname);
+        }
+
+        container.setAttribute('hx-get', url);
+        htmx.trigger(container, 'load');
+    });
+})();
+</script>

@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% block title %}Inventory{% endblock %}
+{% block content %}
+<div class="page-container">
+  <div class="content-card">
+    <div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+      <div style="font-size:1.5rem;line-height:1;">🗄️</div>
+      <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">Asset Inventory</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+          Discovered infrastructure assets
+        </div>
+      </div>
+      <div class="inv-view-tabs" style="margin:0;">
+        <a href="{{ url_for('inventory.overview', view='all') }}" class="inv-view-tab {% if view == 'all' %}active{% endif %}">All</a>
+        <a href="{{ url_for('inventory.overview', view='grouped') }}" class="inv-view-tab {% if view == 'grouped' %}active{% endif %}">By Source</a>
+        <a href="{{ url_for('inventory.overview', view='hosts') }}" class="inv-view-tab {% if view == 'hosts' %}active{% endif %}">Hosts</a>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+        <div class="iv-stat"><span class="iv-stat-n">{{ summary.total }}</span> <span class="iv-stat-l">Total</span></div>
+        {% for t, c in (summary.by_type|dictsort(false)) %}
+        <div class="iv-stat"><span class="iv-stat-n">{{ c }}</span> <span class="iv-stat-l">{{ t }}{{ 's' if c != 1 else '' }}</span></div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if summary.total == 0 %}
+    <div class="inv-empty">
+      <div class="inv-empty-icon">🗄️</div>
+      <h3>No assets discovered yet</h3>
+      <p>Assets are created automatically when agents enroll or ship metrics.</p>
+    </div>
+    {% else %}
+
+    <div class="inv-controls" style="position:sticky;top:0;z-index:10;background:var(--bg-page, #0f172a);padding:0.75rem 0;margin-top:-0.25rem;border-bottom:1px solid var(--border);margin-bottom:0.75rem;">
+      <input type="text" class="inv-search" placeholder="Filter by name…" id="invSearch" autocomplete="off" oninput="invFilter()" style="margin-left:0.75rem;">
+      <select class="inv-select" id="invTypeFilter" onchange="invFilter()">
+        <option value="">All types</option>
+        {% for type_name in (summary.by_type|dictsort(false)) %}
+        <option value="{{ type_name[0] }}">{{ type_name[0] | capitalize }}</option>
+        {% endfor %}
+      </select>
+      <select class="inv-select" id="invSourceFilter" onchange="invFilter()">
+        <option value="">All sources</option>
+        {% for src_name in (summary.by_source|dictsort(false)) %}
+        <option value="{{ src_name[0] }}">{{ src_name[0] | capitalize }}</option>
+        {% endfor %}
+      </select>
+      <span class="inv-count" id="invCount">{{ assets|length }} asset{{ 's' if assets|length != 1 else '' }}</span>
+    </div>
+
+    {% if view == 'grouped' %}
+    {# ── Grouped by source / agent type — collapsible sections ── #}
+    {% set section_labels = {'proxmox': '🗄️ Proxmox', 'monitor': '📊 Monitor', 'agent': '🛡️ Agent', 'sync': '🔗 Sync', 'manual': '✏️ Manual'} %}
+    {% set g = grouped if grouped is mapping else {} %}
+    {% for sec_key, sec_assets in g.items() %}
+    {% if sec_assets %}
+    <div class="inv-source-group">
+      {% set expanded = (sec_key == 'agent') %}
+      <div class="inv-source-header" onclick="toggleSection(this)" data-expanded="{{ 'true' if expanded else 'false' }}">
+        <span class="inv-section-arrow {% if expanded %}open{% endif %}">▶</span>
+        {{ section_labels.get(sec_key, sec_key | capitalize) }}
+        <span class="inv-source-count">{{ sec_assets|length }}</span>
+        {% if not expanded %}<span class="inv-section-hint">click to expand</span>{% endif %}
+      </div>
+      <div class="inv-section-body" style="display:{{ 'block' if expanded else 'none' }};">
+      {% for src_asset in sec_assets %}
+      {% set alias_list = src_asset._aliases or [] %}
+      {% set children = assets | selectattr('_parent_name', 'equalto', src_asset.display_name) | list %}
+      <div class="inv-group-card">
+        <a href="{{ url_for('inventory.detail', asset_id=src_asset.asset_id) }}"
+           class="inv-card inv-card-inline"
+           data-name="{{ src_asset.display_name|lower }}"
+           data-type="{{ src_asset.asset_type }}"
+           data-source="{{ src_asset.created_by_source }}">
+          <div class="inv-card-top">
+            <div class="inv-card-name">{{ src_asset.display_name }}</div>
+            <div class="inv-card-badges">
+              {% if src_asset.status == 'active' %}
+              <span class="inv-dot" title="active"></span>
+              {% else %}
+              <span class="inv-dot inv-dot-off" title="{{ src_asset.status }}"></span>
+              {% endif %}
+              <span class="inv-badge inv-badge-type">{{ src_asset.asset_type }}</span>
+            </div>
+          </div>
+          <div class="inv-card-aliases">
+            {% for a in alias_list[:3] %}
+            <span class="inv-alias">{{ a.alias_type }} <span class="inv-alias-val">{{ a.alias_value[:24] }}{% if a.alias_value|length > 24 %}…{% endif %}</span></span>
+            {% endfor %}
+          </div>
+        </a>
+        {% if children %}
+        <div class="inv-children">
+          {% for child in children %}
+          {% set child_aliases = child._aliases or [] %}
+          <a href="{{ url_for('inventory.detail', asset_id=child.asset_id) }}"
+             class="inv-card inv-card-child"
+             data-name="{{ child.display_name|lower }}"
+             data-type="{{ child.asset_type }}"
+             data-source="{{ child.created_by_source }}">
+            <div class="inv-card-top">
+              <div class="inv-card-name">└ {{ child.display_name }}</div>
+              <div class="inv-card-badges">
+                {% if child.status == 'active' %}
+                <span class="inv-dot" title="active"></span>
+                {% else %}
+                <span class="inv-dot inv-dot-off" title="{{ child.status }}"></span>
+                {% endif %}
+                <span class="inv-badge inv-badge-type">{{ child.asset_type }}</span>
+              </div>
+            </div>
+            <div class="inv-card-aliases">
+              {% for a in child_aliases[:2] %}
+              <span class="inv-alias">{{ a.alias_type }} <span class="inv-alias-val">{{ a.alias_value[:20] }}{% if a.alias_value|length > 20 %}…{% endif %}</span></span>
+              {% endfor %}
+              {% if child_aliases|length > 2 %}<span class="inv-alias inv-alias-more">+{{ child_aliases|length - 2 }}</span>{% endif %}
+            </div>
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% elif view == 'hosts' %}
+    {# ── Hosts / hypervisors only ── #}
+    <div class="inv-grid" id="invGrid">
+      {% for asset in assets %}
+      {% set alias_list = asset._aliases or [] %}
+      <a href="{{ url_for('inventory.detail', asset_id=asset.asset_id) }}"
+         class="inv-card"
+         data-name="{{ asset.display_name|lower }}"
+         data-type="{{ asset.asset_type }}"
+         data-source="{{ asset.created_by_source }}">
+        <div class="inv-card-top">
+          <div class="inv-card-name">{{ asset.display_name }}</div>
+          <div class="inv-card-badges">
+            {% if asset.status == 'active' %}
+            <span class="inv-dot" title="active"></span>
+            {% else %}
+            <span class="inv-dot inv-dot-off" title="{{ asset.status }}"></span>
+            {% endif %}
+            <span class="inv-badge inv-badge-type">{{ asset.asset_type }}</span>
+          </div>
+        </div>
+        <div class="inv-card-aliases">
+          {% for a in alias_list[:3] %}
+          <span class="inv-alias">{{ a.alias_type }} <span class="inv-alias-val">{{ a.alias_value }}</span></span>
+          {% endfor %}
+          {% if alias_list|length > 3 %}
+          <span class="inv-alias inv-alias-more">+{{ alias_list|length - 3 }}</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+
+    {% else %}
+    {# ── Default flat list (all) ── #}
+    <div class="inv-grid" id="invGrid">
+      {% for asset in assets %}
+      {% set alias_list = asset._aliases or [] %}
+      <a href="{{ url_for('inventory.detail', asset_id=asset.asset_id) }}"
+         class="inv-card"
+         data-name="{{ asset.display_name|lower }}"
+         data-type="{{ asset.asset_type }}"
+         data-source="{{ asset.created_by_source }}">
+        <div class="inv-card-top">
+          <div class="inv-card-name">{{ asset.display_name }}</div>
+          <div class="inv-card-badges">
+            {% if asset.status == 'active' %}
+            <span class="inv-dot" title="active"></span>
+            {% else %}
+            <span class="inv-dot inv-dot-off" title="{{ asset.status }}"></span>
+            {% endif %}
+            <span class="inv-badge inv-badge-type">{{ asset.asset_type }}</span>
+          </div>
+        </div>
+        <div class="inv-card-aliases">
+          {% for a in alias_list[:3] %}
+          <span class="inv-alias" title="{{ a.alias_type }}: {{ a.alias_value }} ({{ a.confidence }}% confidence)">{{ a.alias_type }} <span class="inv-alias-val">{{ a.alias_value }}</span></span>
+          {% endfor %}
+          {% if alias_list|length > 3 %}
+          <span class="inv-alias inv-alias-more">+{{ alias_list|length - 3 }}</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<style>
+.iv-stat { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.iv-stat .iv-stat-n { font-weight:700; font-size:0.95rem; line-height:1; color:var(--text,#e2e8f0); }
+.iv-stat .iv-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+.inv-empty { text-align: center; padding: 3rem 1rem; color: var(--text-muted); }
+.inv-empty-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+.inv-empty h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text); }
+
+.inv-view-tabs {
+  display: flex; gap: 0.25rem; margin-bottom: 1rem;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(128,128,128,0.08);
+  width: fit-content;
+}
+.inv-view-tab {
+  padding: 0.35rem 1rem; border-radius: 8px;
+  font-size: 0.78rem; font-weight: 500; text-decoration: none;
+  color: var(--text-muted); transition: background 0.15s;
+}
+.inv-view-tab:hover { color: var(--text); background: rgba(128,128,128,0.1); }
+.inv-view-tab.active {
+  background: var(--bg-card); color: var(--text);
+  border: 1px solid var(--border-color);
+}
+
+.inv-controls { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.inv-search {
+  flex: 1; min-width: 180px; max-width: 300px;
+  padding: 0.45rem 0.85rem; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-card);
+  color: var(--text); font-size: 0.8rem;
+}
+.inv-search:focus { outline: none; border-color: var(--accent); }
+.inv-search::placeholder { color: var(--text-muted); }
+.inv-select {
+  padding: 0.45rem; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-card);
+  color: var(--text); font-size: 0.78rem; cursor: pointer;
+  appearance: auto;
+}
+.inv-count {
+  font-size: 0.72rem; white-space: nowrap; font-weight: 600;
+  padding: 0.2rem 0.6rem; border-radius: 100px;
+  border: 1px solid var(--border-color); color: var(--text-muted);
+}
+
+.inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 0.85rem; }
+
+.inv-card, .inv-card-inline {
+  display: block; padding: 1rem 1.25rem; border-radius: 12px;
+  text-decoration: none; color: var(--text);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.inv-card:hover, .inv-card-inline:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  border-color: var(--accent);
+}
+.inv-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem; }
+.inv-card-name { font-weight: 600; font-size: 0.95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-card-badges { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+.inv-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--success);
+  display: inline-block; box-shadow: 0 0 6px color-mix(in srgb, var(--success) 50%, transparent);
+}
+.inv-dot-off { background: var(--text-muted); box-shadow: none; }
+.inv-badge {
+  font-size: 0.62rem; font-weight: 600; padding: 0.1rem 0.5rem;
+  border-radius: 100px; text-transform: uppercase; letter-spacing: 0.03em;
+}
+.inv-badge-type { background: rgba(128,128,128,0.15); color: var(--text-muted); }
+.inv-badge-child-count {
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  color: var(--info);
+  border: 1px solid color-mix(in srgb, var(--info) 25%, transparent);
+}
+.inv-card-aliases { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-bottom: 0.4rem; }
+.inv-alias {
+  font-size: 0.62rem; font-family: 'SF Mono', 'Fira Code', monospace;
+  padding: 1px 6px; border-radius: 4px;
+  background: rgba(128,128,128,0.08);
+  border: 1px solid rgba(128,128,128,0.15);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.inv-alias-val { color: var(--text); }
+.inv-alias-more { opacity: 0.5; }
+
+.inv-source-group { margin-bottom: 1.5rem; }
+.inv-source-header {
+  font-size: 0.85rem; font-weight: 600; margin-bottom: 0.6rem;
+  padding: 0.3rem 0.5rem; border-radius: 8px;
+  border-bottom: 2px solid var(--border-color);
+  cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 0.4rem;
+  transition: background 0.1s;
+}
+.inv-source-header:hover { background: rgba(128,128,128,0.06); }
+.inv-section-arrow {
+  font-size: 0.65rem; transition: transform 0.2s;
+  color: var(--text-muted); width: 12px; text-align: center;
+}
+.inv-section-arrow.open { transform: rotate(90deg); }
+.inv-section-hint {
+  font-size: 0.6rem; font-weight: 400; color: var(--text-muted);
+  opacity: 0.4; margin-left: auto;
+}
+.inv-source-count {
+  font-size: 0.7rem; font-weight: 400; color: var(--text-muted);
+  margin-left: 0.4rem;
+}
+.inv-group-card { margin-bottom: 0.5rem; }
+.inv-card-inline { padding: 0.75rem 1rem; }
+.inv-children {
+  margin-left: 1.5rem; margin-top: 0.3rem;
+  display: flex; flex-direction: column; gap: 0.35rem;
+}
+.inv-card-child {
+  padding: 0.6rem 0.9rem; border-radius: 8px;
+  font-size: 0.9rem;
+}
+.inv-card-child .inv-card-name { font-weight: 500; font-size: 0.88rem; }
+
+@media (max-width: 700px) {
+  .inv-grid { grid-template-columns: 1fr; }
+  .inv-children { margin-left: 0.75rem; }
+}
+</style>
+
+<script>
+function toggleSection(header) {
+  var expanded = header.getAttribute('data-expanded') === 'true';
+  var body = header.nextElementSibling;
+  var arrow = header.querySelector('.inv-section-arrow');
+  if (expanded) {
+    body.style.display = 'none';
+    header.setAttribute('data-expanded', 'false');
+    if (arrow) arrow.classList.remove('open');
+  } else {
+    body.style.display = 'block';
+    header.setAttribute('data-expanded', 'true');
+    if (arrow) arrow.classList.add('open');
+  }
+}
+function invFilter() {
+  var q = (document.getElementById('invSearch').value || '').toLowerCase();
+  var typeF = document.getElementById('invTypeFilter').value;
+  var srcF = document.getElementById('invSourceFilter').value;
+  var cards = document.querySelectorAll('.inv-card, .inv-card-inline, .inv-card-child');
+  var visible = 0;
+  cards.forEach(function(c) {
+    var name = (c.getAttribute('data-name') || '').toLowerCase();
+    var type = c.getAttribute('data-type');
+    var src = c.getAttribute('data-source');
+    var ok = true;
+    if (q && name.indexOf(q) === -1) ok = false;
+    if (ok && typeF && type !== typeF) ok = false;
+    if (ok && srcF && src !== srcF) ok = false;
+    c.style.display = ok ? '' : 'none';
+    if (ok) visible++;
+  });
+  document.getElementById('invCount').textContent = visible + ' asset' + (visible !== 1 ? 's' : '');
+}
+</script>
+{% endblock %}

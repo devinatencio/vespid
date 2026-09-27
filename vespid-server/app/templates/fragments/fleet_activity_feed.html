@@ -1,0 +1,103 @@
+<div id="fleet-activity-feed"
+     hx-get="{{ url_for('fleet_dashboard.fragment_activity_feed') }}"
+     hx-trigger="every 10s"
+     hx-swap="outerHTML">
+    {% if events %}
+    <table class="activity-feed-table" style="width:100%; font-size:0.85rem;">
+        <thead>
+            <tr>
+                <th style="width:200px;">Time</th>
+                <th style="width:140px;">Action</th>
+                <th>Target</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            <tr class="fade-in">
+                <td>
+                    <span class="text-muted" style="font-size:0.8rem;" data-ts="{{ event.timestamp }}">{{ event.timestamp }}</span>
+                </td>
+                <td>
+                    {% set action = event.details.get('action', event.action_type) if event.details is mapping else event.action_type %}
+                    {% if 'expire' in action|lower %}
+                    <span class="badge badge-degraded">expired</span>
+                    {% elif 'reenable' in action|lower %}
+                    <span class="badge badge-action-blocked">re-enabled</span>
+                    {% elif 'block' in action|lower and 'remove' not in action|lower and 'unblock' not in action|lower %}
+                    <span class="badge badge-action-blocked">block</span>
+                    {% elif 'remove' in action|lower or 'unblock' in action|lower %}
+                    <span class="badge badge-action-unblocked">unblock</span>
+                    {% elif 'allowlist' in action|lower %}
+                    <span class="badge badge-active">allowlist</span>
+                    {% elif 'toggle' in action|lower or 'pause' in action|lower %}
+                    {% set new_state = event.details.get('new_state', None) if event.details is mapping else None %}
+                    {% if new_state %}
+                    <span class="badge badge-analyst">pause</span>
+                    {% else %}
+                    <span class="badge badge-active">resume</span>
+                    {% endif %}
+                    {% elif 'config' in action|lower %}
+                    <span class="badge badge-analyst">config</span>
+                    {% elif 'ttl_reset' in action|lower %}
+                    <span class="badge badge-degraded">ttl reset</span>
+                    {% else %}
+                    <span class="badge">{{ action }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if ('toggle' in action|lower or 'pause' in action|lower) and event.details is mapping %}
+                    <code>{{ 'propagation_paused' if event.details.get('new_state', None) else 'propagation_resumed' }}</code>
+                    {% elif 'config' in action|lower %}
+                    <code>{{ event.target }}</code>
+                    {% else %}
+                    <code>{{ event.details.get('source_ip', event.target) if event.details is mapping else event.target }}</code>
+                    {% endif %}
+                </td>
+                <td class="text-muted" style="font-size:0.8rem;">
+                    {% if 'config' in action|lower and event.details is mapping %}
+                        {% set keys = event.details.get('updated_keys', []) %}
+                        {% if keys %}
+                        Changed: {{ keys|join(', ') }}
+                        {% endif %}
+                    {% elif ('block' in action|lower or 'propagat' in action|lower) and 'remove' not in action|lower and 'unblock' not in action|lower and event.details is mapping %}
+                        {% if event.details.get('event_type') %}
+                        <span class="badge badge-event-{{ event.details.event_type|lower|replace('_', '-') }}" style="font-size:0.7rem;">{{ event.details.event_type }}</span>
+                        {% endif %}
+                        {% if event.details.get('ttl_seconds') %}
+                        TTL {{ event.details.ttl_seconds|pretty_duration }}
+                        {% endif %}
+                        {% if event.details.get('corroboration_count') %}
+                        · {{ event.details.corroboration_count }} node{{ 's' if event.details.corroboration_count > 1 else '' }}
+                        {% endif %}
+                        {% if event.details.get('reason') %}
+                        · {{ event.details.reason }}
+                        {% endif %}
+                    {% elif 'reenable' in action|lower and event.details is mapping %}
+                        {% if event.details.get('ttl_seconds') %}
+                        TTL {{ event.details.ttl_seconds|pretty_duration }}
+                        {% endif %}
+                        {% if event.details.get('reason') %}
+                        · {{ event.details.reason }}
+                        {% endif %}
+                    {% elif 'ttl_reset' in action|lower and event.details is mapping %}
+                        {{ event.details.get('old_ttl_seconds', '?')|pretty_duration }} → {{ event.details.get('new_ttl_seconds', '?')|pretty_duration }}
+                    {% elif 'remove' in action|lower or 'unblock' in action|lower %}
+                        {% if event.details is mapping and event.details.get('removed_by') %}
+                        by {{ event.details.removed_by }}
+                        {% endif %}
+                    {% elif event.details is mapping and event.details.get('reason') %}
+                        {{ event.details.reason }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📡</div>
+        <p>No recent fleet activity. New events will appear here in real time.</p>
+    </div>
+    {% endif %}
+</div>

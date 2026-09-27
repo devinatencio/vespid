@@ -1,0 +1,814 @@
+{% extends "base.html" %}
+{% block title %}Hosts — Vespid{% endblock %}
+{% block content %}
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">📊</div>
+    <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">Hosts</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Per-host monitoring status
+            <span id="last-refreshed" style="margin-left:0.75rem;display:none;"></span>
+        </div>
+    </div>
+    <div id="summary-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+</div>
+
+<div class="card" style="padding:0;">
+    <div class="card-body" style="padding:0.85rem 1.25rem;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;background:var(--bg-card);">
+        <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+            <div id="filter-btns" style="display:flex;gap:0.25rem;">
+                <button class="filter-btn active" data-filter="all" onclick="setFilter('all')">All</button>
+                <button class="filter-btn" data-filter="issues" onclick="setFilter('issues')">Issues</button>
+            </div>
+            <input type="text" id="hostSearch" class="search-input" placeholder="Filter by hostname or group…" oninput="filterHosts()" style="flex:1;min-width:160px;font-size:0.85rem;">
+            <span id="host-count" style="font-size:0.8rem;color:var(--text-muted);white-space:nowrap;"></span>
+            <label style="display:flex;align-items:center;gap:0.3rem;font-size:0.78rem;cursor:pointer;white-space:nowrap;color:var(--text-muted);">
+                <input type="checkbox" id="autoRefresh" checked onchange="toggleAutoRefresh()"> Auto-refresh
+            </label>
+            <button class="filter-btn" onclick="loadHosts()" title="Refresh now">↻</button>
+        </div>
+    </div>
+    <div style="overflow-x:auto;padding:1rem 1.25rem;">
+            <table class="data-table" id="hosts-table" style="min-width:550px;">
+                <thead>
+                    <tr>
+                        <th onclick="sortBy('hostname')" style="cursor:pointer;min-width:220px;">Host <span class="sort-arrow" data-col="hostname"></span></th>
+                        <th onclick="sortBy('groups')" style="cursor:pointer;min-width:120px;">Groups <span class="sort-arrow" data-col="groups"></span></th>
+                        <th style="min-width:110px;">Status</th>
+                        <th onclick="sortBy('lastEval')" style="cursor:pointer;min-width:90px;">Last Eval <span class="sort-arrow" data-col="lastEval"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="hosts-body">
+                    <tr><td colspan="4" class="loading" style="text-align:center;padding:2rem;">Loading hosts…</td></tr>
+                </tbody>
+            </table>
+        </div>
+</div>
+
+<!-- Host Detail Modal -->
+<div id="host-modal" class="modal-overlay" style="display:none;" onclick="closeHostModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h2 id="modal-title" style="margin:0;">Host</h2>
+            <button class="modal-close" onclick="closeHostModal()">✕</button>
+        </div>
+        <div id="modal-agent" style="margin-bottom:1rem;"></div>
+        <div id="modal-checks"><div class="loading" style="text-align:center;padding:2rem;">Loading checks…</div></div>
+    </div>
+</div>
+
+<!-- Check History Chart Modal -->
+<div id="check-chart-modal" class="modal-overlay" style="display:none;" onclick="closeCheckChart(event)">
+    <div class="modal-content" onclick="event.stopPropagation()" style="max-width:750px;">
+        <div class="modal-header">
+            <h2 id="chart-modal-title" style="margin:0;">Check History</h2>
+            <button class="modal-close" onclick="closeCheckChart()">✕</button>
+        </div>
+        <div id="chart-modal-meta" style="margin-bottom:0.75rem;font-size:0.78rem;color:var(--text-muted);display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;"></div>
+        <div class="chart-time-pills" style="display:flex;gap:0.25rem;margin-bottom:0.75rem;">
+            <button class="cp-btn active" data-crange="24h" onclick="setChartRange(this)">24h</button>
+            <button class="cp-btn" data-crange="7d" onclick="setChartRange(this)">7d</button>
+        </div>
+        <div id="chart-modal-body" style="height:260px;position:relative;">
+            <canvas id="check-history-chart"></canvas>
+        </div>
+        <div id="chart-modal-status" style="text-align:center;padding:0.5rem;font-size:0.78rem;color:var(--text-muted);"></div>
+    </div>
+</div>
+
+<style>
+.stat-row { display:flex; gap:0.75rem; flex-wrap:wrap; }
+.stat-card {
+    display:flex; align-items:center; gap:0.6rem;
+    padding:0.65rem 1rem;
+    border-radius:8px;
+    background:var(--bg-card,#1e293b);
+    border:1px solid var(--border,#334155);
+    font-size:0.82rem;
+}
+.stat-card .stat-num { font-size:1.3rem; font-weight:700; line-height:1; }
+.stat-card .stat-label { color:var(--text-muted,#94a3b8); font-size:0.72rem; text-transform:uppercase; letter-spacing:0.04em; }
+.stat-card.critical { border-color:rgba(248,113,113,0.3); }
+.stat-card.critical .stat-num { color:#f87171; }
+.stat-card.warning { border-color:rgba(250,204,21,0.3); }
+.stat-card.warning .stat-num { color:#facc15; }
+.stat-card.ok { border-color:rgba(74,222,128,0.3); }
+.stat-card.ok .stat-num { color:#4ade80; }
+.stat-card.total { border-color:var(--border,#334155); }
+.stat-card.total .stat-num { color:var(--text,#e2e8f0); }
+
+.host-row { cursor:pointer; }
+.host-row:hover { background:var(--bg-card-hover); }
+
+.health-badge {
+    display:inline-flex; align-items:center; gap:0.35rem;
+    padding:0.2rem 0.6rem;
+    border-radius:6px;
+    font-size:0.73rem; font-weight:600;
+}
+.health-badge.critical { background:rgba(248,113,113,0.12); color:#f87171; }
+.health-badge.warning { background:rgba(250,204,21,0.12); color:#facc15; }
+.health-badge.ok { background:rgba(74,222,128,0.12); color:#4ade80; }
+.health-badge.unknown { background:rgba(148,163,184,0.1); color:#94a3b8; }
+
+.status-pills { display:inline-flex; gap:0.4rem; align-items:center; font-size:0.78rem; }
+.status-pills .sp { display:inline-flex; align-items:center; gap:0.2rem; }
+.sp-dot { width:7px;height:7px;border-radius:50%;display:inline-block; }
+.sp-dot.critical { background:#f87171; }
+.sp-dot.warning { background:#facc15; }
+.sp-dot.ok { background:#4ade80; }
+.sp-dot.unknown { background:#64748b; }
+
+.filter-btn {
+    padding:0.3rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155);
+    background:transparent; color:var(--text-muted,#94a3b8);
+    font-size:0.78rem; cursor:pointer; font-weight:500;
+}
+.filter-btn:hover { border-color:var(--accent,#f59e0b); color:var(--accent,#f59e0b); }
+.filter-btn.active { background:var(--accent,#f59e0b); color:#000; border-color:var(--accent,#f59e0b); }
+
+.sort-arrow::after { content:' ↕'; opacity:0.25; font-size:0.65rem; }
+.sort-arrow.asc::after { content:' ↑'; opacity:0.7; }
+.sort-arrow.desc::after { content:' ↓'; opacity:0.7; }
+
+.time-ago { font-size:0.78rem; color:var(--text-muted,#94a3b8); }
+
+/* Modal */
+.modal-overlay {
+    position:fixed;inset:0;z-index:1000;
+    background:rgba(0,0,0,0.65);
+    display:flex;align-items:center;justify-content:center;
+    padding:1.5rem;
+}
+.modal-content {
+    background:var(--bg-card,#1e293b);
+    border:1px solid var(--border,#334155);
+    border-radius:12px;
+    width:85vw;max-width:1400px;
+    max-height:85vh;
+    overflow-y:auto;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5);
+    padding:1.5rem 1.75rem;
+}
+.modal-header {
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:0.5rem;
+}
+.modal-close {
+    background:none;border:none;color:var(--text-muted,#94a3b8);
+    font-size:1.2rem;cursor:pointer;padding:0.25rem 0.5rem;
+    border-radius:6px;
+}
+.modal-close:hover { background:var(--bg-card-hover); color:var(--text,#e2e8f0); }
+
+.agent-pill {
+    display:inline-block;
+    padding:0.2rem 0.6rem;
+    border-radius:6px;
+    background:rgba(148,163,184,0.08);
+    color:var(--text-muted,#94a3b8);
+    font-family:monospace;
+    font-size:0.78rem;
+    border:1px solid var(--border,#334155);
+}
+
+.modal-stat-pill {
+    display:inline-flex;align-items:center;gap:0.3rem;
+    padding:0.25rem 0.65rem;
+    border-radius:6px;
+    font-size:0.78rem;font-weight:600;
+}
+.modal-stat-pill.crit { background:rgba(248,113,113,0.1); color:#f87171; }
+.modal-stat-pill.warn { background:rgba(250,204,21,0.1);  color:#facc15; }
+.modal-stat-pill.ok   { background:rgba(74,222,128,0.1);  color:#4ade80; }
+.modal-stat-pill.unk  { background:rgba(148,163,184,0.08); color:#94a3b8; }
+.label-more {
+    display:inline-block; font-size:0.7rem; padding:0.05rem 0.4rem;
+    background:var(--accent,#f59e0b); color:#000; border-radius:4px;
+    cursor:pointer; font-weight:600;
+}
+.label-more:hover { opacity:0.8; }
+.label-extra { display:none; }
+
+.btn-sm { padding:0.2rem 0.55rem; font-size:0.72rem; }
+.graph-btn {
+    font-size:0.75rem; font-weight:700; text-transform:uppercase;
+    padding:0.5rem 0.75rem; border-radius:6px;
+    border:1px solid var(--border,#334155);
+    background:var(--bg-card,#1e293b);
+    color:var(--text-muted,#94a3b8);
+    cursor:pointer; letter-spacing:0.04em;
+    transition:all 0.12s;
+}
+.graph-btn:hover {
+    background:var(--accent,#f59e0b); color:#000; border-color:var(--accent,#f59e0b);
+}
+
+.cp-btn {
+    border:1px solid var(--border,#334155); background:transparent;
+    color:var(--text-muted,#94a3b8); padding:0.2rem 0.6rem; border-radius:6px;
+    font-size:0.72rem; cursor:pointer; font-weight:500;
+}
+.cp-btn.active { background:var(--accent,#f59e0b); color:#000; border-color:var(--accent,#f59e0b); }
+.cp-btn:hover:not(.active) { border-color:var(--text-muted,#94a3b8); color:var(--text,#e2e8f0); }
+
+#last-refreshed { transition:opacity 0.6s; font-size:0.75rem; }
+.stat-card-inline { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.stat-card-inline .sn { font-weight:700; font-size:0.95rem; line-height:1; }
+.stat-card-inline .sl { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+.stat-card-inline.critical { border-color:rgba(248,113,113,0.3); }
+.stat-card-inline.critical .sn { color:#f87171; }
+.stat-card-inline.warning { border-color:rgba(250,204,21,0.3); }
+.stat-card-inline.warning .sn { color:#facc15; }
+.stat-card-inline.ok { border-color:rgba(74,222,128,0.3); }
+.stat-card-inline.ok .sn { color:#4ade80; }
+</style>
+
+<script>
+var HOSTS_DATA = [];
+var ACTIVE_FILTER = 'all';
+var CURRENT_AGENT_ID = '';
+var CHECK_CHART_INSTANCE = null;
+var CURRENT_CHART_DATA = null;
+var AUTO_REFRESH_INTERVAL = null;
+
+function getCssVar(name, fallback) {
+    var value = getComputedStyle(document.body).getPropertyValue(name).trim();
+    return value || fallback;
+}
+
+var STATUS_CSS = {
+    ok: 'badge badge-healthy', warning: 'badge badge-warning',
+    critical: 'badge badge-danger', pending: 'badge badge-info',
+    silenced: 'badge badge-admin', unknown: 'badge badge-viewer',
+};
+var STATUS_LABELS = {
+    ok: 'OK', warning: 'WARN', critical: 'CRIT',
+    pending: 'PEND', silenced: 'SILENT', unknown: '?',
+};
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(isoStr) {
+    if (!isoStr) return '—';
+    var now = new Date();
+    var d = new Date(isoStr);
+    var sec = Math.floor((now - d) / 1000);
+    if (sec < 0) sec = 0;
+    if (sec < 60) return sec + 's ago';
+    var min = Math.floor(sec / 60);
+    if (min < 60) return min + 'm ago';
+    var hr = Math.floor(min / 60);
+    if (hr < 24) return hr + 'h ago';
+    return Math.floor(hr / 24) + 'd ago';
+}
+
+function loadHosts() {
+    fetch('/alerts/api/hosts')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            HOSTS_DATA = data.hosts || [];
+            applyFilter();
+            renderStats();
+            var el = document.getElementById('last-refreshed');
+            el.textContent = 'Refreshed ' + new Date().toLocaleTimeString();
+            el.style.display = 'inline';
+            clearTimeout(el._fadeTimer);
+            el.style.opacity = '1';
+            el._fadeTimer = setTimeout(function() { el.style.opacity = '0.5'; }, 3000);
+        })
+        .catch(function() {
+            document.getElementById('hosts-body').innerHTML =
+                '<tr><td colspan="4" class="error" style="text-align:center;">Failed to load hosts.</td></tr>';
+        });
+}
+
+function toggleAutoRefresh() {
+    var enabled = document.getElementById('autoRefresh').checked;
+    if (AUTO_REFRESH_INTERVAL) {
+        clearInterval(AUTO_REFRESH_INTERVAL);
+        AUTO_REFRESH_INTERVAL = null;
+    }
+    if (enabled) {
+        AUTO_REFRESH_INTERVAL = setInterval(loadHosts, 60000);
+    }
+}
+
+function renderStats() {
+    var total = HOSTS_DATA.length;
+    var crit = 0, warn = 0, healthy = 0;
+    HOSTS_DATA.forEach(function(h) {
+        var c = parseInt(h.critical_count) || 0;
+        var w = parseInt(h.warning_count) || 0;
+        if (c > 0) crit++;
+        else if (w > 0) warn++;
+        else healthy++;
+    });
+    var html = '';
+    html += '<div class="stat-card-inline"><span class="sn">' + total + '</span> <span class="sl">Total</span></div>';
+    if (crit > 0) html += '<div class="stat-card-inline critical"><span class="sn">' + crit + '</span> <span class="sl">Critical</span></div>';
+    if (warn > 0) html += '<div class="stat-card-inline warning"><span class="sn">' + warn + '</span> <span class="sl">Warning</span></div>';
+    html += '<div class="stat-card-inline ok"><span class="sn">' + healthy + '</span> <span class="sl">Healthy</span></div>';
+    document.getElementById('summary-stats').innerHTML = html;
+}
+
+function renderHosts(hosts) {
+    var tbody = document.getElementById('hosts-body');
+    if (!hosts.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem;">No hosts match your filter.</td></tr>';
+        return;
+    }
+    var html = '';
+    hosts.forEach(function(h) {
+        var groupInfo = h.groups || '—';
+
+        var critical = parseInt(h.critical_count) || 0;
+        var warning = parseInt(h.warning_count) || 0;
+        var ok = parseInt(h.ok_count) || 0;
+        var unknown = parseInt(h.unknown_count) || 0;
+
+        var healthClass = 'ok';
+        var healthLabel = 'Healthy';
+        if (critical > 0) { healthClass = 'critical'; healthLabel = 'Critical'; }
+        else if (warning > 0) { healthClass = 'warning'; healthLabel = 'Warning'; }
+        else if (unknown > 0 && ok === 0) { healthClass = 'unknown'; healthLabel = 'Unknown'; }
+
+        var pills = '';
+        pills += '<span class="sp"><span class="sp-dot critical"></span>' + critical + '</span>';
+        pills += '<span class="sp"><span class="sp-dot warning"></span>' + warning + '</span>';
+        pills += '<span class="sp"><span class="sp-dot ok"></span>' + ok + '</span>';
+        pills += '<span class="sp"><span class="sp-dot unknown"></span>' + unknown + '</span>';
+
+        var lastEval = timeAgo(h.last_evaluated_at);
+        var icon = healthClass === 'critical' ? '🔴' : healthClass === 'warning' ? '🟡' : healthClass === 'unknown' ? '⚪' : '🟢';
+
+        html += '<tr class="host-row" data-agent="' + escapeHtml(h.agent_id) + '" data-host="' + escapeHtml(h.hostname || h.agent_id) + '" onclick="openHostModal(this)">' +
+            '<td><div style="display:flex;align-items:center;gap:0.5rem;">' +
+            '<span class="health-badge ' + healthClass + '">' + icon + ' ' + healthLabel + '</span>' +
+            '<span style="font-weight:600;">' + escapeHtml(h.hostname || h.agent_id) + '</span>' +
+            '</div></td>' +
+            '<td style="font-size:0.75rem;color:var(--text-muted);">' + escapeHtml(groupInfo) + '</td>' +
+            '<td><span class="status-pills">' + pills + '</span></td>' +
+            '<td><span class="time-ago">' + lastEval + '</span></td></tr>';
+    });
+    tbody.innerHTML = html;
+    document.getElementById('host-count').textContent = hosts.length + ' of ' + HOSTS_DATA.length;
+}
+
+// ── Modal ────────────────────────────────────────────────────────────
+
+function openHostModal(el) {
+    var agentId = el.dataset.agent;
+    var hostname = el.dataset.host;
+    CURRENT_AGENT_ID = agentId;
+    document.getElementById('modal-title').textContent = hostname;
+    document.getElementById('modal-agent').innerHTML = '<span class="agent-pill">' + escapeHtml(agentId) + '</span>';
+    document.getElementById('modal-checks').innerHTML = '<div class="loading" style="text-align:center;padding:2rem;">Loading checks…</div>';
+    document.getElementById('host-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    loadModalChecks(agentId);
+}
+
+function closeHostModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('host-modal').style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+function loadModalChecks(agentId) {
+    fetch('/alerts/api/agents/' + encodeURIComponent(agentId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var checks = data.checks || [];
+            var container = document.getElementById('modal-checks');
+            if (!checks.length) {
+                container.innerHTML = '<div class="text-muted" style="text-align:center;padding:1.5rem;">No monitoring checks found for this agent.</div>';
+                return;
+            }
+
+            var groups = {};
+            checks.forEach(function(c) {
+                var g = c.group_name || 'Ungrouped';
+                if (!groups[g]) groups[g] = [];
+                groups[g].push(c);
+            });
+
+            var html = '<div class="modal-status-bar" style="display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;">';
+            var totalOk = 0, totalWarn = 0, totalCrit = 0, totalUnk = 0;
+            checks.forEach(function(c) {
+                var s = c.status || 'unknown';
+                if (s === 'ok') totalOk++;
+                else if (s === 'warning') totalWarn++;
+                else if (s === 'critical') totalCrit++;
+                else totalUnk++;
+            });
+            html += '<span class="modal-stat-pill crit"><span class="sp-dot critical"></span>' + totalCrit + ' Critical</span>';
+            html += '<span class="modal-stat-pill warn"><span class="sp-dot warning"></span>' + totalWarn + ' Warning</span>';
+            html += '<span class="modal-stat-pill ok"><span class="sp-dot ok"></span>' + totalOk + ' OK</span>';
+            html += '<span class="modal-stat-pill unk"><span class="sp-dot unknown"></span>' + totalUnk + ' Unknown</span>';
+            html += '</div>';
+
+            for (var groupName in groups) {
+                var gc = groups[groupName];
+                var gCrit = 0, gWarn = 0, gOk = 0;
+                gc.forEach(function(c) {
+                    var s = c.status || 'unknown';
+                    if (s === 'ok') gOk++;
+                    else if (s === 'warning') gWarn++;
+                    else if (s === 'critical') gCrit++;
+                });
+                var gBadge = gCrit > 0 ? '<span class="badge badge-danger">' + gCrit + ' critical</span>' :
+                    gWarn > 0 ? '<span class="badge badge-warning">' + gWarn + ' warning</span>' :
+                    '<span class="badge badge-healthy">All OK</span>';
+
+                html += '<h4 style="margin:1rem 0 0.5rem;font-size:0.85rem;">' + escapeHtml(groupName) + ' ' + gBadge + '</h4>';
+                html += '<table class="data-table"><thead><tr>' +
+                    '<th>Check</th><th>Type</th><th>Status</th><th>Value</th><th>Threshold</th><th>Last Eval</th><th style="width:90px;">Graph</th></tr></thead><tbody>';
+
+                gc.forEach(function(c) {
+                    var status = c.status || 'unknown';
+                    var bClass = STATUS_CSS[status] || 'badge badge-viewer';
+                    var label = STATUS_LABELS[status] || '?';
+                    var val = (c.last_metric_value != null) ? Number(c.last_metric_value).toFixed(1) :
+                              (c.last_value != null) ? Number(c.last_value).toFixed(1) : '—';
+                    var thresh = escapeHtml(c.operator || '') + ' ' + (c.threshold != null ? c.threshold : '—');
+
+                    // Per-mountpoint detail for disk
+                    var valHtml = val;
+                    if (c.last_detail) {
+                        try {
+                            var detail = JSON.parse(c.last_detail);
+                            if (typeof detail === 'object') {
+                                var entries = [];
+                                var visibleCount = 0;
+                                var hiddenHtml = '';
+                                for (var mp in detail) {
+                                    var mv = Number(detail[mp]).toFixed(1);
+                                    var pct = parseFloat(mv);
+                                    entries.push({mount: mp, value: mv, pct: pct});
+                                }
+                                if (entries.length > 0) {
+                                    entries.sort(function(a, b) { return b.pct - a.pct; });
+                                    var sem = getSemanticColors();
+                                    var worst = entries[0];
+                                    var worstColor = worst.pct >= 90 ? sem.danger : worst.pct >= 80 ? sem.warning : sem.success;
+                                    var barHtml = '';
+                                    entries.forEach(function(e) {
+                                        var isWorst = e === worst;
+                                        var barW = Math.min(e.pct, 100);
+                                        var color = e.pct >= 90 ? sem.danger : e.pct >= 80 ? sem.warning : sem.success;
+                                        var entryHtml = '<div style="display:flex;align-items:center;gap:0.4rem;font-size:0.68rem;line-height:1.6;">' +
+                                            '<span style="min-width:1.2rem;text-align:right;font-weight:' + (isWorst ? '700' : '400') + ';color:' + color + ';">' + e.value + '%</span>' +
+                                            '<div style="flex:1;max-width:120px;height:4px;background:rgba(148,163,184,0.15);border-radius:2px;overflow:hidden;">' +
+                                            '<div style="width:' + barW + '%;height:100%;background:' + color + ';border-radius:2px;"></div></div>' +
+                                            '<span style="color:var(--text-muted,#94a3b8);">' + escapeHtml(e.mount) + '</span></div>';
+                                        if (e.pct > 1) {
+                                            visibleCount++;
+                                            barHtml += entryHtml;
+                                        } else {
+                                            hiddenHtml += entryHtml;
+                                        }
+                                    });
+                                    var hiddenCount = entries.length - visibleCount;
+                                    var worstVal = worst.value;
+                                    valHtml = '<div><span style="font-weight:600;color:' + worstColor + ';">' + worstVal + '%</span> <span style="font-size:0.68rem;color:var(--text-muted);">— ' + escapeHtml(worst.mount) + '</span></div>';
+                                    if (barHtml) {
+                                        valHtml += '<div style="margin-top:0.3rem;border-top:1px solid var(--border,#334155);padding-top:0.3rem;">' + barHtml + '</div>';
+                                    }
+                                    if (hiddenCount > 0) {
+                                        var suffix = (visibleCount > 0) ? 'more' : 'all';
+                                        valHtml += '<div style="margin-top:0.15rem;">' +
+                                            '<span class="label-more" onclick="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">+' + hiddenCount + ' ' + suffix + '</span>' +
+                                            '<div class="label-extra" style="display:none;margin-top:0.15rem;">' + hiddenHtml + '</div></div>';
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
+                    var lastE = c.last_evaluated_at ? new Date(c.last_evaluated_at).toLocaleString() : '—';
+                    html += '<tr>' +
+                        '<td><strong>' + escapeHtml(c.condition_name || c.condition_id) + '</strong></td>' +
+                        '<td>' + escapeHtml(c.metric_type || '—') + '</td>' +
+                        '<td><span class="' + bClass + '">' + label + '</span></td>' +
+                        '<td>' + valHtml + '</td>' +
+                        '<td>' + thresh + '</td>' +
+                        '<td style="font-size:0.72rem;">' + lastE + '</td>' +
+                        '<td><button class="graph-btn" onclick="openCheckGraph(' + c.condition_id + ')" title="View 24h history">view</button></td></tr>';
+                });
+
+                html += '</tbody></table>';
+            }
+            container.innerHTML = html;
+
+            /* ── Logfile Watches (show only if they exist) ────────── */
+            var agentId = data.agent_id;
+            var watches = data.logfile_watches || [];
+            if (watches.length) {
+                var whtml = '<div style="border-top:1px solid var(--border-color);margin:0.75rem 0;"></div>';
+                whtml += '<h4 style="margin:1rem 0 0.5rem;font-size:0.85rem;">📋 Logfile Watches</h4>';
+                whtml += '<table class="data-table watches-manage-table"><thead><tr>' +
+                    '<th>Name</th><th>Path</th><th>Pattern</th><th>Alert</th></tr></thead><tbody>';
+                watches.forEach(function(w) {
+                    var alertIcon = w.alert_on_match ? '🔔' : '🔕';
+                    whtml += '<tr><td><strong>' + escapeHtml(w.name) + '</strong></td>' +
+                        '<td><code>' + escapeHtml(w.path) + '</code></td>' +
+                        '<td><code>' + escapeHtml(w.pattern) + '</code></td>' +
+                        '<td>' + alertIcon + '</td></tr>';
+                });
+                whtml += '</tbody></table>';
+                container.insertAdjacentHTML('beforeend', whtml);
+            }
+        })
+        .catch(function() {
+            document.getElementById('modal-checks').innerHTML = '<div class="error">Failed to load checks.</div>';
+        });
+}
+
+// ── Check History Chart Modal ────────────────────────────────────────
+
+var CURRENT_CHECK_CONDITION_ID = 0;
+
+function openCheckGraph(conditionId) {
+    var agentId = CURRENT_AGENT_ID;
+    if (!agentId) return;
+
+    CURRENT_CHECK_CONDITION_ID = conditionId;
+
+    var rangeEl = document.querySelector('.cp-btn.active');
+    var range = rangeEl ? rangeEl.dataset.crange : '24h';
+
+    document.getElementById('chart-modal-title').textContent = 'Check History';
+    document.getElementById('chart-modal-meta').innerHTML = '<span>Loading…</span>';
+    document.getElementById('chart-modal-status').textContent = '';
+    document.getElementById('chart-modal-body').style.height = '260px';
+    document.getElementById('check-chart-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    fetchChartHistory(conditionId, agentId, range);
+}
+
+function fetchChartHistory(conditionId, agentId, range) {
+    fetch('/alerts/api/agents/' + encodeURIComponent(agentId) + '/checks/' + conditionId + '/history?range=' + range)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            document.getElementById('chart-modal-title').textContent = escapeHtml(data.condition_name || 'Check');
+            var metaHtml = '<span class="agent-pill">' + escapeHtml(agentId) + '</span>';
+            metaHtml += '<span style="font-size:0.78rem;">— ' + escapeHtml(data.metric_type) + '</span>';
+            if (data.threshold != null) {
+                metaHtml += '<span>Threshold: ' + escapeHtml(data.operator || '') + ' ' + data.threshold + '</span>';
+            }
+            document.getElementById('chart-modal-meta').innerHTML = metaHtml;
+            renderCheckChart(data);
+        })
+        .catch(function() {
+            document.getElementById('chart-modal-status').innerHTML = '<span class="error">Failed to load history.</span>';
+        });
+}
+
+function closeCheckChart(e) {
+    if (e && e.target !== e.currentTarget) return;
+    document.getElementById('check-chart-modal').style.display = 'none';
+    document.body.style.overflow = '';
+    if (CHECK_CHART_INSTANCE) {
+        CHECK_CHART_INSTANCE.destroy();
+        CHECK_CHART_INSTANCE = null;
+    }
+}
+
+function setChartRange(btn) {
+    document.querySelectorAll('.cp-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    if (CURRENT_CHECK_CONDITION_ID && CURRENT_AGENT_ID) {
+        var range = btn.dataset.crange;
+        document.getElementById('chart-modal-status').textContent = '';
+        fetchChartHistory(CURRENT_CHECK_CONDITION_ID, CURRENT_AGENT_ID, range);
+    }
+}
+
+function renderCheckChart(data) {
+    CURRENT_CHART_DATA = data;
+    var canvas = document.getElementById('check-history-chart');
+    var ctx = canvas.getContext('2d');
+
+    if (CHECK_CHART_INSTANCE) {
+        CHECK_CHART_INSTANCE.destroy();
+        CHECK_CHART_INSTANCE = null;
+    }
+
+    var points = data.points || [];
+    if (!points.length) {
+        document.getElementById('chart-modal-status').textContent = 'No historical data for this time range.';
+        return;
+    }
+
+    if (data.metric_type === 'check_name' || data.metric_type === 'logfile') {
+        renderCheckNameChart(ctx, data);
+    } else {
+        renderMetricChart(ctx, data);
+    }
+}
+
+function renderCheckNameChart(ctx, data) {
+    var points = data.points;
+    var labels = points.map(function(p) { return new Date(p.t); });
+    var values = points.map(function(p) { return p.v; });
+    var theme = window.getChartThemeColors();
+    var palette = window.getChartPalette();
+    var semantic = {
+        ok: getCssVar('--success', palette[2]),
+        warning: getCssVar('--warning', palette[3]),
+        critical: getCssVar('--danger', palette[1]),
+        unknown: theme.textMuted
+    };
+
+    var barColors = values.map(function(v) {
+        if (v === 0) return semantic.ok;
+        if (v === 1) return semantic.warning;
+        if (v === 2) return semantic.critical;
+        return semantic.unknown;
+    });
+
+    CHECK_CHART_INSTANCE = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels.map(function(d) { return d.toLocaleString(); }),
+            datasets: [{
+                data: values,
+                backgroundColor: barColors,
+                borderColor: barColors,
+                borderWidth: 1,
+                borderRadius: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 8, maxRotation: 45, color: theme.textMuted, font: { size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    max: 3.5,
+                    ticks: {
+                        stepSize: 1,
+                        color: theme.textMuted,
+                        callback: function(v) {
+                            return ['OK','WARN','CRIT','UNK'][v] || v;
+                        }
+                    },
+                    grid: { color: theme.gridLine }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            var v = ctx.parsed.y;
+                            return 'Exit: ' + (['OK','WARN','CRIT','UNK'][v] || v);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderMetricChart(ctx, data) {
+    var points = data.points;
+    var labels = points.map(function(p) { return new Date(p.t * 1000); });
+    var values = points.map(function(p) { return p.v; });
+    var theme = window.getChartThemeColors();
+
+    CHECK_CHART_INSTANCE = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels.map(formatChartTime),
+            datasets: [{
+                data: values,
+                borderColor: theme.chartLine,
+                backgroundColor: window.colorWithAlpha(theme.chartLine, 0.12),
+                fill: true,
+                tension: 0.35,
+                pointRadius: 0,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 300 },
+            interaction: { intersect: false, mode: 'index' },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { maxTicksLimit: 8, maxRotation: 0, color: theme.textMuted, font: { size: 10 } }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: theme.textMuted },
+                    grid: { color: theme.gridLine }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) { return ctx.parsed.y.toFixed(1); }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function formatChartTime(d) {
+    var now = new Date();
+    var diffHours = (now - d) / 3600000;
+    if (diffHours <= 24) {
+        return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    }
+    return d.toLocaleDateString([], {month:'short',day:'numeric'}) + ' ' +
+           d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+// ── Filter / Sort ────────────────────────────────────────────────────
+
+function setFilter(f) {
+    ACTIVE_FILTER = f;
+    document.querySelectorAll('.filter-btn').forEach(function(b) {
+        b.classList.toggle('active', b.dataset.filter === f);
+    });
+    applyFilter();
+}
+
+function applyFilter() {
+    var filtered = HOSTS_DATA.slice();
+    if (ACTIVE_FILTER === 'issues') {
+        filtered = filtered.filter(function(h) {
+            return (parseInt(h.critical_count) || 0) > 0 || (parseInt(h.warning_count) || 0) > 0;
+        });
+    }
+    renderHosts(filtered);
+}
+
+function filterHosts() {
+    var q = document.getElementById('hostSearch').value.toLowerCase();
+    var filtered = HOSTS_DATA.filter(function(h) {
+        return (h.hostname && h.hostname.toLowerCase().indexOf(q) !== -1) ||
+               (h.agent_id && h.agent_id.toLowerCase().indexOf(q) !== -1) ||
+               (h.groups && h.groups.toLowerCase().indexOf(q) !== -1);
+    });
+    if (ACTIVE_FILTER === 'issues') {
+        filtered = filtered.filter(function(h) {
+            return (parseInt(h.critical_count) || 0) > 0 || (parseInt(h.warning_count) || 0) > 0;
+        });
+    }
+    renderHosts(filtered);
+}
+
+var SORT_DIRS = {};
+
+function sortBy(col) {
+    SORT_DIRS[col] = SORT_DIRS[col] === 'asc' ? 'desc' : 'asc';
+    var dir = SORT_DIRS[col];
+    document.querySelectorAll('.sort-arrow').forEach(function(el) {
+        el.classList.remove('asc', 'desc');
+        if (el.dataset.col === col) el.classList.add(dir);
+    });
+    var sorted = HOSTS_DATA.slice().sort(function(a, b) {
+        var va, vb;
+        switch (col) {
+            case 'hostname': va = (a.hostname || a.agent_id || '').toLowerCase(); vb = (b.hostname || b.agent_id || '').toLowerCase(); break;
+            case 'groups': va = (a.groups || '').toLowerCase(); vb = (b.groups || '').toLowerCase(); break;
+            case 'lastEval': va = a.last_evaluated_at || ''; vb = b.last_evaluated_at || ''; break;
+            default: return 0;
+        }
+        if (va < vb) return dir === 'asc' ? -1 : 1;
+        if (va > vb) return dir === 'asc' ? 1 : -1;
+        return 0;
+    });
+    renderHosts(sorted);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadHosts();
+    toggleAutoRefresh();
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { closeHostModal(); closeCheckChart(); }
+    });
+    document.body.addEventListener('vespid:themechange', function() {
+        if (CHECK_CHART_INSTANCE && CURRENT_CHART_DATA) {
+            renderCheckChart(CURRENT_CHART_DATA);
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,93 @@
+<div id="search-results">
+    {% set _pa = dict(filters, per_page=per_page) %}
+    {% set _pa_sort = dict(filters, sort_by=sort_by, sort_order=sort_order, per_page=per_page) %}
+
+    <!-- Filter chips -->
+    {% if filters %}
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center;">
+        {% for key, value in filters.items() if key != 'start_time' and key != 'end_time' and value %}
+        {% set label = {'source_ip': 'IP', 'node': 'Node', 'event_type': 'Type', 'geo_country': 'Country'}.get(key, key) %}
+        {% set chip_url = url_for('dashboard.events', **dict(filters, **{key: ''})) %}
+        <span class="filter-chip">
+            {{ label }}: {{ value }}
+            <a href="{{ chip_url }}" class="chip-remove" hx-get="{{ chip_url }}" hx-target="#search-results" hx-swap="outerHTML" title="Remove filter">✕</a>
+        </span>
+        {% endfor %}
+        {% if filters.get('start_time') or filters.get('end_time') %}
+        <span class="filter-chip">
+            Time: {{ (filters.get('start_time','…')|string)[:16]|replace('T',' ') }} → {{ (filters.get('end_time','…')|string)[:16]|replace('T',' ') }}
+            <a href="{{ url_for('dashboard.events', **dict(filters, start_time='', end_time='')) }}" class="chip-remove" hx-get="{{ url_for('dashboard.events', **dict(filters, start_time='', end_time='')) }}" hx-target="#search-results" hx-swap="outerHTML" title="Clear time range">✕</a>
+        </span>
+        {% endif %}
+        {% if filters.get('q') %}
+        <span class="filter-chip">
+            Search: {{ filters.q }}
+            <a href="{{ url_for('dashboard.events', **dict(filters, q='')) }}" class="chip-remove" hx-get="{{ url_for('dashboard.events', **dict(filters, q='')) }}" hx-target="#search-results" hx-swap="outerHTML" title="Clear search">✕</a>
+        </span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if events %}
+    <!-- Summary stats & export -->
+    <div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
+        <div style="display:flex;gap:0.5rem;font-size:0.8rem;">
+            <span><strong>{{ total }}</strong> result{{ 's' if total != 1 else '' }}</span>
+            <span class="text-muted">·</span>
+            <span><strong>{{ unique_ips }}</strong> unique IPs</span>
+            <span class="text-muted">·</span>
+            <span><strong>{{ unique_types }}</strong> event types</span>
+        </div>
+        <a href="{{ url_for('dashboard.events', export='csv', **_pa_sort) }}" class="btn btn-sm btn-secondary">⬇ CSV</a>
+    </div>
+
+    {% macro sort_link(label, col) %}
+    {% set next_order = 'ASC' if sort_by == col and sort_order == 'DESC' else 'DESC' %}
+    {% set indicator = ' ▲' if sort_by == col and sort_order == 'ASC' else (' ▼' if sort_by == col else '') %}
+    <a href="#"
+       hx-get="{{ url_for('dashboard.events', sort_by=col, sort_order=next_order, **_pa) }}"
+       hx-target="#search-results"
+       hx-swap="outerHTML"
+       style="color:inherit;text-decoration:none;{% if sort_by == col %}font-weight:700;{% endif %}">{{ label }}{% if indicator %}<span style="font-size:0.65rem;">{{ indicator }}</span>{% endif %}</a>
+    {% endmacro %}
+
+    <table>
+        <thead>
+            <tr>
+                <th>{{ sort_link('Timestamp', 'timestamp') }}</th>
+                <th>{{ sort_link('Node', 'node_id') }}</th>
+                <th>{{ sort_link('Source IP', 'source_ip') }}</th>
+                <th>{{ sort_link('Action', 'action_taken') }}</th>
+                <th>{{ sort_link('Country', 'geo_country') }}</th>
+                <th class="col-asn">ASN / Org</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in events %}
+            {% include 'fragments/event_row.html' %}
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="#" hx-get="{{ url_for('dashboard.events', page=page-1, **_pa_sort) }}" hx-target="#search-results" hx-swap="outerHTML">← Prev</a>
+        {% endif %}
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="current">{{ p }}</span>
+            {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+            <a href="#" hx-get="{{ url_for('dashboard.events', page=p, **_pa_sort) }}" hx-target="#search-results" hx-swap="outerHTML">{{ p }}</a>
+            {% elif p == 4 or p == total_pages - 3 %}
+            <span>…</span>
+            {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+        <a href="#" hx-get="{{ url_for('dashboard.events', page=page+1, **_pa_sort) }}" hx-target="#search-results" hx-swap="outerHTML">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+    {% else %}
+    <p>No events found matching your filters.</p>
+    {% endif %}
+</div>

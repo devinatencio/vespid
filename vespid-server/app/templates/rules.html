@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}IP Rules — Vespid Server{% endblock %}
+{% block content %}
+<h1 class="page-title">⚙️ IP Rules Management</h1>
+
+<!-- Summary Stats -->
+<div class="stats-grid" style="margin-bottom:1.5rem;">
+    <div class="stat-card">
+        <div class="stat-label">Allowlisted</div>
+        <div class="stat-value" style="color:var(--success)">{{ allowlist|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Blocklisted</div>
+        <div class="stat-value" style="color:var(--danger)">{{ blocklist|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Connected Nodes</div>
+        <div class="stat-value" style="color:var(--accent)">{{ nodes|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Rules</div>
+        <div class="stat-value">{{ allowlist|length + blocklist|length }}</div>
+    </div>
+</div>
+
+<!-- Whitelist & Blacklist side by side -->
+<div class="grid-2">
+    <!-- ── Allowlist Panel ──────────────────────────────────── -->
+    <div class="card rules-panel rules-panel-allowlist">
+        <div class="rules-panel-header">
+            <h2 class="card-title"><span class="rules-icon rules-icon-allowlist">✓</span> Allowlist</h2>
+            <span class="rules-count badge badge-healthy">{{ allowlist|length }} active</span>
+
+        </div>
+        <p class="rules-description">Allowlisted IPs are never blocked. Adding an IP here will also unblock it on all nodes if currently blocked.</p>
+
+        <!-- Add form -->
+        <form method="POST" action="{{ url_for('dashboard.add_allowlist') }}" class="rules-form">
+            <div class="rules-form-row">
+                <div class="form-group" style="flex:2">
+                    <label for="al-entry">IP / CIDR</label>
+                    <input type="text" id="al-entry" name="entry" placeholder="10.0.0.0/8 or 203.0.113.42" required>
+                </div>
+                <div class="form-group" style="flex:3">
+                    <label for="al-reason">Reason</label>
+                    <input type="text" id="al-reason" name="reason" placeholder="Internal network, trusted partner...">
+                </div>
+            </div>
+            <div class="rules-form-row">
+                <div class="form-group" style="flex:1">
+                    <label>Target Nodes</label>
+                    <div class="node-selector">
+                        {% if nodes %}
+                        {% for node in nodes %}
+                        <label class="node-chip">
+                            <input type="checkbox" name="target_nodes" value="{{ node.node_id }}">
+                            <span class="node-chip-label">{{ node.node_id|node_display_name }}</span>
+                        </label>
+                        {% endfor %}
+                        {% else %}
+                        <span class="text-muted">No nodes registered</span>
+                        {% endif %}
+                    </div>
+                    <span class="form-hint">Leave unchecked to send to all nodes</span>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-success">
+                <span class="btn-icon">＋</span> Add to Allowlist
+            </button>
+        </form>
+
+        <!-- Active entries -->
+        <div class="rules-list" id="allowlist-entries">
+            {% if allowlist %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Entry</th>
+                        <th>Reason</th>
+                        <th>Added By</th>
+                        <th>Added</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in allowlist %}
+                    <tr class="fade-in">
+                        <td><code class="rule-entry rule-entry-allowlist">{{ rule.entry }}</code></td>
+                        <td class="rule-reason">{{ rule.reason or '—' }}</td>
+                        <td><span class="rule-actor">{{ rule.created_by }}</span></td>
+                        <td><span data-ts="{{ rule.created_at }}">{{ rule.created_at }}</span></td>
+                        <td>
+                            <form method="POST" action="{{ url_for('dashboard.remove_allowlist', rule_id=rule.id) }}" class="inline-form"
+                                  onsubmit="return confirm('Remove {{ rule.entry }} from allowlist?')">
+                                <button type="submit" class="btn btn-sm btn-danger" title="Remove from allowlist">✕</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">🛡️</div>
+                <p>No allowlist entries yet</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ── Blocklist Panel ──────────────────────────────────── -->
+    <div class="card rules-panel rules-panel-blocklist">
+        <div class="rules-panel-header">
+            <h2 class="card-title"><span class="rules-icon rules-icon-blocklist">✕</span> Blocklist</h2>
+            <span class="rules-count badge badge-offline">{{ blocklist|length }} active</span>
+
+        </div>
+        <p class="rules-description">Manually block IPs across all nodes. These blocks are applied immediately and persist until removed.</p>
+
+        <!-- Add form -->
+        <form method="POST" action="{{ url_for('dashboard.add_blocklist') }}" class="rules-form">
+            <div class="rules-form-row">
+                <div class="form-group" style="flex:2">
+                    <label for="bl-entry">IP / CIDR</label>
+                    <input type="text" id="bl-entry" name="entry" placeholder="203.0.113.42 or 198.51.100.0/24" required>
+                </div>
+                <div class="form-group" style="flex:3">
+                    <label for="bl-reason">Reason</label>
+                    <input type="text" id="bl-reason" name="reason" placeholder="Known attacker, abuse report...">
+                </div>
+            </div>
+            <div class="rules-form-row">
+                <div class="form-group" style="flex:1">
+                    <label>Target Nodes</label>
+                    <div class="node-selector">
+                        {% if nodes %}
+                        {% for node in nodes %}
+                        <label class="node-chip">
+                            <input type="checkbox" name="target_nodes" value="{{ node.node_id }}">
+                            <span class="node-chip-label">{{ node.node_id|node_display_name }}</span>
+                        </label>
+                        {% endfor %}
+                        {% else %}
+                        <span class="text-muted">No nodes registered</span>
+                        {% endif %}
+                    </div>
+                    <span class="form-hint">Leave unchecked to send to all nodes</span>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-danger">
+                <span class="btn-icon">🚫</span> Block IP
+            </button>
+        </form>
+
+        <!-- Active entries -->
+        <div class="rules-list" id="blocklist-entries">
+            {% if blocklist %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Entry</th>
+                        <th>Reason</th>
+                        <th>Added By</th>
+                        <th>Added</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in blocklist %}
+                    <tr class="fade-in">
+                        <td><code class="rule-entry rule-entry-blocklist">{{ rule.entry }}</code></td>
+                        <td class="rule-reason">{{ rule.reason or '—' }}</td>
+                        <td><span class="rule-actor">{{ rule.created_by }}</span></td>
+                        <td><span data-ts="{{ rule.created_at }}">{{ rule.created_at }}</span></td>
+                        <td>
+                            <form method="POST" action="{{ url_for('dashboard.remove_blocklist', rule_id=rule.id) }}" class="inline-form"
+                                  onsubmit="return confirm('Unblock {{ rule.entry }}?')">
+                                <button type="submit" class="btn btn-sm btn-success-outline" title="Unblock">Unblock</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">🚫</div>
+                <p>No manual blocks yet</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ── Command Log ──────────────────────────────────────────── -->
+<div class="card">
+    <div class="rules-panel-header">
+        <h2 class="card-title">📡 Command Queue</h2>
+        <button class="btn btn-sm btn-secondary"
+                hx-get="{{ url_for('dashboard.rules_commands') }}"
+                hx-target="#command-log"
+                hx-swap="outerHTML"
+                title="Refresh command log">↻ Refresh</button>
+    </div>
+    <p class="rules-description">Commands queued for nodes. Nodes pick up pending commands on their next heartbeat cycle.</p>
+    {% include 'fragments/command_log.html' %}
+</div>
+{% endblock %}

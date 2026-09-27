@@ -1,0 +1,193 @@
+<div id="audit-table-container">
+    <style>
+    .filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        padding: 0.2rem 0.6rem;
+        font-size: 0.78rem;
+        border-radius: 999px;
+        background: var(--primary-color, #3b82f6);
+        color: #fff;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+    .filter-chip .chip-remove {
+        cursor: pointer;
+        font-size: 0.7rem;
+        line-height: 1;
+        opacity: 0.8;
+        color:#fff;
+        text-decoration:none;
+    }
+    .filter-chip .chip-remove:hover { opacity: 1; }
+    </style>
+
+    <!-- Filter chips -->
+    {% set _pa = dict(action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) %}
+    {% set has_audit_chips = action_type or actor or target or search or start or end %}
+    {% if has_audit_chips %}
+    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center;">
+        {% if action_type %}
+        {% set url_a = url_for('admin.audit', **dict(_pa, action_type='')) %}
+        <span class="filter-chip">Action: {{ action_type }}<a href="{{ url_a }}" class="chip-remove" hx-get="{{ url_a }}" hx-target="#audit-table-container" hx-swap="outerHTML">✕</a></span>
+        {% endif %}
+        {% if actor %}
+        {% set url_ac = url_for('admin.audit', **dict(_pa, actor='')) %}
+        <span class="filter-chip">Actor: {{ actor }}<a href="{{ url_ac }}" class="chip-remove" hx-get="{{ url_ac }}" hx-target="#audit-table-container" hx-swap="outerHTML">✕</a></span>
+        {% endif %}
+        {% if target %}
+        {% set url_t = url_for('admin.audit', **dict(_pa, target='')) %}
+        <span class="filter-chip">Target: {{ target }}<a href="{{ url_t }}" class="chip-remove" hx-get="{{ url_t }}" hx-target="#audit-table-container" hx-swap="outerHTML">✕</a></span>
+        {% endif %}
+        {% if search %}
+        {% set url_s = url_for('admin.audit', **dict(_pa, search='')) %}
+        <span class="filter-chip">Search: {{ search }}<a href="{{ url_s }}" class="chip-remove" hx-get="{{ url_s }}" hx-target="#audit-table-container" hx-swap="outerHTML">✕</a></span>
+        {% endif %}
+        {% if start or end %}
+        {% set url_d = url_for('admin.audit', **dict(_pa, start='', end='')) %}
+        <span class="filter-chip">Time: {{ start[:10] if start else '…' }} → {{ end[:10] if end else '…' }}<a href="{{ url_d }}" class="chip-remove" hx-get="{{ url_d }}" hx-target="#audit-table-container" hx-swap="outerHTML">✕</a></span>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Export -->
+    {% if entries %}
+    <div style="margin-bottom:0.75rem;display:flex;gap:0.5rem;align-items:center;">
+        <a href="{{ url_for('admin.audit', action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order, export='csv') }}" class="btn btn-sm btn-secondary">⬇ CSV</a>
+    </div>
+    {% endif %}
+    <!-- Pagination (top) -->
+    {% if total_pages > 1 %}
+    <nav class="pagination" style="margin-bottom:0.75rem;" aria-label="Audit log pagination top">
+        <span class="pagination-info">Page {{ page }} of {{ total_pages }} ({{ total }} entries)</span>
+        <div class="pagination-controls">
+            {% if page > 1 %}
+            <a href="{{ url_for('admin.audit', page=page-1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-sm btn-secondary" hx-get="{{ url_for('admin.audit', page=page-1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" hx-target="#audit-table-container" hx-swap="outerHTML">← Prev</a>
+            {% endif %}
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == page %}
+                <span class="btn btn-sm" style="pointer-events:none;">{{ p }}</span>
+                {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+                <a href="{{ url_for('admin.audit', page=p, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-sm btn-secondary" hx-get="{{ url_for('admin.audit', page=p, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" hx-target="#audit-table-container" hx-swap="outerHTML">{{ p }}</a>
+                {% elif p == 4 or p == total_pages - 3 %}
+                <span style="color:var(--text-muted);">…</span>
+                {% endif %}
+            {% endfor %}
+            {% if page < total_pages %}
+            <a href="{{ url_for('admin.audit', page=page+1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-sm btn-secondary" hx-get="{{ url_for('admin.audit', page=page+1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" hx-target="#audit-table-container" hx-swap="outerHTML">Next →</a>
+            {% endif %}
+        </div>
+    </nav>
+    {% endif %}
+
+    <!-- Table -->
+    {% if entries %}
+    {% macro sort_link(label, col) %}
+    {% set next_order = 'ASC' if sort_by == col and sort_order == 'DESC' else 'DESC' %}
+    {% set indicator = ' ▲' if sort_by == col and sort_order == 'ASC' else (' ▼' if sort_by == col else '') %}
+    <a href="{{ url_for('admin.audit', sort_by=col, sort_order=next_order, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page) }}"
+       class="sortable-header"
+       hx-get="{{ url_for('admin.audit', sort_by=col, sort_order=next_order, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page) }}"
+       hx-target="#audit-table-container"
+       hx-swap="outerHTML"
+       style="color:inherit;text-decoration:none;{% if sort_by == col %}font-weight:700;{% endif %}">{{ label }}{% if indicator %}<span style="font-size:0.65rem;">{{ indicator }}</span>{% endif %}</a>
+    {% endmacro %}
+
+    <table>
+        <thead>
+            <tr>
+                <th>{{ sort_link('Timestamp', 'timestamp') }}</th>
+                <th>{{ sort_link('Actor', 'actor') }}</th>
+                <th>Actor IP</th>
+                <th>{{ sort_link('Action', 'action_type') }}</th>
+                <th>{{ sort_link('Target / Summary', 'target') }}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% set action_badge = {
+                'login': 'success', 'logout': 'success',
+                'login_failed': 'danger', 'user_locked_out': 'danger', 'user_unlocked': 'success',
+                'role_change': 'warning', 'password_change': 'warning', 'profile_update': 'info',
+                'key_create': 'info', 'key_revoke': 'warning', 'key_delete': 'danger',
+                'block': 'danger', 'unblock': 'success', 'webhook_unblock': 'info',
+                'allowlist_sync': 'info', 'blocklist_sync': 'info',
+                'config_profile_create': 'info', 'config_profile_update': 'info',
+                'config_profile_delete': 'danger', 'config_profile_rollback': 'warning',
+                'config_assignment_create': 'info', 'config_assignment_delete': 'danger',
+                'config_rollout_create': 'info', 'config_rollout_promote': 'success',
+                'config_rollout_cancel': 'danger',
+                'config_ack': 'success',
+                'config_group_create': 'info', 'config_group_delete': 'danger',
+                'config_group_member_add': 'info', 'config_group_member_remove': 'warning',
+                'fleet_block_propagated': 'danger', 'fleet_block_rejected': 'warning',
+                'fleet_block_manual_add': 'danger', 'fleet_block_manual_remove': 'success',
+                'fleet_block_reenabled': 'success', 'fleet_block_expired': 'secondary',
+                'fleet_block_ttl_reset': 'info', 'fleet_allowlist_modified': 'info',
+                'fleet_propagation_toggled': 'warning', 'fleet_config_updated': 'info',
+                'intel_purge': 'danger', 'intel_backfill': 'info', 'intel_ip_delete': 'warning',
+                'template_toggled': 'info', 'templates_enabled': 'success', 'templates_disabled': 'warning',
+                'rule_created': 'info', 'rule_updated': 'info', 'rule_deleted': 'danger',
+                'enrollment_request': 'info', 'enrollment_status_change': 'warning',
+                'enrollment_credential_issued': 'success', 'enrollment_credential_rotated': 'info',
+                'enrollment_credential_reissued': 'info', 'enrollment_record_deleted': 'danger',
+                'enrollment_settings_change': 'info',
+                'node_delete': 'danger', 'asset_deleted': 'danger',
+            } %}
+            {% for entry in entries %}
+            {% set has_detail = entry.details is mapping and entry.details %}
+            <tr class="audit-row{% if has_detail %} has-detail{% endif %}"
+                {% if has_detail %}onclick="toggleAuditDetail(this)" title="Click for details"{% endif %}>
+                <td><span data-ts="{{ entry.timestamp }}">{{ entry.timestamp }}</span></td>
+                <td>{{ entry.actor }}</td>
+                <td>{{ entry.actor_ip or '—' }}</td>
+                <td><span class="badge badge-{{ action_badge.get(entry.action_type, 'secondary') }}">{{ entry.action_type | replace('_', ' ') | title }}</span></td>
+                <td>
+                    {% if entry.summary %}
+                    <span class="text-muted" style="font-size:0.8rem;">{{ entry.summary }}</span>
+                    {% else %}
+                    {{ entry.target or '—' }}
+                    {% endif %}
+                    {% if has_detail %}
+                    <span style="color:var(--text-muted);font-size:0.65rem;margin-left:0.5rem;">▼</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% if has_detail %}
+            <tr class="audit-detail-row" style="display:none;">
+                <td colspan="5" style="padding:0 0 0.5rem 1.5rem;">
+                    <pre style="margin:0;font-size:0.72rem;white-space:pre-wrap;word-break:break-all;color:var(--text-muted);">{{ entry.details | tojson(indent=2) if entry.details is mapping else entry.details }}</pre>
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Pagination (bottom) -->
+    {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="Audit log pagination">
+        <span class="pagination-info">Page {{ page }} of {{ total_pages }} ({{ total }} entries)</span>
+        <div class="pagination-controls">
+            {% if page > 1 %}
+            <a href="{{ url_for('admin.audit', page=page-1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-sm btn-secondary" hx-get="{{ url_for('admin.audit', page=page-1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" hx-target="#audit-table-container" hx-swap="outerHTML">← Prev</a>
+            {% endif %}
+            {% for p in range(1, total_pages + 1) %}
+                {% if p == page %}
+                <span class="btn btn-sm" style="pointer-events:none;">{{ p }}</span>
+                {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+                <a href="{{ url_for('admin.audit', page=p, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-sm btn-secondary" hx-get="{{ url_for('admin.audit', page=p, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" hx-target="#audit-table-container" hx-swap="outerHTML">{{ p }}</a>
+                {% elif p == 4 or p == total_pages - 3 %}
+                <span style="color:var(--text-muted);">…</span>
+                {% endif %}
+            {% endfor %}
+            {% if page < total_pages %}
+            <a href="{{ url_for('admin.audit', page=page+1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" class="btn btn-sm btn-secondary" hx-get="{{ url_for('admin.audit', page=page+1, action_type=action_type, actor=actor, target=target, search=search, start=start, end=end, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}" hx-target="#audit-table-container" hx-swap="outerHTML">Next →</a>
+            {% endif %}
+        </div>
+    </nav>
+    {% endif %}
+    {% else %}
+    <p>No audit log entries found.</p>
+    {% endif %}
+</div>

@@ -1,0 +1,25 @@
+<div id="pause-toggle" style="display:flex; align-items:center; gap:0.5rem;">
+    {% if propagation_paused %}
+    <span class="badge badge-offline">🔴 Paused</span>
+    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+    <button class="btn btn-sm btn-success"
+            hx-post="{{ url_for('fleet_dashboard.toggle_pause') }}"
+            hx-target="#pause-toggle"
+            hx-swap="outerHTML"
+            title="Resume fleet propagation">
+        ▶ Resume
+    </button>
+    {% endif %}
+    {% else %}
+    <span class="badge badge-healthy">🟢 Active</span>
+    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+    <button class="btn btn-sm btn-danger"
+            hx-post="{{ url_for('fleet_dashboard.toggle_pause') }}"
+            hx-target="#pause-toggle"
+            hx-swap="outerHTML"
+            title="Pause fleet propagation">
+        ⏸ Pause
+    </button>
+    {% endif %}
+    {% endif %}
+</div>

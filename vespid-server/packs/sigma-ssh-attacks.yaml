@@ -1,0 +1,17 @@
+pack_name: sigma-ssh-attacks
+display_name: Sigma SSH Attack Detection
+icon: 🔐
+description: >
+  SSH attack detection rules imported from SigmaHQ/sigma. Covers suspicious SSHD error messages indicating exploitation attempts. Auto-generated from the Sigma community rule repository.
+prerequisite: Requires SSH daemon logs (secure/auth log).
+rules:
+  - name: sigma_suspicious_openssh_daemon_error
+    event_type: SIGMA_SSH_SUSP_ERROR
+    regex: >-
+      (?P<ip>\d{1,3}(?:\.\d{1,3}){3})\s+.*?(?:unexpected internal error|unknown or unsupported key type|invalid certificate signing key|invalid elliptic curve value|incorrect signature|error in libcrypto|unexpected bytes remain after decoding|fatal: buffer_get_string: bad string|Local: crc32 compensation attack|bad client public DH value|Corrupted MAC on input)
+    log_sources: ["secure"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.initial-access", "attack.t1190"]
+    sigma_id: e76b413a-83d0-4b94-8e4c-85db4a5b8bdc
+    sigma_status: test

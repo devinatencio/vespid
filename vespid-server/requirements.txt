@@ -1,0 +1,7 @@
+# Runtime dependencies are declared in pyproject.toml ([project.dependencies]).
+# This file is kept for `pip install -r requirements.txt` compatibility.
+#
+# IMPORTANT: install this in the server's own virtualenv. The server pulls
+# Flask-Limiter (rich<14) while the agent requires rich>=14 — the two cannot
+# share a single environment.
+-e .

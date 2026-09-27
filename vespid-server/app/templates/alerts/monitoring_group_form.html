@@ -1,0 +1,597 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if group_id else 'New' }} Host Monitoring Group — Vespid{% endblock %}
+{% block head %}
+<style>
+.logfile-fields { display:flex; flex-direction:column; gap:0.5rem; }
+.lf-row { display:flex; gap:0.75rem; }
+.lf-field { min-width:0; }
+.lf-field label { display:block; font-size:0.75rem; font-weight:600; color:var(--text-muted); margin-bottom:0.2rem; }
+.field-note { display:block; font-size:0.72rem; color:var(--text-muted); margin-top:0.3rem; }
+.toggle-switch { display:inline-block !important; width:32px !important; height:18px !important; border-radius:9px !important; position:relative !important; cursor:pointer; transition:background 0.2s; flex-shrink:0; }
+.toggle-switch.toggle-on { background:#4ade80 !important; }
+.toggle-switch.toggle-off { background:#475569 !important; }
+.toggle-switch .toggle-knob { position:absolute !important; top:2px !important; left:2px !important; width:14px !important; height:14px !important; border-radius:50% !important; background:#fff !important; transition:left 0.2s; }
+.toggle-switch.toggle-on .toggle-knob { left:16px !important; }
+.checkbox-label { display:flex; align-items:center; cursor:pointer; }
+.checkbox-label input[type="checkbox"] { margin:0; padding:0; width:16px; height:16px; flex-shrink:0; }
+.channel-row { display:flex; align-items:center; padding:0.2rem 0; cursor:pointer; }
+.channel-row input[type="checkbox"] { margin:0; padding:0; width:16px; height:16px; flex-shrink:0; }
+.form-actions { display:flex; gap:0.75rem; margin-top:1.5rem; }
+.form-actions .btn { min-width:120px; text-align:center; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{{ 'Edit' if group_id else 'New' }} Host Monitoring Group</h1>
+</div>
+
+<form id="group-form" novalidate onsubmit="saveGroup(event)">
+    <input type="hidden" id="group-id" value="{{ group_id or '' }}">
+
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-body">
+            <h3 class="card-title">Group Details</h3>
+            <div class="form-group">
+                <label for="group-name">Name *</label>
+                <input type="text" id="group-name" class="form-input" required>
+            </div>
+            <div class="form-group">
+                <label for="group-description">Description</label>
+                <textarea id="group-description" class="form-input" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="group-enabled" checked>&nbsp;
+                    Enabled
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-body">
+            <h3 class="card-title">Label Matchers</h3>
+            <p class="text-muted" style="font-size:0.9rem;margin-bottom:1rem;">
+                Leave empty to match all instances. Matchers use PromQL-style operators: =, !=, =~ (regex), !~.
+                Labels like <code>agent_id</code> and <code>hostname</code> are available.
+                More labels will be available once the inventory service is connected.
+            </p>
+            <div id="matchers-container"></div>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="addMatcher()">+ Add Matcher</button>
+            <div class="form-group" style="margin-top:0.75rem;">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="match-any">&nbsp;
+                    Match ANY matcher (OR) — default is ALL (AND)
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div class="card-body">
+            <h3 class="card-title">Alert Conditions</h3>
+            <p class="text-muted" style="font-size:0.85rem;margin-bottom:1rem;">
+                Each condition checks a metric across all matching instances.
+            </p>
+            <div id="channel-bulk-bar" style="display:none;margin-bottom:0.75rem;padding:0.6rem 0.8rem;background:var(--bg-card,#1e293b);border:1px solid var(--border,#334155);border-radius:8px;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+                <span style="font-size:0.82rem;color:var(--text-muted);">Apply the selected notification channel to all conditions:</span>
+                <select id="bulk-channel-select" class="form-input" style="width:auto;min-width:160px;font-size:0.82rem;"></select>
+                <button type="button" class="btn btn-sm btn-primary" onclick="applyChannelToAll()">Apply to All</button>
+            </div>
+            <div id="conditions-container"></div>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="addCondition()">+ Add Condition</button>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save Group</button>
+        <a href="/alerts/groups" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<template id="matcher-template">
+    <div class="matcher-row" style="display:flex;gap:0.5rem;margin-bottom:0.5rem;align-items:center;">
+        <input type="text" class="form-input matcher-key" placeholder="Label key" style="width:150px;">
+        <select class="form-input matcher-op" style="width:80px;">
+            <option value="=">=</option>
+            <option value="!=">!=</option>
+            <option value="=~">=~ (regex)</option>
+            <option value="!~">!~</option>
+        </select>
+        <input type="text" class="form-input matcher-value" placeholder="Value" style="width:300px;">
+        <button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">&times;</button>
+    </div>
+</template>
+
+<template id="condition-template">
+    <div class="condition-card card" style="margin-bottom:1rem;">
+        <div class="card-body">
+            <div class="condition-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                <strong class="condition-name-display">New Condition</strong>
+                <div style="display:flex;align-items:center;gap:0.75rem;">
+                    <span class="toggle-switch toggle-on condition-toggle" onclick="this.classList.toggle('toggle-on'); this.classList.toggle('toggle-off');">
+                        <span class="toggle-knob"></span>
+                    </span>
+                    <button type="button" class="btn btn-sm btn-danger" onclick="this.closest('.condition-card').remove()">Remove</button>
+                </div>
+            </div>
+            <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;">
+                <div class="form-group">
+                    <label>Condition Name *</label>
+                    <input type="text" class="form-input condition-name" required>
+                </div>
+                <div class="form-group">
+                    <label>Metric Type</label>
+                    <select class="form-input condition-metric-type" onchange="toggleMetricParams(this)">
+                        <option value="cpu">CPU Usage</option>
+                        <option value="custom_promql">Custom PromQL</option>
+                        <option value="disk">Disk Usage</option>
+                        <option value="exec">Exec Script</option>
+                        <option value="check_name">Health Check</option>
+                        <option value="logfile">Log File</option>
+                        <option value="memory">Memory Usage</option>
+                        <option value="service">Service Running</option>
+                    </select>
+                </div>
+                <div class="form-group condition-param-group" data-for="disk" style="display:none;">
+                    <label>Mountpoint</label>
+                    <input type="text" class="form-input condition-param-mountpoint" value="/">
+                </div>
+                <div class="form-group condition-param-group" data-for="check_name" style="display:none;">
+                    <label>Check Name</label>
+                    <input type="text" class="form-input condition-param-check-name" placeholder="e.g. disk_check">
+                </div>
+                <div class="form-group condition-param-group" data-for="custom_promql" style="display:none;grid-column:1/-1;">
+                    <label>PromQL Query (use <code>{{agent_ids_regex}}</code> for agent IDs)</label>
+                    <textarea class="form-input condition-param-promql" rows="3"></textarea>
+                </div>
+                <div class="form-group condition-param-group" data-for="service" style="display:none;">
+                    <label>Service Name</label>
+                    <input type="text" class="form-input condition-param-service-name" placeholder="e.g. nginx" value="nginx">
+                </div>
+                <div class="form-group condition-param-group" data-for="logfile" style="display:none;grid-column:1/-1;">
+                    <div class="logfile-fields">
+                        <div class="lf-row">
+                            <div class="lf-field" style="flex:1">
+                                <label>Watch Name</label>
+                                <input type="text" class="form-input condition-param-logfile-name" placeholder="e.g. auth_failures" required>
+                            </div>
+                            <div class="lf-field" style="flex:2">
+                                <label>File Path</label>
+                                <input type="text" class="form-input condition-param-logfile-path" placeholder="/var/log/auth.log" required>
+                            </div>
+                        </div>
+                        <div class="lf-row">
+                            <div class="lf-field" style="flex:1">
+                                <label>Regex Pattern</label>
+                                <textarea class="form-input condition-param-logfile-pattern" rows="2" placeholder="Failed password|Invalid user" required></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="field-note">A logfile watch will be auto-created for each agent in this group.</span>
+                </div>
+                <div class="form-group condition-param-group" data-for="exec" style="display:none;grid-column:1/-1;">
+                    <div class="logfile-fields">
+                        <div class="lf-row">
+                            <div class="lf-field" style="flex:3">
+                                <label>Command *</label>
+                                <input type="text" class="form-input condition-param-exec-command" placeholder="/usr/lib/nagios/plugins/check_http -H example.com" required>
+                            </div>
+                            <div class="lf-field" style="flex:1">
+                                <label>Timeout (sec)</label>
+                                <input type="number" class="form-input condition-param-exec-timeout" value="30" min="1">
+                            </div>
+                        </div>
+                        <div class="lf-row">
+                            <div class="lf-field" style="flex:1">
+                                <label>Warning Threshold (exit code &ge;)</label>
+                                <input type="number" class="form-input condition-param-exec-warn" value="1" min="0">
+                            </div>
+                            <div class="lf-field" style="flex:1">
+                                <label>Critical Threshold (exit code &ge;)</label>
+                                <input type="number" class="form-input condition-param-exec-crit" value="2" min="0">
+                            </div>
+                        </div>
+                    </div>
+                    <span class="field-note">Nagios-style: 0=OK, exit code &ge; warning = WARNING, &ge; critical = CRITICAL.</span>
+                </div>
+                <div class="form-group">
+                    <label>Operator</label>
+                    <select class="form-input condition-operator">
+                        <option value=">">&gt;</option>
+                        <option value="<">&lt;</option>
+                        <option value=">=">&gt;=</option>
+                        <option value="<=">&lt;=</option>
+                        <option value="==">==</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Threshold</label>
+                    <input type="number" step="0.01" class="form-input condition-threshold" required>
+                </div>
+                <div class="form-group">
+                    <label>Resolve Threshold (optional)</label>
+                    <input type="number" step="0.01" class="form-input condition-resolve-threshold">
+                </div>
+                <div class="form-group">
+                    <label>Severity</label>
+                    <select class="form-input condition-severity">
+                        <option value="warning">Warning</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>For Duration (seconds)</label>
+                    <input type="number" class="form-input condition-for-duration" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label>Cooldown (seconds)</label>
+                    <input type="number" class="form-input condition-cooldown" placeholder="Optional">
+                </div>
+                <div class="form-group">
+                    <label>Interval (seconds)</label>
+                    <input type="number" class="form-input condition-interval" value="60" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Notification Channels</label>
+                    <div class="condition-channels"></div>
+                </div>
+            </div>
+            <div class="form-group" style="margin-top:0.75rem;">
+                <details style="font-size:0.85rem;">
+                    <summary style="cursor:pointer;color:var(--text-muted);">Target Agents (optional)</summary>
+                    <p class="text-muted" style="font-size:0.82rem;margin:0.5rem 0;">
+                        Leave empty to target all agents matched by the group. Same label matcher syntax as group matchers.
+                    </p>
+                    <div class="condition-target-container"></div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="addConditionMatcher(this)">+ Add Target</button>
+                </details>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function addMatcher(values) {
+    var template = document.getElementById('matcher-template');
+    var clone = template.content.cloneNode(true);
+    var row = clone.querySelector('.matcher-row');
+    if (values) {
+        row.querySelector('.matcher-key').value = values.key || '';
+        row.querySelector('.matcher-op').value = values.op || '=';
+        row.querySelector('.matcher-value').value = values.value || '';
+    }
+    document.getElementById('matchers-container').appendChild(clone);
+}
+
+function addCondition(data) {
+    var template = document.getElementById('condition-template');
+    var clone = template.content.cloneNode(true);
+    var card = clone.querySelector('.condition-card');
+    if (data) {
+        card.querySelector('.condition-name').value = data.name || '';
+        card.querySelector('.condition-metric-type').value = data.metric_type || 'cpu';
+        card.querySelector('.condition-operator').value = data.operator || '>';
+        card.querySelector('.condition-threshold').value = data.threshold != null ? data.threshold : '';
+        card.querySelector('.condition-resolve-threshold').value = data.resolve_threshold != null ? data.resolve_threshold : '';
+        card.querySelector('.condition-severity').value = data.severity || 'warning';
+        card.querySelector('.condition-for-duration').value = data.for_duration || 0;
+        card.querySelector('.condition-cooldown').value = data.cooldown_secs || '';
+        card.querySelector('.condition-interval').value = data.interval_secs || 60;
+        var toggle = card.querySelector('.condition-toggle');
+        if (data.enabled !== false) { toggle.classList.add('toggle-on'); toggle.classList.remove('toggle-off'); }
+        else { toggle.classList.add('toggle-off'); toggle.classList.remove('toggle-on'); }
+        if (data.metric_type === 'disk') {
+            card.querySelector('.condition-param-mountpoint').value = (data.metric_params && data.metric_params.mountpoint) || '/';
+        }
+        if (data.metric_type === 'check_name') {
+            card.querySelector('.condition-param-check-name').value = (data.metric_params && data.metric_params.query) || '';
+        }
+        if (data.metric_type === 'custom_promql') {
+            card.querySelector('.condition-param-promql').value = (data.metric_params && data.metric_params.query) || '';
+        }
+        if (data.metric_type === 'service') {
+            card.querySelector('.condition-param-service-name').value = (data.metric_params && data.metric_params.service_name) || '';
+        }
+        if (data.metric_type === 'logfile') {
+            card.querySelector('.condition-param-logfile-name').value = (data.metric_params && (data.metric_params.name || data.metric_params.query)) || '';
+            card.querySelector('.condition-param-logfile-path').value = (data.metric_params && data.metric_params.path) || '';
+            card.querySelector('.condition-param-logfile-pattern').value = (data.metric_params && data.metric_params.pattern) || '';
+        }
+        if (data.metric_type === 'exec') {
+            card.querySelector('.condition-param-exec-command').value = (data.metric_params && data.metric_params.command) || '';
+            card.querySelector('.condition-param-exec-timeout').value = (data.metric_params && data.metric_params.timeout_secs) || 30;
+            card.querySelector('.condition-param-exec-warn').value = (data.metric_params && data.metric_params.warning_threshold) || 1;
+            card.querySelector('.condition-param-exec-crit').value = (data.metric_params && data.metric_params.critical_threshold) || 2;
+        }
+        toggleMetricParams(card.querySelector('.condition-metric-type'));
+        // Load target_labels matchers
+        var targetLabels = data.target_labels || [];
+        targetLabels.forEach(function(m) {
+            addConditionMatcher(card.querySelector('.btn'), m);
+        });
+        // Load channel checkboxes
+        loadChannelCheckboxes(card.querySelector('.condition-channels'), data.channel_ids || []);
+    } else {
+        loadChannelCheckboxes(card.querySelector('.condition-channels'), []);
+    }
+    document.getElementById('conditions-container').appendChild(clone);
+}
+
+function addConditionMatcher(btn, values) {
+    var container = btn.closest('.condition-card').querySelector('.condition-target-container');
+    var row = document.createElement('div');
+    row.className = 'condition-matcher-row';
+    row.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.5rem;align-items:center;';
+    row.innerHTML =
+        '<input type="text" class="form-input cm-key" placeholder="Label key" style="width:260px;font-size:0.82rem;" value="' + (values ? escapeHtml(values.key || '') : '') + '">' +
+        '<select class="form-input cm-op" style="width:70px;font-size:0.82rem;">' +
+        '<option value="=" ' + (values && values.op === '=' ? 'selected' : '') + '>=</option>' +
+        '<option value="!=" ' + (values && values.op === '!=' ? 'selected' : '') + '>!=</option>' +
+        '<option value="=~" ' + (values && values.op === '=~' ? 'selected' : '') + '>=~</option>' +
+        '<option value="!~" ' + (values && values.op === '!~' ? 'selected' : '') + '>!~</option>' +
+        '</select>' +
+        '<input type="text" class="form-input cm-value" placeholder="Value" style="width:260px;font-size:0.82rem;" value="' + (values ? escapeHtml(values.value || '') : '') + '">' +
+        '<button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()" style="font-size:0.72rem;">&times;</button>';
+    container.appendChild(row);
+}
+
+function toggleMetricParams(select) {
+    var card = select.closest('.condition-card');
+    var val = select.value;
+    card.querySelectorAll('.condition-param-group').forEach(function(g) {
+        g.style.display = g.dataset.for === val ? 'block' : 'none';
+    });
+    if (val === 'service') {
+        card.querySelector('.condition-operator').value = '==';
+        card.querySelector('.condition-threshold').value = '0';
+    }
+    if (val === 'logfile') {
+        card.querySelector('.condition-operator').value = '>=';
+        card.querySelector('.condition-threshold').value = '2';
+    }
+    if (val === 'exec') {
+        card.querySelector('.condition-operator').value = '>=';
+        card.querySelector('.condition-threshold').value = '2';
+    }
+}
+
+var ALL_CHANNELS = [];
+
+function loadChannelCheckboxes(container, selectedIds) {
+    fetch('/alerts/api/channels')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var channels = data.channels || [];
+            ALL_CHANNELS = channels;
+            if (!channels.length) {
+                container.innerHTML = '<span class="text-muted" style="font-size:0.82rem;">No channels configured</span>';
+                return;
+            }
+            var html = '';
+            channels.forEach(function(ch) {
+                var checked = selectedIds.indexOf(ch.id) !== -1;
+                html += '<div class="channel-row">' +
+                    '<input type="checkbox" class="channel-cb" value="' + ch.id + '" ' + (checked ? 'checked' : '') + '>\u00A0' +
+                    '<span>' + escapeHtml(ch.name) + '</span>' +
+                    '</div>';
+            });
+            container.innerHTML = html;
+            populateBulkChannelBar(channels);
+        })
+        .catch(function() {
+            container.innerHTML = '<span class="text-muted" style="font-size:0.82rem;">Failed to load channels</span>';
+        });
+}
+
+function populateBulkChannelBar(channels) {
+    var bar = document.getElementById('channel-bulk-bar');
+    var select = document.getElementById('bulk-channel-select');
+    if (!bar || !select) return;
+    if (!channels.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    select.innerHTML = channels.map(function(ch) {
+        return '<option value="' + ch.id + '">' + escapeHtml(ch.name) + '</option>';
+    }).join('');
+}
+
+function applyChannelToAll() {
+    var select = document.getElementById('bulk-channel-select');
+    var channelId = parseInt(select.value);
+    document.querySelectorAll('#conditions-container .condition-card').forEach(function(card) {
+        var cbs = card.querySelectorAll('.channel-cb');
+        cbs.forEach(function(cb) {
+            cb.checked = parseInt(cb.value) === channelId;
+        });
+    });
+}
+
+function getConditionData(card) {
+    var metricType = card.querySelector('.condition-metric-type').value;
+    var metricParams = {};
+    if (metricType === 'disk') {
+        metricParams.mountpoint = card.querySelector('.condition-param-mountpoint').value || '/';
+    } else if (metricType === 'check_name') {
+        metricParams.query = card.querySelector('.condition-param-check-name').value || '';
+    } else if (metricType === 'custom_promql') {
+        metricParams.query = card.querySelector('.condition-param-promql').value || '';
+    } else if (metricType === 'service') {
+        metricParams.service_name = card.querySelector('.condition-param-service-name').value || '';
+    } else if (metricType === 'logfile') {
+        metricParams.name = card.querySelector('.condition-param-logfile-name').value || '';
+        metricParams.path = card.querySelector('.condition-param-logfile-path').value || '';
+        metricParams.pattern = card.querySelector('.condition-param-logfile-pattern').value || '';
+    } else if (metricType === 'exec') {
+        metricParams.command = card.querySelector('.condition-param-exec-command').value || '';
+        metricParams.timeout_secs = parseInt(card.querySelector('.condition-param-exec-timeout').value) || 30;
+        metricParams.warning_threshold = parseInt(card.querySelector('.condition-param-exec-warn').value) || 1;
+        metricParams.critical_threshold = parseInt(card.querySelector('.condition-param-exec-crit').value) || 2;
+    }
+    // Build target_labels from condition matchers
+    var targetLabels = [];
+    card.querySelectorAll('.condition-matcher-row').forEach(function(row) {
+        var key = row.querySelector('.cm-key').value.trim();
+        var op = row.querySelector('.cm-op').value;
+        var value = row.querySelector('.cm-value').value.trim();
+        if (key && value) {
+            targetLabels.push({key: key, op: op, value: value});
+        }
+    });
+    var channelIds = [];
+    card.querySelectorAll('.channel-cb:checked').forEach(function(cb) {
+        channelIds.push(parseInt(cb.value));
+    });
+    return {
+        target_labels: targetLabels.length ? targetLabels : undefined,
+        name: card.querySelector('.condition-name').value,
+        metric_type: metricType,
+        metric_params: metricParams,
+        operator: card.querySelector('.condition-operator').value,
+        threshold: parseFloat(card.querySelector('.condition-threshold').value) || 0,
+        resolve_threshold: card.querySelector('.condition-resolve-threshold').value ? parseFloat(card.querySelector('.condition-resolve-threshold').value) : null,
+        severity: card.querySelector('.condition-severity').value,
+        for_duration: parseInt(card.querySelector('.condition-for-duration').value) || 0,
+        cooldown_secs: card.querySelector('.condition-cooldown').value ? parseInt(card.querySelector('.condition-cooldown').value) : null,
+        interval_secs: parseInt(card.querySelector('.condition-interval').value) || 60,
+        enabled: card.querySelector('.condition-toggle').classList.contains('toggle-on'),
+        channel_ids: channelIds,
+    };
+}
+
+function saveGroup(event) {
+    event.preventDefault();
+    var groupId = document.getElementById('group-id').value;
+
+    // Validate and build matchers array
+    var matchers = [];
+    var hasInvalidMatcher = false;
+    document.querySelectorAll('#matchers-container .matcher-row').forEach(function(row) {
+        var keyInput = row.querySelector('.matcher-key');
+        var valueInput = row.querySelector('.matcher-value');
+        var key = keyInput.value.trim();
+        var op = row.querySelector('.matcher-op').value;
+        var value = valueInput.value.trim();
+        keyInput.style.borderColor = '';
+        valueInput.style.borderColor = '';
+        if (!key && !value) {
+            hasInvalidMatcher = true;
+            keyInput.style.borderColor = '#f87171';
+        } else if (!key) {
+            hasInvalidMatcher = true;
+            keyInput.style.borderColor = '#f87171';
+        } else if (!value) {
+            hasInvalidMatcher = true;
+            valueInput.style.borderColor = '#f87171';
+        } else {
+            matchers.push({key: key, op: op, value: value});
+        }
+    });
+    if (hasInvalidMatcher) {
+        alert('Label matchers must have both a key and a value. Empty fields are highlighted in red.');
+        return;
+    }
+
+    // Build conditions array
+    var conditions = [];
+    document.querySelectorAll('#conditions-container .condition-card').forEach(function(card) {
+        conditions.push(getConditionData(card));
+    });
+
+    var payload = {
+        name: document.getElementById('group-name').value.trim(),
+        description: document.getElementById('group-description').value.trim(),
+        match_labels: matchers,
+        match_any: document.getElementById('match-any').checked,
+        enabled: document.getElementById('group-enabled').checked,
+        conditions: conditions,
+    };
+
+    var method = groupId ? 'PUT' : 'POST';
+    var url = groupId ? '/alerts/api/groups/' + groupId : '/alerts/api/groups';
+
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            alert('Error: ' + data.error);
+            return;
+        }
+        var savedGroup = data.group;
+        var gid = savedGroup.id;
+        // If editing, delete existing conditions first
+        var deletePromise = groupId
+            ? fetch('/alerts/api/groups/' + gid)
+                .then(function(r) { return r.json(); })
+                .then(function(gdata) {
+                    var existing = (gdata.group && gdata.group.conditions) || [];
+                    return Promise.all(existing.map(function(c) {
+                        return fetch('/alerts/api/groups/' + gid + '/conditions/' + c.id, {
+                            method: 'DELETE'
+                        }).then(function(r) { return r.json(); });
+                    }));
+                })
+            : Promise.resolve();
+        // Save conditions
+        deletePromise.then(function() {
+            var promises = (conditions || []).map(function(cond) {
+                return fetch('/alerts/api/groups/' + gid + '/conditions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(cond),
+                }).then(function(r) { return r.json(); });
+            });
+            return Promise.all(promises).then(function() {
+                window.location.href = '/alerts/groups/' + gid;
+            });
+        });
+    })
+    .catch(function() {
+        alert('Failed to save group.');
+    });
+}
+
+function loadGroupForEdit(groupId) {
+    fetch('/alerts/api/groups/' + groupId)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var g = data.group;
+            if (!g) return;
+            document.getElementById('group-name').value = g.name || '';
+            document.getElementById('group-description').value = g.description || '';
+            document.getElementById('group-enabled').checked = g.enabled !== false;
+            document.getElementById('match-any').checked = g.match_any || false;
+
+            // Load matchers
+            var matchLabels = g.match_labels || [];
+            matchLabels.forEach(function(m) {
+                addMatcher(m);
+            });
+
+            // Load conditions
+            (g.conditions || []).forEach(function(c) {
+                addCondition(c);
+            });
+        })
+        .catch(function() {
+            alert('Failed to load group for editing.');
+        });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var groupId = document.getElementById('group-id').value;
+    if (groupId) {
+        document.title = 'Edit Monitoring Group — Vespid';
+        loadGroupForEdit(groupId);
+    }
+});
+</script>
+{% endblock %}

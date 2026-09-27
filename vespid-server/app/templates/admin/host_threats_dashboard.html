@@ -1,0 +1,1292 @@
+{% extends "base.html" %}
+{% block title %}Host Threats Dashboard — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">🛡️</div>
+    <div style="flex:1;">
+        <h1 style="margin:0;font-size:1.2rem;">Host Threats Dashboard</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Real-time threat monitoring and host-level kill chain analysis
+        </div>
+    </div>
+    <span style="display:inline-flex;align-items:center;gap:0.3rem;padding:0.25rem 0.65rem;border-radius:999px;font-size:0.72rem;background:var(--bg-input);border:1px solid var(--border);color:var(--text-muted);white-space:nowrap;">⏱ <span id="last-refreshed">—</span></span>
+</div>
+
+<div class="card" style="padding:0.5rem 1rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;">
+    <div class="form-group" style="margin:0;">
+        <label for="global-hostname-filter" style="font-size:0.75rem;color:var(--text-muted);margin-right:0.4rem;">Host:</label>
+        <input type="text" id="global-hostname-filter"
+               placeholder="Filter by hostname…" autocomplete="off"
+               style="padding:0.4rem 0.6rem;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg-input);color:var(--text);min-width:200px;">
+    </div>
+    <div class="form-group" style="margin:0;">
+        <label for="global-time-window" style="font-size:0.75rem;color:var(--text-muted);margin-right:0.4rem;">Window:</label>
+        <select id="global-time-window"
+                style="padding:0.35rem 0.5rem;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;background:var(--bg-input);color:var(--text);">
+            <option value="1">1h</option>
+            <option value="6">6h</option>
+            <option value="12">12h</option>
+            <option value="24" selected>24h</option>
+            <option value="72">3d</option>
+            <option value="168">7d</option>
+        </select>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Tab Bar: Active Threats / All Hosts / Notifications
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div style="display:flex; gap:0.75rem; margin-bottom:1rem; border-bottom:1px solid var(--border); padding-bottom:0;">
+    <button id="tab-active-threats" class="ht-tab active"
+            onclick="switchHostThreatsTab('active')"
+            style="padding:0.5rem 1rem; border:none; border-bottom:2px solid #3B82F6; background:transparent; font-size:0.85rem; font-weight:600; color:#3B82F6; cursor:pointer;">
+        Active Threats
+    </button>
+    <button id="tab-all-hosts" class="ht-tab"
+            onclick="switchHostThreatsTab('all')"
+            style="padding:0.5rem 1rem; border:none; border-bottom:2px solid transparent; background:transparent; font-size:0.85rem; font-weight:600; color:var(--text-muted); cursor:pointer;">
+        All Hosts
+    </button>
+    <button id="tab-notifications" class="ht-tab"
+            onclick="switchHostThreatsTab('notifications')"
+            style="padding:0.5rem 1rem; border:none; border-bottom:2px solid transparent; background:transparent; font-size:0.85rem; font-weight:600; color:var(--text-muted); cursor:pointer;">
+        Notifications
+    </button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Active Threats Production View (prioritized table)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="panel-active-threats">
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+            <h2 class="card-title" style="margin:0;">Active Host Threats</h2>
+            <span style="font-size:0.75rem; color:var(--text-muted);">
+                <span id="active-count">0</span> host(s) with active threat scores
+            </span>
+        </div>
+        <div id="production-table-wrap">
+            <p style="color:var(--text-muted); text-align:center; padding:1.5rem 0;">Loading active threats…</p>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Notifications Panel
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="panel-notifications" style="display:none;">
+    <!-- Alert Configuration Management -->
+    <div class="card" style="margin-bottom:1rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+            <h2 class="card-title" style="margin:0;">Alert Configuration</h2>
+        </div>
+        <div id="alert-config-wrap">
+            <p style="color:var(--text-muted); text-align:center; padding:1rem 0;">Loading configuration…</p>
+        </div>
+    </div>
+
+    <!-- Notification History -->
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+            <h2 class="card-title" style="margin:0;">Notification History</h2>
+            <span style="font-size:0.75rem; color:var(--text-muted);">
+                <span id="notif-count">0</span> recent notification(s)
+            </span>
+        </div>
+        <div id="notification-table-wrap">
+            <p style="color:var(--text-muted); text-align:center; padding:1.5rem 0;">Loading notifications…</p>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Summary Cards Panel (shown under "All Hosts" tab)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="panel-summary" style="display:none;">
+    {% include "admin/host_threats/summary_cards.html" %}
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Host Detail View (hidden by default, shown when a host card is clicked)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div id="host-detail-view" style="display:none;">
+    <!-- Back button -->
+    <div style="margin-bottom:1rem;">
+        <a href="#" id="back-to-hosts" onclick="backToHostList(event)"
+           style="font-size:0.85rem; color:var(--link, #3B82F6); text-decoration:none; display:inline-flex; align-items:center; gap:0.3rem;">
+            ← Back to hosts
+        </a>
+        <span id="detail-host-title" style="margin-left:1rem; font-size:1rem; font-weight:600; color:var(--text); vertical-align:middle;"></span>
+        <select id="detail-mode-select" onchange="changeHostMode(this)"
+                style="margin-left:0.75rem; padding:0.25rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.75rem; font-weight:600; text-transform:uppercase; vertical-align:middle; background:var(--bg-input); color:var(--text); cursor:pointer;">
+            <option value="learning">Learning</option>
+            <option value="detecting" selected>Detecting</option>
+            <option value="alerting">Alerting</option>
+        </select>
+    </div>
+
+    <!-- Noise Analysis Panel -->
+    {% include "admin/host_threats/noise_analysis_panel.html" %}
+
+    <!-- Secondary Row: Kill Chain + Score Sparkline -->
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem; align-items:stretch;">
+        <!-- Kill Chain Timeline Panel -->
+        <div id="panel-kill-chain" style="min-width:0; display:flex; flex-direction:column;">
+            {% include "admin/host_threats/kill_chain_timeline.html" %}
+        </div>
+        <!-- Score Sparkline Panel -->
+        <div id="panel-sparkline" style="min-width:0; display:flex; flex-direction:column;">
+            {% include "admin/host_threats/score_sparkline.html" %}
+        </div>
+    </div>
+
+    <!-- Responsive: stack panels on smaller screens -->
+    <style>
+    @media (max-width: 1024px) {
+        #panel-kill-chain, #panel-sparkline {
+            grid-column: 1 / -1;
+        }
+    }
+    </style>
+
+    <!-- Timeline Table Panel — loads via HTMX from /admin/host-threats/events -->
+    <div class="card" id="panel-timeline">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h2 class="card-title" style="margin:0;">Event Timeline</h2>
+            <span style="font-size:0.75rem; color:var(--text-muted);">Auto-refreshes every 60s</span>
+        </div>
+        <div id="events-table-container"
+             hx-get="/admin/host-threats/events"
+             hx-trigger="refresh-events"
+             hx-swap="none"
+             hx-on::after-request="renderEventsTable(event); updateLastRefreshed()">
+            <p style="color:var(--text-muted); text-align:center; padding:2rem 0;">Select a host to view events.</p>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Global Filter Event Bus & Auto-Refresh Logic
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+    var hostnameFilter = document.getElementById('global-hostname-filter');
+    var timeWindowFilter = document.getElementById('global-time-window');
+    var _activeThreatsTab = 'active'; /* 'active' or 'all' — current tab */
+
+    /* ── Shared helpers ────────────────────────────────────────── */
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+    function formatTimestamp(isoStr) {
+        if (!isoStr) return '—';
+        try { var d=new Date(isoStr); return String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+        catch(e) { return isoStr; }
+    }
+    function isAgentAlive(lastSeenAt) {
+        if (!lastSeenAt) return false;
+        try {
+            var diff = (Date.now() - new Date(lastSeenAt).getTime()) / 1000;
+            return diff < 300; /* online if seen within last 5 minutes */
+        } catch(e) { return false; }
+    }
+    var _toastTimer = null;
+    function showToast(msg, type) {
+        var el = document.getElementById('last-refreshed');
+        if (!el) return;
+        if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+        var orig = el.textContent;
+        el.textContent = msg;
+        el.style.color = type === 'error' ? '#DC2626' : '#16A34A';
+        _toastTimer = setTimeout(function() {
+            el.textContent = orig;
+            el.style.color = '';
+        }, 5000);
+    }
+
+    /* ══════════════════════════════════════════════════════════════
+       Tab Switching: Active Threats / All Hosts
+       ══════════════════════════════════════════════════════════════ */
+    window.switchHostThreatsTab = function(tab) {
+        _activeThreatsTab = tab;
+        var tabActive = document.getElementById('tab-active-threats');
+        var tabAll = document.getElementById('tab-all-hosts');
+        var tabNotif = document.getElementById('tab-notifications');
+        var panelActive = document.getElementById('panel-active-threats');
+        var panelSummary = document.getElementById('panel-summary');
+        var panelNotif = document.getElementById('panel-notifications');
+
+        /* Collapse host detail view when switching tabs */
+        var detailView = document.getElementById('host-detail-view');
+        if (detailView) detailView.style.display = 'none';
+        if (_detailAutoRefreshInterval) {
+            clearInterval(_detailAutoRefreshInterval);
+            _detailAutoRefreshInterval = null;
+        }
+        if (typeof window.hideNoisePanel === 'function') {
+            window.hideNoisePanel();
+        }
+        var hostnameFilter = document.getElementById('global-hostname-filter');
+        if (hostnameFilter) hostnameFilter.value = '';
+        window._kcHostnameFilter = '';
+
+        /* Reset all tabs to inactive */
+        var tabs = [tabActive, tabAll, tabNotif];
+        tabs.forEach(function(t) { if (t) { t.style.color = 'var(--text-muted)'; t.style.borderBottomColor = 'transparent'; } });
+
+        /* Hide all panels */
+        if (panelActive) panelActive.style.display = 'none';
+        if (panelSummary) panelSummary.style.display = 'none';
+        if (panelNotif) panelNotif.style.display = 'none';
+
+        if (tab === 'active') {
+            if (tabActive) { tabActive.style.color = '#3B82F6'; tabActive.style.borderBottomColor = '#3B82F6'; }
+            if (panelActive) panelActive.style.display = '';
+            loadProductionView();
+        } else if (tab === 'all') {
+            if (tabAll) { tabAll.style.color = '#3B82F6'; tabAll.style.borderBottomColor = '#3B82F6'; }
+            if (panelSummary) panelSummary.style.display = '';
+        } else if (tab === 'notifications') {
+            if (tabNotif) { tabNotif.style.color = '#3B82F6'; tabNotif.style.borderBottomColor = '#3B82F6'; }
+            if (panelNotif) panelNotif.style.display = '';
+            loadAlertConfig();
+            loadNotifications();
+        }
+    };
+
+    /**
+     * Load the production view (active threats table).
+     */
+    function loadProductionView() {
+        var wrap = document.getElementById('production-table-wrap');
+        if (!wrap) return;
+
+        fetch('/admin/host-threats/production')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var hosts = data.hosts || [];
+                var countEl = document.getElementById('active-count');
+                if (countEl) countEl.textContent = hosts.length;
+
+                if (hosts.length === 0) {
+                    wrap.innerHTML = '<div style="text-align:center; padding:2.5rem 1rem; background:var(--bg-input,#f9fafb); border:1px dashed var(--border); border-radius:8px; color:var(--text-muted); font-size:0.9rem;"><span style="font-size:2rem; display:block; margin-bottom:0.5rem;">&#x1F6E1;</span>No hosts with active threat scores</div>';
+                    return;
+                }
+
+                var html = '<div style="overflow-x:auto;"><table class="prod-table"><thead><tr>'
+                    + '<th>Hostname</th>'
+                    + '<th>Agent</th>'
+                    + '<th>Score</th>'
+                    + '<th>Detections (24h)</th>'
+                    + '<th>Top Detection</th>'
+                    + '<th>Last Event</th>'
+                    + '<th>Mode</th>'
+                    + '</tr></thead><tbody>';
+
+                hosts.forEach(function(h) {
+                    var hostname = h.hostname || '';
+                    var score = h.effective_score || 0;
+                    var scoreStr = score >= 100 ? Math.round(score).toString() : score.toFixed(1);
+                    var gaugeColor = h.gauge_color || 'green';
+                    var gaugePercent = Math.min((score / 100) * 100, 100);
+
+                    var topRule = '';
+                    if (h.top_rules && h.top_rules.length > 0) {
+                        topRule = h.top_rules[0].name || '';
+                    }
+
+                    var mode = h.mode || 'unknown';
+
+                    var agentAlive = isAgentAlive(h.last_seen_at);
+                    var agentVersionStr = h.agent_version ? ' v' + escapeHtml(h.agent_version) : '';
+                    var agentBadge = agentAlive
+                        ? '<span class="agent-badge agent-online" title="Agent online' + agentVersionStr + ' (last seen ' + formatTimestamp(h.last_seen_at) + ')">Online</span>'
+                        : '<span class="agent-badge agent-offline" title="Agent offline' + agentVersionStr + ' (last seen ' + formatTimestamp(h.last_seen_at) + ')">Offline</span>';
+
+                    html += '<tr class="prod-row prod-row-' + gaugeColor + '" data-hostname="' + escapeHtml(hostname.toLowerCase()) + '"'
+                        + ' onclick="openHostDetail(\'' + escapeHtml(h.hostname) + '\', \'' + escapeHtml(mode) + '\', \'' + escapeHtml(h.last_seen_at || '') + '\', \'' + escapeHtml(h.agent_version || '') + '\')"'
+                        + '>';
+                    html += '<td class="prod-hostname"><strong>' + escapeHtml(h.hostname) + '</strong></td>';
+                    html += '<td class="prod-agent">' + agentBadge + '</td>';
+                    html += '<td class="prod-score"><span class="prod-gauge prod-gauge-' + gaugeColor + '" title="' + scoreStr + '% of threshold">' + scoreStr + '</span></td>';
+                    html += '<td class="prod-count">' + (h.event_count || 0) + '</td>';
+                    html += '<td class="prod-rule"><code>' + escapeHtml(topRule) + '</code></td>';
+                    html += '<td class="prod-time">' + formatTimestamp(h.last_detection) + '</td>';
+                    html += '<td class="prod-mode">'
+                        + '<span class="prod-mode-badge prod-mode-badge-' + escapeHtml(mode) + '">' + escapeHtml(mode) + '</span>'
+                        + '</td>';
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table></div>';
+                wrap.innerHTML = html;
+            })
+            .catch(function(err) {
+                wrap.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1.5rem 0;">Failed to load active threats.</p>';
+            });
+    }
+
+    /**
+     * Change the auditd mode for a host via the set-mode endpoint.
+     */
+    window.changeHostMode = function(selectEl) {
+        var mode = selectEl.value;
+        var hostname = selectEl.getAttribute('data-hostname');
+        /* If the select is in the detail view, read hostname from the title */
+        if (!hostname) {
+            var titleEl = document.getElementById('detail-host-title');
+            if (titleEl) hostname = titleEl.textContent;
+        }
+        if (!hostname) return;
+
+        /* Confirm for going to alerting mode */
+        if (mode === 'alerting') {
+            if (!confirm('Switch ' + hostname + ' to ALERTING mode? This will enable threshold-based alert dispatch.')) {
+                /* Reset to previous value */
+                selectEl.value = selectEl.getAttribute('data-prev-mode') || 'detecting';
+                return;
+            }
+        }
+
+        selectEl.disabled = true;
+
+        fetch('/admin/host-threats/set-mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hostname: hostname, mode: mode })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(result) {
+            if (result.success) {
+                showToast('Mode changed to ' + mode.toUpperCase() + ' for ' + hostname, 'success');
+                /* Refresh production view and summary cards */
+                loadProductionView();
+                var summaryGrid = document.getElementById('host-summary-grid');
+                if (summaryGrid) htmx.trigger(summaryGrid, 'load');
+            } else {
+                var errMsg = result.error || 'Unknown error';
+                showToast('Mode change failed: ' + errMsg, 'error');
+                selectEl.value = selectEl.getAttribute('data-prev-mode') || 'detecting';
+            }
+        })
+        .catch(function() {
+            showToast('Mode change failed: network error.', 'error');
+            selectEl.value = selectEl.getAttribute('data-prev-mode') || 'detecting';
+        })
+        .finally(function() {
+            selectEl.disabled = false;
+        });
+    };
+
+    /**
+     * Load alert configuration management interface.
+     * Fetches all profiles and their alert configs, renders a
+     * table with inline editable fields.
+     */
+    function loadAlertConfig() {
+        var wrap = document.getElementById('alert-config-wrap');
+        if (!wrap) return;
+
+        fetch('/admin/host-threats/alert-config')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var allProfiles = data.profiles || [];
+
+                if (allProfiles.length === 0) {
+                    wrap.innerHTML = '<div style="text-align:center; padding:2.5rem 1rem; background:var(--bg-input,#f9fafb); border:1px dashed var(--border); border-radius:8px; color:var(--text-muted); font-size:0.9rem;"><span style="font-size:2rem; display:block; margin-bottom:0.5rem;">&#x1F514;</span>No config profiles available.</div>';
+                    return;
+                }
+
+                var html = '<div style="overflow-x:auto;"><table class="ac-table"><thead><tr>'
+                    + '<th>Profile</th><th>Threshold</th><th>Cooldown</th><th>Channel</th><th>Target</th><th></th>'
+                    + '</tr></thead><tbody>';
+
+                allProfiles.forEach(function(p) {
+                    var pid = p.profile_id;
+                    var hasConfig = p.has_config;
+
+                    var threshold = p.threshold || 100;
+                    var cooldown = p.cooldown_seconds || 900;
+                    var channel = p.notify_channel || {};
+                    var channelType = channel.type || '';
+                    var target = channel.url || channel.to || '';
+                    var autoResolved = !target && (channelType === 'discord' || channelType === 'slack');
+
+                    html += '<tr class="ac-row ac-row-' + pid + '">';
+                    html += '<td><strong>' + escapeHtml(p.profile_name) + '</strong></td>';
+
+                    /* Threshold input */
+                    html += '<td><input type="number" class="ac-threshold ac-input-' + pid + '" value="' + threshold + '" min="1" max="10000" style="width:95px; padding:0.25rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.8rem;"></td>';
+
+                    /* Cooldown input */
+                    html += '<td><input type="number" class="ac-cooldown ac-input-' + pid + '" value="' + cooldown + '" min="60" max="86400" style="width:80px; padding:0.25rem 0.4rem; border:1px solid var(--border); border-radius:4px; font-size:0.8rem;"> <span style="font-size:0.7rem; color:var(--text-muted);">s</span></td>';
+
+                    /* Channel type select */
+                    html += '<td><select class="ac-channel-type ac-input-' + pid + '" style="padding:0.25rem 0.4rem; border:1px solid var(--border); border-radius:4px; font-size:0.8rem;">'
+                        + '<option value="">None</option>'
+                        + '<option value="webhook"' + (channelType === 'webhook' ? ' selected' : '') + '>Webhook</option>'
+                        + '<option value="discord"' + (channelType === 'discord' ? ' selected' : '') + '>Discord</option>'
+                        + '<option value="slack"' + (channelType === 'slack' ? ' selected' : '') + '>Slack</option>'
+                        + '<option value="email"' + (channelType === 'email' ? ' selected' : '') + '>Email</option>'
+                        + '</select></td>';
+
+                    /* Target URL/email input — empty for auto-resolved types */
+                    html += '<td style="display:flex; gap:0.35rem; align-items:center;">';
+                    html += '<input type="text" class="ac-target ac-input-' + pid + '" value="' + escapeHtml(target) + '" placeholder="URL or email" style="width:220px; padding:0.25rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.8rem;">';
+                    if (autoResolved) {
+                        html += '<span style="font-size:0.7rem; color:var(--text-muted); font-style:italic; white-space:nowrap;">(auto-resolved)</span>';
+                    }
+                    html += '</td>';
+
+                    /* Save / Delete buttons */
+                    html += '<td style="white-space:nowrap;">'
+                        + '<button class="ac-save-btn" onclick="saveAlertConfig(' + pid + ')" style="padding:0.25rem 0.6rem; border:1px solid var(--border); border-radius:4px; background:#3B82F6; color:#fff; font-size:0.75rem; cursor:pointer;">Save</button>';
+                    if (hasConfig) {
+                        html += ' <button class="ac-del-btn" onclick="deleteAlertConfig(' + pid + ')" style="padding:0.25rem 0.6rem; border:1px solid var(--border); border-radius:4px; background:transparent; color:#DC2626; font-size:0.75rem; cursor:pointer;">Remove</button>';
+                    }
+                    html += '</td>';
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table></div>'
+                    + '<p style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-muted);">Threshold = score at which alerts fire. Cooldown = minimum seconds between alerts. Channel = where to send notifications. For Discord/Slack the URL is auto-resolved from your existing channels.</p>';
+
+                wrap.innerHTML = html;
+            })
+            .catch(function() {
+                wrap.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1rem 0;">Failed to load alert configuration.</p>';
+            });
+    }
+
+    /**
+     * Save alert config for a profile via POST.
+     */
+    window.saveAlertConfig = function(profileId) {
+        var row = document.querySelector('.ac-row-' + profileId);
+        if (!row) return;
+
+        var thresholdInput = row.querySelector('.ac-threshold');
+        var cooldownInput = row.querySelector('.ac-cooldown');
+        var channelTypeSelect = row.querySelector('.ac-channel-type');
+        var targetInput = row.querySelector('.ac-target');
+
+        var threshold = parseFloat(thresholdInput.value) || 100;
+        var cooldown = parseInt(cooldownInput.value) || 900;
+
+        var channelType = channelTypeSelect.value;
+        var channel = {};
+        if (channelType) {
+            channel.type = channelType;
+            if (channelType === 'webhook' || channelType === 'discord' || channelType === 'slack') {
+                channel.url = targetInput.value || '';
+            } else if (channelType === 'email') {
+                channel.to = targetInput.value || '';
+            }
+        }
+
+        var btn = row.querySelector('.ac-save-btn');
+        btn.disabled = true;
+        btn.textContent = 'Saving…';
+
+        fetch('/admin/host-threats/alert-config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                profile_id: profileId,
+                threshold: threshold,
+                cooldown_seconds: cooldown,
+                notify_channel: channel
+            })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(result) {
+            if (result.success) {
+                showToast('Alert config saved', 'success');
+                loadAlertConfig();
+                loadNotifications();
+            } else {
+                showToast('Save failed: ' + (result.error || 'unknown'), 'error');
+                btn.disabled = false;
+                btn.textContent = 'Save';
+            }
+        })
+        .catch(function() {
+            showToast('Save failed: network error', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Save';
+        });
+    };
+
+    /**
+     * Delete alert config for a profile via DELETE.
+     */
+    window.deleteAlertConfig = function(profileId) {
+        if (!confirm('Remove alert configuration for this profile?')) return;
+
+        var row = document.querySelector('.ac-row-' + profileId);
+        var btn = row ? row.querySelector('.ac-del-btn') : null;
+        if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+        fetch('/admin/host-threats/alert-config/' + profileId, {
+            method: 'DELETE'
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(result) {
+            if (result.success) {
+                showToast('Alert config removed', 'success');
+                loadAlertConfig();
+                loadNotifications();
+            } else {
+                showToast('Remove failed: ' + (result.error || 'unknown'), 'error');
+                if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
+            }
+        })
+        .catch(function() {
+            showToast('Remove failed: network error', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = 'Remove'; }
+        });
+    };
+
+    /**
+     * Load notification history from the server.
+     */
+    function loadNotifications() {
+        var wrap = document.getElementById('notification-table-wrap');
+        if (!wrap) return;
+
+        fetch('/admin/host-threats/notifications?limit=20')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var notifs = data.notifications || [];
+                var countEl = document.getElementById('notif-count');
+                if (countEl) countEl.textContent = notifs.length;
+
+                if (notifs.length === 0) {
+                    wrap.innerHTML = '<div style="text-align:center; padding:2.5rem 1rem; background:var(--bg-input,#f9fafb); border:1px dashed var(--border); border-radius:8px; color:var(--text-muted); font-size:0.9rem;"><span style="font-size:2rem; display:block; margin-bottom:0.5rem;">&#x1F4EC;</span>No recent alert notifications</div>';
+                    return;
+                }
+
+                var html = '<div style="overflow-x:auto;"><table class="notif-table"><thead><tr>'
+                    + '<th>Host</th>'
+                    + '<th>Score</th>'
+                    + '<th>Channel</th>'
+                    + '<th>Status</th>'
+                    + '<th>Time</th>'
+                    + '<th>Acknowledged</th>'
+                    + '<th></th>'
+                    + '</tr></thead><tbody>';
+
+                notifs.forEach(function(n) {
+                    html += '<tr class="notif-row">';
+                    html += '<td><strong>' + escapeHtml(n.hostname) + '</strong></td>';
+                    html += '<td>' + n.score + '</td>';
+                    html += '<td class="notif-channel">' + escapeHtml(n.channel_type) + '</td>';
+                    var statusTitle = n.error_message ? ' title="' + escapeHtml(n.error_message) + '"' : '';
+                    html += '<td><span class="notif-status notif-status-' + n.status + '"' + statusTitle + '>' + escapeHtml(n.status) + '</span></td>';
+                    html += '<td class="notif-time">' + formatTimestamp(n.created_at) + '</td>';
+
+                    if (n.acknowledged_at) {
+                        html += '<td><span class="notif-ackd" title="' + escapeHtml(n.acknowledged_at) + '">Yes</span></td>';
+                        html += '<td>—</td>';
+                    } else {
+                        html += '<td>—</td>';
+                        html += '<td><button class="notif-ack-btn" onclick="acknowledgeNotification(\'' + escapeHtml(n.hostname) + '\', this)">Acknowledge</button></td>';
+                    }
+
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table></div>';
+                wrap.innerHTML = html;
+            })
+            .catch(function() {
+                wrap.innerHTML = '<p style="color:var(--text-muted); text-align:center; padding:1.5rem 0;">Failed to load notifications.</p>';
+            });
+    }
+
+    /**
+     * Acknowledge a host threat alert notification.
+     */
+    window.acknowledgeNotification = function(hostname, btn) {
+        if (!hostname) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Acknowledging…';
+
+        fetch('/admin/host-threats/acknowledge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hostname: hostname, acknowledged_by: 'admin' })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(result) {
+            if (result.success) {
+                showToast('Alert acknowledged for ' + hostname, 'success');
+                loadNotifications();
+            } else {
+                showToast('Acknowledge failed: ' + (result.error || 'unknown'), 'error');
+                btn.disabled = false;
+                btn.textContent = 'Acknowledge';
+            }
+        })
+        .catch(function() {
+            showToast('Acknowledge failed: network error.', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Acknowledge';
+        });
+    };
+
+    /* ══════════════════════════════════════════════════════════════
+       List → Detail Navigation
+       ══════════════════════════════════════════════════════════════ */
+    var _detailAutoRefreshInterval = null;
+
+    /**
+     * Show the detail view for a specific host and hide the summary cards.
+     */
+    window.openHostDetail = function(hostname, mode, lastSeenAt, agentVersion) {
+        if (!hostname) return;
+        mode = mode || 'unknown';
+
+        var summaryPanel = document.getElementById('panel-summary');
+        var activePanel = document.getElementById('panel-active-threats');
+        var detailView = document.getElementById('host-detail-view');
+        var detailTitle = document.getElementById('detail-host-title');
+        var modeSelect = document.getElementById('detail-mode-select');
+
+        if (summaryPanel) summaryPanel.style.display = 'none';
+        if (activePanel) activePanel.style.display = 'none';
+        if (detailView) detailView.style.display = '';
+        if (detailTitle) {
+            var agentAlive = isAgentAlive(lastSeenAt);
+            var agentBadge = agentAlive
+                ? '<span class="agent-badge agent-online" style="margin-left:0.5rem;">Online</span>'
+                : '<span class="agent-badge agent-offline" style="margin-left:0.5rem;">Offline</span>';
+            var versionStr = agentVersion ? '<span style="margin-left:0.5rem; font-size:0.75rem; color:var(--text-muted);">v' + escapeHtml(agentVersion) + '</span>' : '';
+            detailTitle.innerHTML = escapeHtml(hostname) + agentBadge + versionStr;
+        }
+        if (modeSelect) {
+            modeSelect.value = mode;
+            modeSelect.setAttribute('data-hostname', hostname);
+            modeSelect.setAttribute('data-prev-mode', mode);
+        }
+
+        /* Set the global hostname filter to match */
+        if (hostnameFilter) {
+            hostnameFilter.value = hostname;
+        }
+        window._kcHostnameFilter = hostname;
+
+        /* Trigger data loads for detail panels */
+
+        /* Kill Chain */
+        var kcDataEl = document.getElementById('kc-timeline-data');
+        if (kcDataEl) {
+            var hours = timeWindowFilter ? timeWindowFilter.value : '24';
+            kcDataEl.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, hours: hours }));
+            htmx.trigger(kcDataEl, 'refresh-killchain');
+        }
+
+        /* Score Sparkline */
+        if (window.loadScoreSparklineData) {
+            window.loadScoreSparklineData();
+        }
+
+        /* Events Table */
+        var eventsEl = document.getElementById('events-table-container');
+        if (eventsEl) {
+            eventsEl.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, page: '1' }));
+            htmx.trigger(eventsEl, 'refresh-events');
+        }
+
+        /* Noise Analysis — show panel but disable suppression for learning hosts */
+        if (typeof window.showNoisePanel === 'function') {
+            window.showNoisePanel();
+        }
+        if (typeof window.showNoiseLoading === 'function') {
+            window.showNoiseLoading();
+        }
+
+        /* Pass mode to noise panel so it can disable suppression controls */
+        window._noiseHostMode = mode;
+
+        fetch('/admin/host-threats/noise-analysis?hostname=' + encodeURIComponent(hostname))
+            .then(function(response) {
+                if (!response.ok) {
+                    return response.json().then(function(errData) {
+                        throw new Error(errData.error || 'Failed to load noise analysis');
+                    }).catch(function(parseErr) {
+                        if (parseErr.message && parseErr.message !== 'Failed to load noise analysis') {
+                            throw parseErr;
+                        }
+                        throw new Error('Failed to load noise analysis (HTTP ' + response.status + ')');
+                    });
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (typeof window.renderNoiseAnalysis === 'function') {
+                    window.renderNoiseAnalysis(data);
+                }
+                /* If host is learning, disable suppression controls and show info */
+                if (mode === 'learning') {
+                    var suppressBtn = document.getElementById('noise-suppress-btn');
+                    if (suppressBtn) { suppressBtn.disabled = true; suppressBtn.title = 'Suppression unavailable while host is in learning mode'; }
+                    /* Show a subtle info note */
+                    var controls = document.getElementById('noise-controls');
+                    if (controls && !document.getElementById('noise-learning-note')) {
+                        var note = document.createElement('div');
+                        note.id = 'noise-learning-note';
+                        note.style.cssText = 'width:100%; font-size:0.75rem; color:var(--text-muted); margin-top:0.5rem; font-style:italic;';
+                        note.textContent = 'Suppression is available after the learning period completes.';
+                        controls.parentNode.insertBefore(note, controls.nextSibling);
+                    }
+                }
+            })
+            .catch(function(err) {
+                if (typeof window.showNoiseError === 'function') {
+                    window.showNoiseError('Could not load noise analysis data for ' + hostname + ': ' + err.message);
+                }
+            });
+
+        /* Start auto-refresh for detail panels (every 60s) */
+        if (_detailAutoRefreshInterval) clearInterval(_detailAutoRefreshInterval);
+        _detailAutoRefreshInterval = setInterval(function() {
+            var currentHostname = hostnameFilter ? hostnameFilter.value : hostname;
+            if (kcDataEl) htmx.trigger(kcDataEl, 'refresh-killchain');
+            if (window.loadScoreSparklineData) window.loadScoreSparklineData();
+            if (eventsEl) htmx.trigger(eventsEl, 'refresh-events');
+        }, 60000);
+    };
+
+    /**
+     * Navigate back to the host list (summary cards) from the detail view.
+     */
+    window.backToHostList = function(event) {
+        if (event) event.preventDefault();
+
+        var detailView = document.getElementById('host-detail-view');
+        if (detailView) detailView.style.display = 'none';
+
+        var summaryPanel = document.getElementById('panel-summary');
+        var activePanel = document.getElementById('panel-active-threats');
+        var notifPanel = document.getElementById('panel-notifications');
+        if (_activeThreatsTab === 'active') {
+            if (activePanel) activePanel.style.display = '';
+            if (summaryPanel) summaryPanel.style.display = 'none';
+            if (notifPanel) notifPanel.style.display = 'none';
+            loadProductionView();
+        } else if (_activeThreatsTab === 'notifications') {
+            if (notifPanel) notifPanel.style.display = '';
+            if (activePanel) activePanel.style.display = 'none';
+            if (summaryPanel) summaryPanel.style.display = 'none';
+            loadNotifications();
+        } else {
+            if (summaryPanel) summaryPanel.style.display = '';
+            if (activePanel) activePanel.style.display = 'none';
+            if (notifPanel) notifPanel.style.display = 'none';
+        }
+
+        /* Stop detail auto-refresh */
+        if (_detailAutoRefreshInterval) {
+            clearInterval(_detailAutoRefreshInterval);
+            _detailAutoRefreshInterval = null;
+        }
+
+        /* Hide noise panel */
+        if (typeof window.hideNoisePanel === 'function') {
+            window.hideNoisePanel();
+        }
+
+        /* Reset hostname filter to All Hosts */
+        if (hostnameFilter) {
+            hostnameFilter.value = '';
+        }
+        window._kcHostnameFilter = '';
+    };
+
+    /* ══════════════════════════════════════════════════════════════
+       Scroll Position Preservation during Auto-Refresh
+       ══════════════════════════════════════════════════════════════ */
+    var _savedScrollX = 0;
+    var _savedScrollY = 0;
+
+    /* Save scroll position before any HTMX request starts */
+    document.body.addEventListener('htmx:beforeRequest', function() {
+        _savedScrollX = window.scrollX || window.pageXOffset;
+        _savedScrollY = window.scrollY || window.pageYOffset;
+    });
+
+    /* Restore scroll position after HTMX swap completes */
+    document.body.addEventListener('htmx:afterSwap', function() {
+        window.scrollTo(_savedScrollX, _savedScrollY);
+    });
+
+    /* ══════════════════════════════════════════════════════════════
+       Hostname search: client-side card filter with debounce
+       ══════════════════════════════════════════════════════════════ */
+    var _searchTimer = null;
+    hostnameFilter.addEventListener('input', function() {
+        if (_searchTimer) clearTimeout(_searchTimer);
+        _searchTimer = setTimeout(function() {
+            var q = hostnameFilter.value.toLowerCase().trim();
+            /* Filter host cards (All Hosts tab) */
+            var cards = document.querySelectorAll('.host-card');
+            var visibleCount = 0;
+            cards.forEach(function(card) {
+                var name = (card.getAttribute('data-hostname') || '').toLowerCase();
+                var match = !q || name.indexOf(q) !== -1;
+                card.style.display = match ? '' : 'none';
+                if (match) visibleCount++;
+            });
+            /* Filter production table rows (Active Threats tab) */
+            var prodRows = document.querySelectorAll('.prod-row');
+            prodRows.forEach(function(row) {
+                var name = (row.getAttribute('data-hostname') || '').toLowerCase();
+                row.style.display = (!q || name.indexOf(q) !== -1) ? '' : 'none';
+            });
+            /* Show/hide empty state for host cards */
+            var emptyEl = document.querySelector('.host-card-empty');
+            if (cards.length > 0 && visibleCount === 0) {
+                if (!emptyEl) {
+                    var msg = document.createElement('p');
+                    msg.className = 'host-card-empty';
+                    msg.textContent = 'No hosts match "' + hostnameFilter.value + '".';
+                    var grid = document.querySelector('.host-summary-cards');
+                    if (grid) grid.parentNode.appendChild(msg);
+                }
+            } else if (emptyEl) {
+                emptyEl.remove();
+            }
+        }, 150);
+    });
+
+    /* ══════════════════════════════════════════════════════════════
+       Listen for hostname-filter-changed on all panels
+       ══════════════════════════════════════════════════════════════ */
+    document.addEventListener('hostname-filter-changed', function(e) {
+        var hostname = e.detail.hostname;
+
+        /* ── Summary Cards Panel ──────────────────────────────── */
+        var summaryEl = document.getElementById('host-summary-grid');
+        if (summaryEl) {
+            var summaryVals = {};
+            try { summaryVals = JSON.parse(summaryEl.getAttribute('hx-vals') || '{}'); } catch(ex) {}
+            summaryVals.hostname = hostname;
+            summaryEl.setAttribute('hx-vals', JSON.stringify(summaryVals));
+            htmx.trigger(summaryEl, 'load');
+        }
+
+        /* ── Kill Chain Panel ─────────────────────────────────── */
+        /* The kill chain template listens for hostname-filter-changed directly.
+           Update the shared state so auto-refresh (htmx:configRequest) stays in sync. */
+        window._kcHostnameFilter = hostname;
+
+        /* ── Score Sparkline Panel ────────────────────────────── */
+        if (window.loadScoreSparklineData) {
+            window.loadScoreSparklineData();
+        }
+
+        /* ── Events Table Panel ───────────────────────────────── */
+        var eventsEl = document.getElementById('events-table-container');
+        if (eventsEl) {
+            eventsEl.setAttribute('hx-vals', JSON.stringify({
+                hostname: hostname,
+                page: '1'
+            }));
+            htmx.trigger(eventsEl, 'refresh-events');
+        }
+    });
+
+    /* ══════════════════════════════════════════════════════════════
+       Dispatch time-window-changed CustomEvent
+       ══════════════════════════════════════════════════════════════ */
+    timeWindowFilter.addEventListener('change', function() {
+        var hours = timeWindowFilter.value;
+        document.dispatchEvent(new CustomEvent('time-window-changed', {
+            detail: { hours: hours }
+        }));
+    });
+
+    /* ── Listen for time-window-changed and reload the kill chain ── */
+    document.addEventListener('time-window-changed', function(e) {
+        var hours = e.detail.hours;
+        var kcDataEl = document.getElementById('kc-timeline-data');
+        if (kcDataEl) {
+            var hostname = window._kcHostnameFilter || '';
+            kcDataEl.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, hours: hours }));
+            htmx.trigger(kcDataEl, 'refresh-killchain');
+        } else if (window.loadKillChainData) {
+            loadKillChainData();
+        }
+    });
+
+    /* ══════════════════════════════════════════════════════════════
+       "Last Refreshed" Timestamp
+       ══════════════════════════════════════════════════════════════ */
+    window.updateLastRefreshed = function() {
+        var el = document.getElementById('last-refreshed');
+        if (el) {
+            var now = new Date();
+            var hh = String(now.getHours()).padStart(2, '0');
+            var mm = String(now.getMinutes()).padStart(2, '0');
+            var ss = String(now.getSeconds()).padStart(2, '0');
+            el.textContent = 'Last refreshed: ' + hh + ':' + mm + ':' + ss;
+        }
+    };
+
+    /* Update last refreshed on any successful HTMX response */
+    document.body.addEventListener('htmx:afterRequest', function(e) {
+        if (e.detail.successful) {
+            updateLastRefreshed();
+        }
+    });
+
+    /* ══════════════════════════════════════════════════════════════
+       Preserve filter selections during auto-refresh
+       (Ensure hx-vals on panels always reflect current filter state
+        so the 60s auto-refresh polls include the active hostname)
+       ══════════════════════════════════════════════════════════════ */
+    document.body.addEventListener('htmx:configRequest', function(e) {
+        var el = e.detail.elt;
+        if (!el) return;
+
+        var currentHostname = hostnameFilter.value;
+
+        /* For the events table: ensure hostname is always current */
+        if (el.id === 'events-table-container') {
+            e.detail.parameters.hostname = currentHostname;
+        }
+
+        /* For the summary grid: fetch ALL hosts (client-side filtering via search input) */
+        if (el.id === 'host-summary-grid') {
+            e.detail.parameters.hostname = '';
+        }
+
+        /* For the kill chain data loader: ensure hostname and window are current */
+        if (el.id === 'kc-timeline-data') {
+            e.detail.parameters.hostname = currentHostname;
+            var kcTimeWindow = document.getElementById('global-time-window');
+            if (kcTimeWindow) {
+                e.detail.parameters.hours = kcTimeWindow.value;
+            }
+        }
+
+        /* For the score sparkline data loader: ensure hostname is current.
+           Do NOT override `hours` here — it must come from the hx-vals set by
+           loadScoreSparklineData/ssSetAndLoad (which read the newly selected
+           window). Overriding it here races with the time-window-changed event
+           and can send the previous window's value. */
+        if (el.id === 'ss-score-data') {
+            e.detail.parameters.hostname = currentHostname;
+        }
+    });
+
+    /* Initial load: Active Threats tab by default */
+    switchHostThreatsTab('active');
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     Events Table Renderer (JSON → HTML table)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<style>
+.events-table-wrap { overflow-x: auto; }
+.events-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.events-table th, .events-table td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.events-table th { font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); background: var(--bg-input, #f9fafb); }
+.events-table tbody tr:hover { background: rgba(128,128,128,0.05); }
+.events-table .col-cmdline { max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; }
+.events-table .col-pid { font-family: monospace; font-size: 0.8rem; text-align: right; }
+.events-table .col-exe { font-family: monospace; font-size: 0.8rem; }
+.events-table .col-pid { font-family: monospace; font-size: 0.8rem; text-align: right; }
+.events-pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-muted); }
+.events-pagination-controls { display: flex; gap: 0.5rem; align-items: center; }
+.events-pagination-controls button { padding: 0.35rem 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-input, #fff); color: var(--text); font-size: 0.8rem; cursor: pointer; }
+.events-pagination-controls button:hover:not(:disabled) { background: var(--bg-card, #f3f4f6); }
+.events-pagination-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.process-tree-link { color: var(--link, #3B82F6); text-decoration: none; font-size: 0.75rem; white-space: nowrap; }
+.process-tree-link:hover { text-decoration: underline; }
+
+/* Production view table */
+.prod-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.85rem;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+.prod-table th, .prod-table td {
+    padding: 0.6rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(128,128,128,0.08);
+    white-space: nowrap;
+}
+.prod-table th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    background: linear-gradient(180deg, var(--bg-input, #f9fafb) 0%, rgba(128,128,128,0.03) 100%);
+}
+.prod-row {
+    cursor: pointer;
+    transition: background 0.15s, box-shadow 0.15s;
+    border-left: 3px solid transparent;
+}
+.prod-row:nth-child(even) {
+    background: rgba(128,128,128,0.02);
+}
+.prod-row:hover {
+    background: rgba(59,130,246,0.04);
+    box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+}
+.prod-row-green { border-left-color: #22c55e; }
+.prod-row-yellow { border-left-color: #EAB308; }
+.prod-row-red { border-left-color: #EF4444; }
+.prod-row-green .prod-gauge { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; }
+.prod-row-yellow .prod-gauge { background: linear-gradient(135deg, #EAB308, #D97706); color: #fff; }
+.prod-row-red .prod-gauge { background: linear-gradient(135deg, #EF4444, #DC2626); color: #fff; }
+.prod-gauge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    min-width: 2.5em;
+    text-align: center;
+}
+.prod-hostname { font-weight: 600; }
+.prod-rule code {
+    font-size: 0.78rem;
+    background: var(--bg-input, #f3f4f6);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+}
+.prod-mode-badge {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid;
+}
+.prod-mode-badge-learning {
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-color: #93c5fd;
+}
+.prod-mode-badge-detecting {
+    background: #e0e7ff;
+    color: #4338ca;
+    border-color: #a5b4fc;
+}
+.prod-mode-badge-alerting {
+    background: #fef3c7;
+    color: #b45309;
+    border-color: #fcd34d;
+}
+.prod-mode-badge-unknown {
+    background: var(--bg-input, #f3f4f6);
+    color: var(--text-muted);
+    border-color: var(--border);
+}
+
+/* Agent liveness badge */
+.agent-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border: 1px solid;
+    white-space: nowrap;
+}
+.agent-online {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #86efac;
+}
+.agent-offline {
+    background: #fee2e2;
+    color: #991b1b;
+    border-color: #fca5a5;
+}
+
+/* Notification table */
+.notif-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.notif-table th, .notif-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+.notif-table th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    background: var(--bg-input, #f9fafb);
+}
+.notif-table .notif-channel {
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.notif-status {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.notif-status-sent { background: #DBEAFE; color: #1E40AF; }
+.notif-status-failed { background: #FEE2E2; color: #991B1B; }
+.notif-ackd { color: #16A34A; font-weight: 600; font-size: 0.75rem; }
+.notif-ack-btn {
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input, #fff);
+    color: var(--text);
+    font-size: 0.75rem;
+    cursor: pointer;
+}
+.notif-ack-btn:hover:not(:disabled) { background: #F3F4F6; }
+.notif-ack-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.notif-time { font-size: 0.8rem; color: var(--text-muted); }
+
+/* Alert config table */
+.ac-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.ac-table th, .ac-table td {
+    padding: 0.45rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+.ac-table th {
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    background: var(--bg-input, #f9fafb);
+}
+.ac-channel {
+    text-transform: uppercase;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+.ac-channel-webhook { color: #6366f1; }
+.ac-channel-discord { color: #5865F2; }
+.ac-channel-slack { color: #E01E5A; }
+.ac-channel-email { color: #16A34A; }
+</style>
+
+<script>
+(function() {
+    function formatTs(isoStr) {
+        if (!isoStr) return '—';
+        try {
+            var d = new Date(isoStr);
+            var M = String(d.getMonth()+1).padStart(2,'0');
+            var D = String(d.getDate()).padStart(2,'0');
+            var h = String(d.getHours()).padStart(2,'0');
+            var m = String(d.getMinutes()).padStart(2,'0');
+            var s = String(d.getSeconds()).padStart(2,'0');
+            return M+'-'+D+' '+h+':'+m+':'+s;
+        } catch(e) { return isoStr; }
+    }
+    function truncate(str, max) { if (!str) return '—'; return str.length <= max ? str : str.substring(0, max) + '…'; }
+    function esc(str) { if (!str) return ''; var d=document.createElement('div'); d.appendChild(document.createTextNode(str)); return d.innerHTML; }
+
+    window.loadEventsPage = function(page) {
+        var container = document.getElementById('events-table-container');
+        if (!container) return;
+        var hostname = document.getElementById('global-hostname-filter').value || '';
+        var url = '/admin/host-threats/events?page=' + page;
+        if (hostname) url += '&hostname=' + encodeURIComponent(hostname);
+        container.setAttribute('hx-get', url);
+        container.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, page: String(page) }));
+        htmx.trigger(container, 'refresh-events');
+    };
+
+    window.renderEventsTable = function(event) {
+        var xhr = event.detail.xhr;
+        var container = document.getElementById('events-table-container');
+        if (!container) return;
+        if (!xhr || xhr.status !== 200) {
+            container.innerHTML = '<p style="text-align:center; padding:2rem 0; color:var(--text-muted);">Failed to load events.</p>';
+            return;
+        }
+        var data;
+        try { data = JSON.parse(xhr.responseText); } catch(e) {
+            container.innerHTML = '<p style="text-align:center; padding:2rem 0; color:var(--text-muted);">Error parsing events.</p>';
+            return;
+        }
+        if (!data.events || data.events.length === 0) {
+            container.innerHTML = '<p style="text-align:center; padding:2rem 0; color:var(--text-muted);">No detection events found.</p>';
+            return;
+        }
+
+        var html = '<div class="events-table-wrap"><table class="events-table"><thead><tr>';
+        html += '<th>Timestamp</th><th>Hostname</th><th>Rule Name</th><th>Command Line</th><th>PID</th><th>PPID</th><th></th>';
+        html += '</tr></thead><tbody>';
+
+        data.events.forEach(function(evt) {
+            html += '<tr>';
+            html += '<td>' + formatTs(evt.timestamp) + '</td>';
+            html += '<td>' + esc(evt.hostname) + '</td>';
+            html += '<td><span class="badge badge-warning">' + esc(evt.rule_name) + '</span></td>';
+            html += '<td class="col-cmdline" title="' + esc(evt.command_line) + '">' + esc(truncate(evt.command_line, 120)) + '</td>';
+            html += '<td class="col-pid">' + (evt.pid != null ? evt.pid : '—') + '</td>';
+            html += '<td class="col-pid">' + (evt.ppid != null ? evt.ppid : '—') + '</td>';
+            html += '<td><a class="process-tree-link" href="/admin/host-threats/process-tree?hostname=' + encodeURIComponent(evt.hostname||'') + '">🌳 Tree</a></td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        /* Pagination */
+        html += '<div class="events-pagination">';
+        html += '<span>Page ' + data.page + ' of ' + data.total_pages + ' (' + data.total + ' events)</span>';
+        html += '<div class="events-pagination-controls">';
+        if (data.has_prev) { html += '<button onclick="loadEventsPage(' + (data.page-1) + ')">← Prev</button>'; }
+        else { html += '<button disabled>← Prev</button>'; }
+        html += '<span>' + data.page + ' / ' + data.total_pages + '</span>';
+        if (data.has_next) { html += '<button onclick="loadEventsPage(' + (data.page+1) + ')">Next →</button>'; }
+        else { html += '<button disabled>Next →</button>'; }
+        html += '</div></div>';
+
+        container.innerHTML = html;
+    };
+
+    /* Pre-fill hostname filter from URL params (e.g., linked from process tree) */
+    (function() {
+        var params = new URLSearchParams(window.location.search);
+        var hostname = params.get('hostname');
+        if (hostname && hostnameFilter) {
+            hostnameFilter.value = hostname;
+        }
+    })();
+})();
+</script>
+{% endblock %}

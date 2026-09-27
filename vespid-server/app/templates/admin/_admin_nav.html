@@ -1,0 +1,42 @@
+{# Shared admin navigation bar — included by all admin pages. #}
+<style>
+.admin-nav .nav-active {
+    --nav-active-stripe: rgba(0, 0, 0, 0.72);
+    font-weight: 700;
+    color: #0d0b08;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 2px;
+    text-decoration-color: var(--nav-active-stripe);
+    box-shadow: inset 0 0 0 2px var(--nav-active-stripe);
+}
+.admin-nav .nav-active:hover {
+    box-shadow: inset 0 0 0 2px var(--nav-active-stripe);
+}
+.admin-nav {
+    justify-content: center;
+}
+.admin-nav .btn {
+    font-size: 0.85rem;
+    padding: 0.3rem 0.7rem;
+    line-height: 1.4;
+}
+</style>
+<div class="admin-nav" style="display:flex; gap:0.5rem; margin-bottom:1.5rem;">
+    <a href="{{ url_for('admin.keys') }}" class="btn {% if request.endpoint == 'admin.keys' or request.endpoint == 'admin.create_key_endpoint' %}btn nav-active{% else %}btn-secondary{% endif %}">API Keys</a>
+    <a href="{{ url_for('admin.audit') }}" class="btn {% if request.endpoint == 'admin.audit' %}btn nav-active{% else %}btn-secondary{% endif %}">Audit Log</a>
+    <a href="{{ url_for('admin.cleanup') }}" class="btn {% if request.endpoint == 'admin.cleanup' %}btn nav-active{% else %}btn-secondary{% endif %}">Cleanup</a>
+    <a href="{{ url_for('admin.commands') }}" class="btn {% if request.endpoint == 'admin.commands' %}btn nav-active{% else %}btn-secondary{% endif %}">Commands</a>
+    <a href="{{ url_for('admin.backups') }}" class="btn {% if request.endpoint == 'admin.backups' %}btn nav-active{% else %}btn-secondary{% endif %}">DB Backups</a>
+    <a href="{{ url_for('admin.logs') }}" class="btn {% if request.endpoint == 'admin.logs' %}btn nav-active{% else %}btn-secondary{% endif %}">Server Logs</a>
+    <a href="{{ url_for('config_dashboard.config_page') }}" class="btn {% if request.endpoint and request.endpoint.startswith('config_dashboard.') %}btn nav-active{% else %}btn-secondary{% endif %}">Config Management</a>
+    <a href="{{ url_for('admin.enrollment') }}" class="btn {% if request.endpoint and request.endpoint.startswith('admin.enrollment') %}btn nav-active{% else %}btn-secondary{% endif %}">Enrollment</a>
+    <a href="{{ url_for('test_rules.index') }}" class="btn {% if request.endpoint and request.endpoint.startswith('test_rules.') %}btn nav-active{% else %}btn-secondary{% endif %}">Test Rules</a>
+{% if rules_nav %}{# extra 'Rules' link for Detection Rules page #}
+    <a href="{{ url_for('admin.rules') }}" class="btn {% if request.endpoint == 'admin.rules' %}btn nav-active{% else %}btn-secondary{% endif %}">Rules</a>
+{% endif %}
+    <a href="{{ url_for('admin.users') }}" class="btn {% if request.endpoint == 'admin.users' or request.endpoint == 'admin.create_user_endpoint' %}btn nav-active{% else %}btn-secondary{% endif %}">Users</a>
+    <a href="{{ url_for('admin.inventory_admin') }}" class="btn {% if request.endpoint and request.endpoint.startswith('admin.inventory') %}btn nav-active{% else %}btn-secondary{% endif %}">Inventory</a>
+    <a href="{{ url_for('host_threats.host_threats_page') }}" class="btn {% if request.endpoint and request.endpoint.startswith('host_threats.') %}btn nav-active{% else %}btn-secondary{% endif %}">Host Threats</a>
+    <a href="{{ url_for('admin.changelog') }}" class="btn {% if request.endpoint == 'admin.changelog' %}btn nav-active{% else %}btn-secondary{% endif %}">What's New</a>
+</div>

@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}Metrics Overview{% endblock %}
+{% block content %}
+<div class="page-container">
+    <div class="content-card">
+        <!-- Critical alerts banner -->
+        <div id="alert-banner" class="alert-banner" style="display:none; margin-bottom:1rem;">
+            <span id="alert-banner-text"></span>
+            <a href="{{ url_for('alerts.alerts_page') }}" class="btn btn-sm btn-primary">View Alerts</a>
+            <button onclick="dismissAlertBanner()" class="btn btn-sm btn-secondary" title="Dismiss">&times;</button>
+        </div>
+
+        <div class="flex-between mb-4">
+            <h2>📊 System Metrics</h2>
+            {% set all_ok = summary.responding == summary.agent_count %}
+            <div class="server-pill {% if all_ok %}pill-green{% else %}pill-red{% endif %}">
+                <span class="pill-dot"></span>
+                <span class="pill-responding">{{ summary.responding }}</span>
+                <span class="pill-sep">/</span>
+                <span class="pill-total">{{ summary.agent_count }}</span>
+                <span class="pill-label">{{ 'server' if summary.agent_count == 1 else 'servers' }} online</span>
+            </div>
+        </div>
+
+        {% if summary.agent_count == 0 %}
+        <div class="empty-state">
+            <div class="empty-icon">🖥️</div>
+            <h3>No hosts monitored yet</h3>
+            <p>Deploy <code>vespid-agent</code> on your Linux hosts to start collecting metrics.</p>
+        </div>
+        {% else %}
+
+        <div class="fleet-stats">
+            <div class="fleet-stat cpu">
+                <div class="fs-icon">⚡</div>
+                <div class="fs-body">
+                    <div class="fs-value {% if summary.avg_cpu_pct > 80 %}text-red{% elif summary.avg_cpu_pct > 50 %}text-yellow{% endif %}">{{ summary.avg_cpu_pct }}%</div>
+                    <div class="fs-label">Avg CPU</div>
+                </div>
+            </div>
+            <div class="fleet-stat mem">
+                <div class="fs-icon">🧠</div>
+                <div class="fs-body">
+                    <div class="fs-value {% if summary.avg_mem_pct > 90 %}text-red{% elif summary.avg_mem_pct > 75 %}text-yellow{% endif %}">{{ summary.avg_mem_pct }}%</div>
+                    <div class="fs-label">Avg Memory</div>
+                </div>
+            </div>
+            <div class="fleet-stat disk">
+                <div class="fs-icon">💾</div>
+                <div class="fs-body">
+                    <div class="fs-value {% if summary.max_disk_pct > 90 %}text-red{% elif summary.max_disk_pct > 80 %}text-yellow{% endif %}">{{ summary.max_disk_pct }}%</div>
+                    <div class="fs-label">Root Disk</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="host-controls">
+            <input type="text" class="host-search" placeholder="Filter hosts…" id="hostSearch" autocomplete="off">
+            <div class="host-count" id="hostCount">{{ agents|length }} server{% if agents|length != 1 %}s{% endif %}</div>
+        </div>
+
+        <div class="host-grid" id="hostGrid">
+        {% for agent in agents %}
+            {% set worst = 0 %}
+            {% if agent.cpu_pct is not none and agent.cpu_pct > worst %}{% set worst = agent.cpu_pct %}{% endif %}
+            {% if agent.mem_pct is not none and agent.mem_pct > worst %}{% set worst = agent.mem_pct %}{% endif %}
+            {% if agent.disk_max_pct is not none and agent.disk_max_pct > worst %}{% set worst = agent.disk_max_pct %}{% endif %}
+            <a href="{{ url_for('metrics.host_detail', agent_id=agent.agent_id) }}" class="host-card {% if worst > 90 %}card-danger{% elif worst > 75 %}card-warn{% else %}card-ok{% endif %}" data-hostname="{{ agent.hostname|lower }}">
+                <div class="hc-top">
+                    <div class="hc-hostname" title="{{ agent.agent_id }}">{{ agent.hostname }}<span class="hc-sub">{{ agent.agent_id }}</span></div>
+                    <div class="hc-status">
+                        {% if agent.cpu_pct is not none or agent.mem_pct is not none %}
+                        <span class="pulse" title="{{ agent.last_seen_label or 'active' }}"></span>
+                        {% else %}
+                        <span class="pulse offline" title="offline"></span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="hc-metrics">
+                    <div class="hc-bar-group">
+                        <div class="hc-bar-icon">⚡</div>
+                        <div class="hc-bar-track">
+                            <div class="hc-bar-fill {% if agent.cpu_pct is not none and agent.cpu_pct > 80 %}fill-red{% elif agent.cpu_pct is not none and agent.cpu_pct > 50 %}fill-yellow{% else %}fill-green{% endif %}" style="width: {{ (agent.cpu_pct or 0)|round(1) }}%"></div>
+                        </div>
+                        <span class="hc-bar-value">{{ agent.cpu_pct|round(1) if agent.cpu_pct is not none else '—' }}{% if agent.cpu_pct is not none %}%{% endif %}</span>
+                    </div>
+                    <div class="hc-bar-group">
+                        <div class="hc-bar-icon">🧠</div>
+                        <div class="hc-bar-track">
+                            <div class="hc-bar-fill {% if agent.mem_pct is not none and agent.mem_pct > 90 %}fill-red{% elif agent.mem_pct is not none and agent.mem_pct > 75 %}fill-yellow{% else %}fill-green{% endif %}" style="width: {{ (agent.mem_pct or 0)|round(1) }}%"></div>
+                        </div>
+                        <span class="hc-bar-value">{{ agent.mem_pct|round(1) if agent.mem_pct is not none else '—' }}{% if agent.mem_pct is not none %}%{% endif %}</span>
+                    </div>
+                    <div class="hc-bar-group">
+                        <div class="hc-bar-icon">💾</div>
+                        <div class="hc-bar-track">
+                            <div class="hc-bar-fill {% if agent.disk_max_pct is not none and agent.disk_max_pct > 90 %}fill-red{% elif agent.disk_max_pct is not none and agent.disk_max_pct > 80 %}fill-yellow{% else %}fill-green{% endif %}" style="width: {{ (agent.disk_max_pct or 0)|round(1) }}%"></div>
+                        </div>
+                        <span class="hc-bar-value">{{ agent.disk_max_pct|round(1) if agent.disk_max_pct is not none else '—' }}{% if agent.disk_max_pct is not none %}%{% endif %}</span>
+                    </div>
+                </div>
+            </a>
+        {% endfor %}
+        </div>
+
+        {% endif %}
+    </div>
+</div>
+
+<script>
+var el = document.getElementById('hostSearch');
+if (el) {
+    el.addEventListener('input', function() {
+        var q = this.value.toLowerCase();
+        var cards = document.querySelectorAll('.host-card');
+        var visible = 0;
+        cards.forEach(function(c) {
+            var name = c.getAttribute('data-hostname');
+            if (name && name.indexOf(q) !== -1) {
+                c.style.display = '';
+                visible++;
+            } else {
+                c.style.display = 'none';
+            }
+        });
+        document.getElementById('hostCount').textContent = visible + ' server' + (visible !== 1 ? 's' : '');
+    });
+}
+</script>
+
+<style>
+.fleet-stats { display: flex; gap: 0.75rem; margin-bottom: 1.25rem; }
+.fleet-stat {
+    flex: 1; padding: 0.75rem 1rem; border-radius: 10px;
+    display: flex; align-items: center; gap: 0.6rem;
+    border-left: 3px solid transparent;
+}
+.fleet-stat.cpu {
+    background: linear-gradient(135deg, #1e293b 0%, #1a1f35 100%);
+    border-left-color: #eab308;
+}
+.fleet-stat.mem {
+    background: linear-gradient(135deg, #1e293b 0%, #201a30 100%);
+    border-left-color: #a78bfa;
+}
+.fleet-stat.disk {
+    background: linear-gradient(135deg, #1e293b 0%, #1a2a2a 100%);
+    border-left-color: #22c55e;
+}
+body.light-theme .fleet-stat.cpu { background: linear-gradient(135deg, #fefce8 0%, #f1f5f9 100%); }
+body.light-theme .fleet-stat.mem { background: linear-gradient(135deg, #f5f3ff 0%, #f1f5f9 100%); }
+body.light-theme .fleet-stat.disk { background: linear-gradient(135deg, #f0fdf4 0%, #f1f5f9 100%); }
+.fs-icon { font-size: 1.2rem; }
+.fs-value { font-size: 1.15rem; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.fs-label { font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.server-pill {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.35rem 0.85rem 0.35rem 0.6rem;
+    border-radius: 100px; font-size: 0.75rem; font-weight: 600;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card); user-select: none;
+}
+.server-pill.pill-green { border-color: #22c55e40; background: #22c55e10; }
+.server-pill.pill-red { border-color: #ef444440; background: #ef444410; }
+.pill-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+}
+.pill-green .pill-dot { background: #22c55e; box-shadow: 0 0 6px #22c55e80; }
+.pill-red .pill-dot { background: #ef4444; box-shadow: 0 0 6px #ef444480; }
+.pill-responding { font-size: 0.85rem; color: var(--text); }
+.pill-red .pill-responding { color: #ef4444; }
+.pill-sep { color: var(--text-muted); font-weight: 400; font-size: 0.7rem; }
+.pill-total { color: var(--text-muted); font-weight: 400; }
+.pill-label { color: var(--text-muted); font-weight: 400; }
+
+.empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-muted); }
+.empty-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+.empty-state h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text); }
+.empty-state code { background: var(--bg-card); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+
+.host-controls { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+.host-search {
+    flex: 1; max-width: 320px; padding: 0.45rem 0.85rem; border-radius: 8px;
+    border: 1px solid var(--border-color); background: var(--bg-input, var(--bg-card));
+    color: var(--text); font-size: 0.8rem;
+}
+.host-search:focus { outline: none; border-color: var(--accent); }
+.host-search::placeholder { color: var(--text-muted); }
+.host-count {
+    font-size: 0.72rem; white-space: nowrap; font-weight: 600;
+    padding: 0.2rem 0.6rem; border-radius: 100px;
+    border: 1px solid var(--border-color); background: var(--bg-card);
+    color: var(--text-muted);
+}
+
+.host-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 0.85rem; }
+
+.host-card {
+    display: block; padding: 1.25rem 1.5rem; border-radius: 12px;
+    text-decoration: none; color: var(--text);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--border-color);
+    background: var(--bg-card);
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.host-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+.host-card.card-ok    { border-left-color: #22c55e; }
+.host-card.card-warn  { border-left-color: #eab308; }
+.host-card.card-danger { border-left-color: #ef4444; }
+body.light-theme .host-card { background: #fff; }
+
+.hc-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.2rem; }
+.hc-hostname { font-weight: 600; font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-sub { display: block; font-weight: 400; font-size: 0.62rem; color: var(--text-muted); margin-top: 1px; font-family: 'SF Mono', 'Fira Code', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hc-status { flex-shrink: 0; margin-left: 0.5rem; margin-top: 2px; }
+
+.hc-metrics { display: flex; flex-direction: column; gap: 0.45rem; }
+.hc-bar-group { display: flex; align-items: center; gap: 0.45rem; }
+.hc-bar-icon { font-size: 0.72rem; flex-shrink: 0; opacity: 0.7; }
+.hc-bar-track {
+    flex: 1; height: 8px; background: rgba(128,128,128,0.15);
+    border-radius: 4px; overflow: hidden;
+}
+.hc-bar-fill { height: 100%; border-radius: 4px; transition: width 2s ease; }
+.fill-green { background: linear-gradient(90deg, #22c55e, #16a34a); }
+.fill-yellow { background: linear-gradient(90deg, #eab308, #ca8a04); }
+.fill-red { background: linear-gradient(90deg, #ef4444, #dc2626); }
+.hc-bar-value {
+    font-size: 0.7rem; font-weight: 600; font-variant-numeric: tabular-nums;
+    width: 2.8rem; text-align: right; flex-shrink: 0;
+}
+
+.pulse {
+    width: 10px; height: 10px; border-radius: 50%; background: #22c55e;
+    display: inline-block; animation: pulse 2s infinite; cursor: default;
+}
+.pulse.offline { background: #6b7280; animation: none; }
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+
+.text-green { color: #22c55e; }
+.text-yellow { color: #eab308; }
+.text-red { color: #ef4444; }
+.mt-4 { margin-top: 1rem; }
+.mb-4 { margin-bottom: 1rem; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.muted { color: var(--text-muted); }
+
+.alert-banner {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #fca5a5;
+}
+.alert-banner a { color: #fff; text-decoration: none; }
+
+@media (max-width: 700px) {
+    .fleet-stats { flex-direction: column; }
+    .host-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<script>
+(function() {
+    var BANNER_KEY = 'vespid-alert-banner-dismissed';
+    function checkAlertBanner() {
+        if (localStorage.getItem(BANNER_KEY)) return;
+        fetch('/alerts/api/active/count?severity=critical')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var count = d.count || 0;
+                var banner = document.getElementById('alert-banner');
+                var text = document.getElementById('alert-banner-text');
+                if (count > 0 && banner) {
+                    text.textContent = '⚠️ ' + count + ' critical alert' + (count > 1 ? 's' : '') + ' firing';
+                    banner.style.display = 'flex';
+                }
+            })
+            .catch(function() {});
+    }
+    window.dismissAlertBanner = function() {
+        document.getElementById('alert-banner').style.display = 'none';
+        localStorage.setItem(BANNER_KEY, Date.now().toString());
+    };
+    checkAlertBanner();
+})();
+</script>
+{% endblock %}

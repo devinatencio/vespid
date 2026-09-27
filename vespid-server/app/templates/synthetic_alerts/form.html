@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}{% if edit %}Edit{% else %}New{% endif %} Alert Rule — Vespid{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>{% if not edit %}New{% else %}Edit{% endif %} Alert Rule</h1>
+</div>
+
+<div id="form-container" {% if edit %}data-rule-id="{{ rule_id }}"{% endif %}>
+    <div class="loading">Loading…</div>
+</div>
+
+<script>
+var RULE_ID = {% if edit %}{{ rule_id }}{% else %}null{% endif %};
+var EDIT_MODE = {% if edit %}true{% else %}false{% endif %};
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+var allChecks = [];
+
+function loadForm() {
+    var checksPromise = fetch('/api/v1/synthetic-checks').then(function(r) { return r.json(); });
+    var channelsPromise = fetch('/alerts/api/channels').then(function(r) { return r.json(); });
+
+    Promise.all([checksPromise, channelsPromise]).then(function(results) {
+        allChecks = results[0].checks || [];
+        var channels = results[1].channels || [];
+
+        if (EDIT_MODE && RULE_ID) {
+            fetch('/api/v1/synthetic-alerts/' + RULE_ID)
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.rule) renderForm(data.rule, channels);
+                    else alert('Rule not found');
+                });
+        } else {
+            renderForm({}, channels);
+        }
+    });
+}
+
+function getMetricsForCheckType(ctype) {
+    var metricsByType = {
+        icmp: [
+            {key: 'rtt_avg_ms', label: 'Average RTT (ms)'},
+            {key: 'duration_ms', label: 'Total Duration (ms)'},
+        ],
+        http: [
+            {key: 'status_code', label: 'Status Code'},
+            {key: 'response_time_ms', label: 'Response Time (ms)'},
+            {key: 'duration_ms', label: 'Total Duration (ms)'},
+            {key: 'body_match', label: 'Body Match (0/1)'},
+        ],
+        dns: [
+            {key: 'answer_count', label: 'Answer Count'},
+            {key: 'duration_ms', label: 'Lookup Duration (ms)'},
+        ],
+        tcp: [
+            {key: 'connect_time_ms', label: 'Connect Time (ms)'},
+            {key: 'duration_ms', label: 'Total Duration (ms)'},
+        ],
+        ssl: [
+            {key: 'days_remaining', label: 'Days Until Expiry'},
+            {key: 'duration_ms', label: 'Total Duration (ms)'},
+        ],
+    };
+    return metricsByType[ctype] || [{key: 'duration_ms', label: 'Duration (ms)'}];
+}
+
+function renderForm(rule, channels) {
+    var container = document.getElementById('form-container');
+    var name = rule.name || '';
+    var checkId = rule.check_id || '';
+    var failures = rule.failures || 3;
+    var severity = rule.severity || 'critical';
+    var enabled = rule.enabled !== false;
+    var ruleChannels = rule.notification_channels || [];
+    var conditionType = rule.condition_type || 'failure';
+    var metricName = rule.metric_name || '';
+    var metricOperator = rule.metric_operator || '>';
+    var metricThreshold = rule.metric_threshold || '';
+    var consecutiveOccurrences = rule.consecutive_occurrences || 3;
+    var dnsChangePersist = rule.dns_change_persist || false;
+
+    var checkOptions = '';
+    allChecks.forEach(function(c) {
+        var sel = c.id == checkId ? ' selected' : '';
+        checkOptions += '<option value="' + c.id + '" data-type="' + c.check_type + '"' + sel + '>' +
+            escapeHtml(c.name + ' (' + c.check_type + ')') + '</option>';
+    });
+
+    var channelCheckboxes = '';
+    channels.forEach(function(ch) {
+        var checked = ruleChannels.indexOf(ch.id) >= 0 ? ' checked' : '';
+        channelCheckboxes += '<label style="display:block;margin-bottom:4px;font-weight:400;">' +
+            '<input type="checkbox" name="channel" value="' + ch.id + '"' + checked + '> ' +
+            escapeHtml(ch.name) + ' (' + escapeHtml(ch.type) + ')</label>';
+    });
+    if (!channelCheckboxes) channelCheckboxes = '<span class="text-muted">No notification channels configured. <a href="/alerts/channels">Add one</a>.</span>';
+
+    var html = '<div class="card" style="max-width:700px;margin:0 auto;"><div class="card-body">' +
+        '<div class="form-group"><label for="sar-name">Rule Name</label>' +
+        '<input type="text" id="sar-name" class="form-control" value="' + escapeHtml(name) + '" placeholder="e.g. Homepage HTTPS down"></div>' +
+        '<div class="form-group"><label for="sar-check">Synthetic Check</label>' +
+        '<select id="sar-check" class="form-control" onchange="onCheckChanged()">' + checkOptions + '</select></div>' +
+        '<div class="form-group"><label for="sar-condition">Alert Condition</label>' +
+        '<select id="sar-condition" class="form-control" onchange="onConditionChanged()">' +
+            '<option value="failure"' + (conditionType === 'failure' ? ' selected' : '') + '>Failure Count</option>' +
+            '<option value="metric"' + (conditionType === 'metric' ? ' selected' : '') + '>Metric Threshold</option>' +
+            '<option value="dns_answer_change" id="opt-dns-change"' + (conditionType === 'dns_answer_change' ? ' selected' : '') + '>DNS Answer Changed</option>' +
+        '</select></div>' +
+        '<div id="condition-fields"></div>' +
+        '<div class="form-group"><label for="sar-severity">Severity</label>' +
+        '<select id="sar-severity" class="form-control">' +
+            '<option value="critical"' + (severity === 'critical' ? ' selected' : '') + '>Critical</option>' +
+            '<option value="warning"' + (severity === 'warning' ? ' selected' : '') + '>Warning</option>' +
+        '</select></div>' +
+        '<div class="form-group"><label>Notification Channels</label>' +
+        '<div id="channel-checkboxes">' + channelCheckboxes + '</div></div>' +
+        '<div class="form-group"><label><input type="checkbox" id="sar-enabled"' + (enabled ? ' checked' : '') + '> Enabled</label></div>' +
+        '<div style="margin-top:16px;">' +
+            '<button class="btn btn-primary" onclick="saveRule()">' + (EDIT_MODE ? 'Update' : 'Create') + '</button> ' +
+            '<button class="btn btn-secondary" onclick="window.location.href=\'/alerts/synthetic-alerts\'">Cancel</button>' +
+        '</div>' +
+    '</div></div>';
+    container.innerHTML = html;
+
+    // Set initial condition fields
+    setConditionFields(conditionType, rule);
+    updateConditionOptions(getSelectedCheckType());
+}
+
+function onCheckChanged() {
+    var sel = document.getElementById('sar-check');
+    var opt = sel.options[sel.selectedIndex];
+    var ctype = opt.getAttribute('data-type') || '';
+    updateConditionOptions(ctype);
+    conditionTypeChanged('metric', ctype);
+}
+
+function onConditionChanged() {
+    var ctype = getSelectedCheckType();
+    conditionTypeChanged(document.getElementById('sar-condition').value, ctype);
+}
+
+function updateConditionOptions(ctype) {
+    var opt = document.getElementById('opt-dns-change');
+    if (opt) {
+        opt.style.display = ctype === 'dns' ? 'block' : 'none';
+        var sel = document.getElementById('sar-condition');
+        if (ctype !== 'dns' && sel && sel.value === 'dns_answer_change') {
+            sel.value = 'failure';
+            conditionTypeChanged('failure', ctype);
+        }
+    }
+}
+
+function getSelectedCheckType() {
+    var sel = document.getElementById('sar-check');
+    var opt = sel.options[sel.selectedIndex];
+    return opt.getAttribute('data-type') || '';
+}
+
+function setConditionFields(conditionType, rule) {
+    var cfields = document.getElementById('condition-fields');
+    if (conditionType === 'failure') {
+        cfields.innerHTML = '<div class="form-group"><label for="sar-failures">Consecutive Failures to Fire</label>' +
+            '<input type="number" id="sar-failures" class="form-control" value="' + (rule.failures || 3) + '" min="1"></div>';
+    } else if (conditionType === 'dns_answer_change') {
+        cfields.innerHTML = '<div class="form-group"><label for="sar-consecutive">Consecutive Answer Changes to Fire</label>' +
+            '<input type="number" id="sar-consecutive" class="form-control" value="' + (rule.consecutive_occurrences || 3) + '" min="1"></div>' +
+            '<div class="form-group"><label><input type="checkbox" id="sar-persist"' + (rule.dns_change_persist ? ' checked' : '') + '> Keep firing until manually acknowledged</label>' +
+            '<div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">When enabled, the alert stays firing after it triggers and must be manually resolved.</div></div>';
+    } else {
+        var ctype = getSelectedCheckType();
+        var metrics = getMetricsForCheckType(ctype);
+        var metricOptions = '';
+        metrics.forEach(function(m) {
+            var sel = (rule.metric_name === m.key) ? ' selected' : '';
+            metricOptions += '<option value="' + m.key + '"' + sel + '>' + m.label + '</option>';
+        });
+
+        cfields.innerHTML = '' +
+            '<div class="form-group"><label>Metric</label>' +
+            '<select id="sar-metric-name" class="form-control">' + metricOptions + '</select></div>' +
+            '<div style="display:flex;gap:8px;"><div class="form-group" style="flex:1;">' +
+            '<label>Operator</label>' +
+            '<select id="sar-metric-op" class="form-control">' +
+                '<option value=">"' + ((rule.metric_operator || '>') === '>' ? ' selected' : '') + '>&gt; (greater than)</option>' +
+                '<option value=">="' + ((rule.metric_operator || '') === '>=' ? ' selected' : '') + '>&gt;=</option>' +
+                '<option value="<"' + ((rule.metric_operator || '') === '<' ? ' selected' : '') + '>&lt; (less than)</option>' +
+                '<option value="<="' + ((rule.metric_operator || '') === '<=' ? ' selected' : '') + '>&lt;=</option>' +
+                '<option value="=="' + ((rule.metric_operator || '') === '==' ? ' selected' : '') + '>== (equal)</option>' +
+                '<option value="!="' + ((rule.metric_operator || '') === '!=' ? ' selected' : '') + '>!= (not equal)</option>' +
+            '</select></div>' +
+            '<div class="form-group" style="flex:1;"><label>Threshold</label>' +
+            '<input type="text" id="sar-metric-threshold" class="form-control" value="' + escapeHtml(rule.metric_threshold || '') + '" placeholder="e.g. 1000"></div></div>' +
+            '<div class="form-group"><label>For Consecutive Occurrences</label>' +
+            '<input type="number" id="sar-consecutive" class="form-control" value="' + (rule.consecutive_occurrences || 3) + '" min="1"></div>';
+    }
+}
+
+function conditionTypeChanged(conditionType, ctype) {
+    setConditionFields(conditionType, {metric_name: '', metric_operator: '>', metric_threshold: '', consecutive_occurrences: 3});
+}
+
+function saveRule() {
+    var name = document.getElementById('sar-name').value.trim();
+    var checkId = parseInt(document.getElementById('sar-check').value);
+    var severity = document.getElementById('sar-severity').value;
+    var enabled = document.getElementById('sar-enabled').checked ? 1 : 0;
+    var conditionType = document.getElementById('sar-condition').value;
+
+    if (!name || !checkId) { alert('Name and Check are required.'); return; }
+
+    var channels = [];
+    var cbs = document.querySelectorAll('input[name="channel"]:checked');
+    cbs.forEach(function(cb) { channels.push(parseInt(cb.value)); });
+
+    var payload = {
+        name: name,
+        check_id: checkId,
+        severity: severity,
+        notification_channels: channels,
+        enabled: enabled,
+        condition_type: conditionType,
+    };
+
+    if (conditionType === 'failure') {
+        payload.failures = parseInt(document.getElementById('sar-failures').value) || 3;
+    } else if (conditionType === 'dns_answer_change') {
+        payload.consecutive_occurrences = parseInt(document.getElementById('sar-consecutive').value) || 3;
+        payload.dns_change_persist = document.getElementById('sar-persist').checked ? 1 : 0;
+    } else {
+        payload.metric_name = document.getElementById('sar-metric-name').value;
+        payload.metric_operator = document.getElementById('sar-metric-op').value;
+        payload.metric_threshold = document.getElementById('sar-metric-threshold').value.trim();
+        payload.consecutive_occurrences = parseInt(document.getElementById('sar-consecutive').value) || 3;
+    }
+
+    var url = EDIT_MODE ? '/api/v1/synthetic-alerts/' + RULE_ID : '/api/v1/synthetic-alerts';
+    var method = EDIT_MODE ? 'PUT' : 'POST';
+
+    fetch(url, {
+        method: method,
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken()},
+        body: JSON.stringify(payload),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) { alert('Error: ' + data.error); return; }
+        window.location.href = '/alerts/synthetic-alerts';
+    })
+    .catch(function() { alert('Failed to save rule.'); });
+}
+
+loadForm();
+</script>
+{% endblock %}

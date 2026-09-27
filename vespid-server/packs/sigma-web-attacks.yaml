@@ -1,0 +1,377 @@
+pack_name: sigma-web-attacks
+display_name: Sigma Web Attack Detection
+icon: 🌐
+description: >
+  Web application attack detection rules imported from SigmaHQ/sigma. Covers SQL injection, XSS, path traversal, JNDI/Log4Shell exploits, SSTI, webshells, suspicious user agents, scanner tools, and source code enumeration. Auto-generated from the Sigma community rule repository.
+prerequisite: Requires web server access logs in Combined Log Format (Apache/Nginx).
+rules:
+  - name: sigma_apache_segmentation_fault
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:exit signal Segmentation Fault)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.impact", "attack.t1499.004"]
+    sigma_id: 1da8ce0b-855d-4004-8860-7d64d42063b1
+    sigma_status: test
+  - name: sigma_apache_threading_error
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:__pthread_tpp_change_priority: Assertion `new_prio == -1 \|\| \(new_prio >= fifo_min_prio && new_prio <= fifo_max_prio\))[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.initial-access", "attack.lateral-movement", "attack.t1190", "attack.t1210"]
+    sigma_id: e9a2b582-3f6a-48ac-b4a1-6849cdc50b3c
+    sigma_status: test
+  - name: sigma_nginx_core_dump
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:exited on signal 6 \(core dumped\))[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.impact", "attack.t1499.004"]
+    sigma_id: 59ec40bb-322e-40ab-808d-84fa690d7e56
+    sigma_status: test
+  - name: sigma_download_from_suspicious_dyndns_hosts
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.exe\b|\.vbs\b|\.bat\b|\.rar\b|\.ps1\b|\.doc\b|\.docm\b|\.xls\b|\.xlsm\b|\.pptm\b|\.rtf\b|\.hta\b|\.dll\b|\.ws\b|\.wsf\b|\.sct\b|\.zip\b)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.command-and-control", "attack.t1105", "attack.t1568"]
+    sigma_id: 195c1119-ef07-4909-bb12-e66f5e07bf3c
+    sigma_status: test
+  - name: sigma_download_from_suspicious_tld_-_blocklist
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.exe\b|\.vbs\b|\.bat\b|\.rar\b|\.ps1\b|\.doc\b|\.docm\b|\.xls\b|\.xlsm\b|\.pptm\b|\.rtf\b|\.hta\b|\.dll\b|\.ws\b|\.wsf\b|\.sct\b|\.zip\b)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 600
+    tags: ["attack.initial-access", "attack.t1566", "attack.execution", "attack.t1203", "attack.t1204.002"]
+    sigma_id: 00d0b5ab-1f55-4120-8e83-487c0a7baf19
+    sigma_status: test
+  - name: sigma_download_from_suspicious_tld_-_allowlist
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.exe\b|\.vbs\b|\.bat\b|\.rar\b|\.ps1\b|\.doc\b|\.docm\b|\.xls\b|\.xlsm\b|\.pptm\b|\.rtf\b|\.hta\b|\.dll\b|\.ws\b|\.wsf\b|\.sct\b|\.zip\b)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 600
+    tags: ["attack.initial-access", "attack.t1566", "attack.execution", "attack.t1203", "attack.t1204.002"]
+    sigma_id: b5de2919-b74a-4805-91a7-5049accbaefe
+    sigma_status: test
+  - name: sigma_windows_webdav_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"GET\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:(Microsoft-WebDAV-MiniRedir/)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: e09aed7a-09e0-4c9a-90dd-f0d52507347e
+    sigma_status: test
+  - name: sigma_f5_big-ip_icontrol_rest_api_command_execution_-_proxy
+    event_type: SIGMA_WEB_PROXY
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"POST\s+[^"]*?(?:/mgmt/tm/util/bash)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.initial-access", "attack.t1190"]
+    sigma_id: b59c98c6-95e8-4d65-93ee-f594dfb96b17
+    sigma_status: test
+  - name: sigma_potential_hello-world_scraper_botnet_activity
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"GET\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:Hello-World/1\.0)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.reconnaissance", "attack.t1595"]
+    sigma_id: 1712bafe-be05-4a0e-89d4-17a3ed151bf5
+    sigma_status: experimental
+  - name: sigma_hacktool_-_babyshark_agent_default_url_pattern
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:momyshark\?key=)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: 304810ed-8853-437f-9e36-c4975c3dfd7e
+    sigma_status: test
+  - name: sigma_hacktool_-_empire_useragent_uri_combo
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"POST\s+[^"]*?(?:/admin/get\.php|/news\.php|/login/process\.php)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:Mozilla/5\.0 \(Windows NT 6\.1; WOW64; Trident/7\.0; rv:11\.0\) like Gecko)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: b923f7d6-ac89-4a50-a71a-89fb846b4aa8
+    sigma_status: test
+  - name: sigma_pua_-_advanced_ipport_scanner_update_check
+    event_type: SIGMA_WEB_SCANNER
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:/checkupdate\.php|lng=|ver=|beta=|type=|rmode=|product=)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.discovery", "attack.reconnaissance", "attack.t1590"]
+    sigma_id: 1a9bb21a-1bb5-42d7-aa05-3219c7c8f47d
+    sigma_status: test
+  - name: sigma_pwndrp_access
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:/pwndrop/)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+    tags: ["attack.command-and-control", "attack.t1071.001", "attack.t1102.001", "attack.t1102.003"]
+    sigma_id: 2b1ee7e4-89b6-4739-b7bb-b811b6607e5e
+    sigma_status: test
+  - name: sigma_raw_paste_service_access
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.paste\.ee/r/|\.pastebin\.com/raw/|\.hastebin\.com/raw/|\.ghostbin\.co/paste/\*/raw/|pastetext\.net/|pastebin\.pl/|paste\.ee/)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.t1071.001", "attack.t1102.001", "attack.t1102.003"]
+    sigma_id: 5468045b-4fcc-4d1a-973c-c9c9578edacb
+    sigma_status: test
+  - name: sigma_apt_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:SJZJ \(compatible; MSIE 6\.0; Win32\)|Mozilla/5\.0 \(Windows NT 6\.; WOW64; rv:20\.0\) Gecko/20100101 Firefox/20\.0|User-Agent: Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 6\.1; Trident/4\.0; SLCC|Mozilla/4\.0 \(compatible; MSIE 7\.4; Win32;32-bit\)|webclient|Mozilla/5\.0 \(Windows; U; Windows NT 5\.1; zh-EN; rv:1\.7\.12\) Gecko/200|Mozilla/4\.0 \(compatible; MSI 6\.0;|Mozilla/5\.0 \(Windows NT 6\.3; WOW64; rv:28\.0\) Gecko/20100101 Firefox/28\.0|Mozilla/5\.0 \(Windows NT 6\.2; WOW64; rv:20\.0\) Gecko/20100101 Firefox/|Mozilla/5\.0 \(Windows NT 6\.; WOW64; rv:20\.0\) Gecko/20100101 Firefox/2|Mozilla/4\.0|Netscape|Mozilla/5\.0 \(Windows; U; Windows NT 5\.1; zh-EN; rv:1\.7\.12\) Gecko/20100719 Firefox/1\.0\.7|Mozilla/5\.0 \(Windows; U; Windows NT 5\.1; en-US; rv:1\.9\.2\.13\) Firefox/3\.6\.13 GTB7\.1|Mozilla/5\.0 \(compatible; MSIE 9\.0; Windows NT 6\.1; WOW64; Trident/5\.0\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 6\.1; WOW64; Trident/4\.0; SLCC2; \.NETCLR 2\.0\.50727\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 6\.0; SV1\)|Mozilla/4\.0 \(compatible; MSIE 11\.0; Windows NT 6\.1; SV1\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Win32\)|Mozilla v5\.1 \(Windows NT 6\.1; rv:6\.0\.1\) Gecko/20100101 Firefox/6\.0\.1|Mozilla/6\.1 \(compatible; MSIE 9\.0; Windows NT 5\.3; Trident/5\.0\)|Mozilla/4\.0 \(compatible; MSIE 6\.0; Windows NT 5\.1; SV1; \.NET CLR 1\.1\.4322; \.NET CLR 2\.0\.50727; \.NET CLR 3\.0\.04506\.30; \.NET CLR 3\.0\.04506\.648; InfoPath\.1\)|Mozilla/5\.0 \(Windows NT 6\.1; WOW64\) WinHttp/1\.6\.3\.8 \(WinHTTP/5\.1\) like Gecko|Mozilla v5\.1 \*|MSIE 8\.0|Mozilla/4\.0 \(compatible; MSIE 7\.0; Windows NT 6\.1; SLCC2; \.NET CLR 2\.0\.50727; \.NET CLR 3\.5\.30729; \.NET CLR 3\.0\.30729; Media Center PC 6\.0; \.NET4\.0C; \.NET4\.0E; InfoPath\.2\)|Mozilla/4\.0 \(compatible; RMS\)|Mozilla/4\.0 \(compatible; MSIE 6\.0; DynGate\)|O/9\.27 \(W; U; Z\)|Mozilla/5\.0 \(compatible; MSIE 9\.0; Windows NT 6\.0; Trident/5\.0;  Trident/5\.0\*|Mozilla/5\.0 \(Windows NT 9; \*|hots scot|Mozilla/5\.0 \(compatible; MSIE 10\.0; Windows NT\)|Mozilla/5\.0 \(Windows NT 6\.1; WOW64\) Chrome/28\.0\.1500\.95 Safari/537\.36|Mozilla/5\.0 \(Windows NT 6\.2; Win32; rv:47\.0\)|Mozilla/4\.0 \(compatible; MSIE 6\.0; Windows NT 5\.1;SV1;|Mozilla/5\.0 \(X11; Linux i686; rv:22\.0\) Firefox/22\.0|Mozilla/5\.0 Chrome/72\.0\.3626\.109 Safari/537\.36|Mozilla/5\.0 \(Windows NT 10\.0; Win64; x64; rv:FTS_06\) Gecko/22\.36\.35\.06 Firefox/2\.0|Mozilla/5\.0 \(Windows NT 10\.0; Win64; x64\) AppleWebKit/537\.36 \(KHTML, like Gecko\) Chrome/102\.0\.5005\.63 Safari/537\.36 Edg/100\.0\.1185\.39|Mozilla/4\.0 \(compatible; MSIE 7\.0; Windows NT 6\.1; WOW64; Trident/4\.0; SLCC2; \.NET CLR 2\.0\.50727; \.NET CLR 3\.5\.30729; \.NET CLR 3\.0\.30729; InfoPath\.3; \.NET4\.0C; \.NET4\.0E\)|Mozilla/4\.0 \(compatible; MSIE 9\.0; Windows NT 10\.0; \.NET4\.0C; \.NET4\.0E; Tablet PC 2\.0\)|Mozilla/5\.0 \(Windows NT 10\.0; Win64; x64\) AppleWebKit/537\.36 \(KHTML, like Gecko\) Chrome/42\.0\.2311\.135 Safari/537\.36 Edge/12\.246001)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: 6ec820f2-e963-4801-9127-d8b2dce4d31b
+    sigma_status: test
+  - name: sigma_suspicious_base64_encoded_user-agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:(Q2hyb21l|QXBwbGVXZWJLaX|RGFsdmlr|TW96aWxsY)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: d443095b-a221-4957-a2c4-cd1756c9b747
+    sigma_status: test
+  - name: sigma_bitsadmin_to_uncommon_ip_server_address
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:(Microsoft BITS/)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.execution", "attack.stealth", "attack.t1071.001", "attack.persistence", "attack.t1197", "attack.s0190"]
+    sigma_id: 8ccd35a2-1c7c-468b-b568-ac6cdf80eec3
+    sigma_status: test
+  - name: sigma_crypto_miner_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:(XMRig |ccminer)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: fa935401-513b-467b-81f4-f9e77aa0dd78
+    sigma_status: test
+  - name: sigma_http_request_with_empty_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"-"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: 21e44d78-95e7-421b-a464-ffd8395659c4
+    sigma_status: test
+  - name: sigma_exploit_framework_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:Internet Explorer \*|Mozilla/4\.0 \(compatible; MSIE 6\.0; Windows NT 5\.1; SV1; InfoPath\.2\)|Mozilla/4\.0 \(compatible; Metasploit RSPEC\)|Mozilla/4\.0 \(compatible; MSIE 6\.1; Windows NT\)|Mozilla/4\.0 \(compatible; MSIE 6\.0; Windows NT 5\.1\)|Mozilla/4\.0 \(compatible; MSIE 7\.0; Windows NT 6\.0\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 6\.0; Trident/4\.0\)|Mozilla/4\.0 \(compatible; MSIE 7\.0; Windows NT 6\.0; Trident/4\.0; SIMBAR=\{7DB0F6DE-8DE7-4841-9084-28FA914B0F2E\}; SLCC1; \.N|Mozilla/5\.0 \(compatible; Googlebot/2\.1; \+http://www\.google\.com/bot\.html\)|Mozilla/5\.0 \(Windows; U; Windows NT 5\.1; en-US\) AppleWebKit/525\.13 \(KHTML, like Gecko\) Chrome/4\.0\.221\.6 Safari/525\.13|Mozilla/5\.0 \(compatible; MSIE 9\.0; Windows NT 6\.1; WOW64; Trident/5\.0; MAAU\)|Mozilla/5\.0|Mozilla/4\.0 \(compatible; SPIPE/1\.0|Mozilla/5\.0 \(Windows NT 6\.3; rv:39\.0\) Gecko/20100101 Firefox/35\.0|Sametime Community Agent|X-FORWARDED-FOR|DotDotPwn v2\.1|SIPDROID|Mozilla/5\.0 \(Windows NT 10\.0; Win32; x32; rv:60\.0\)|Mozilla/6\.0 \(X11; Linux x86_64; rv:24\.0\) Gecko/20140205     Firefox/27\.0 Iceweasel/25\.3\.0|\*wordpress hash grabber\*|\*exploit\*|Mozilla/5\.0 \(Windows NT 6\.1; WOW64\) AppleWebKit/537\.36 \(KHTML, like Gecko\) Chrome/96\.0\.4664\.110 Safari/537\.36)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: fdd1bfb5-f60b-4a35-910e-f36ed3d0b32f
+    sigma_status: test
+  - name: sigma_hack_tool_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:\(hydra\)| arachni/| BFAC | brutus | cgichk |core-project/1\.0| crimscanner/|datacha0s|dirbuster|domino hunter|dotdotpwn|FHScan Core|floodgate|get-minimal|gootkit auto-rooter scanner|grendel-scan| inspath |internet ninja|jaascois| zmeu |masscan| metis |morfeus fucking scanner|n-stealth|nsauditor|pmafind|security scan|springenwerk|teh forest lobster|toata dragostea| vega/|voideye|webshag|webvulnscan| whcc/| Havij|absinthe|bsqlbf|mysqloit|pangolin|sql power injector|sqlmap|sqlninja|uil2pn|ruler|Mozilla/5\.0 \(Windows; U; Windows NT 5\.1; pt-PT; rv:1\.9\.1\.2\) Gecko/20090729 Firefox/3\.5\.2 \(\.NET CLR 3\.5\.30729\))[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.initial-access", "attack.t1190", "attack.credential-access", "attack.t1110"]
+    sigma_id: c42a3073-30fb-48ae-8c99-c23ada84b103
+    sigma_status: test
+  - name: sigma_malware_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:Mozilla/5\.0 \(Windows NT 6\.1; WOW64; rv:53\.0\) Gecko/20100101 Chrome /53\.0|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 5\.1\)|Mozilla/4\.0 \(compatible; MSIE 7\.0; Windows NT 5\.1; Trident/4\.0\)|Mozilla/4\.0 \(compatible; MSIE 6\.0; Windows NT 5\.0; \.NET CLR  1\.1\.4322\)|HttpBrowser/1\.0|\*<\|>\*|nsis_inetc \(mozilla\)|Wget/1\.9\+cvs-stable \(Red Hat modified\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 6\.1; Trident/4\.0; \.NET CLR 1\.1\.4322\)|\*zeroup\*|Mozilla/5\.0 \(Windows NT 5\.1 ; v\.\*|\* adlib/\*|\* tiny|\* BGroom \*|\* changhuatong|\* CholTBAgent|Mozilla/5\.0 WinInet|RookIE/1\.0|M|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 5\.1; Trident/4\.0\)|Mozilla/4\.0 \(compatible;MSIE 7\.0;Windows NT 6\.0\)|backdoorbot|Mozilla/5\.0 \(Windows; U; Windows NT 5\.1; en-US; rv:1\.9\.2\.3\) Gecko/20100401 Firefox/3\.6\.1 \(\.NET CLR 3\.5\.30731\)|Opera/8\.81 \(Windows NT 6\.0; U; en\)|Mozilla/5\.0 \(Windows; U; Windows NT 5\.1; en-US; rv:1\.9\.2\.3\) Gecko/20100401 Firefox/3\.6\.1 \(\.NET CLR 3\.5\.30729\)|Opera|Mozilla/4\.0 \(compatible; MSIE 5\.0; Windows 98\)|Mozilla/4\.0 \(compatible; MSIE 5\.01; Windows NT 5\.0\)|MSIE|\*\(Charon; Inferno\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 5\.1; Trident/5\.0\)|Mozilla/4\.0 \(compatible; MSIE 6\.1; Windows NT\)|Mozilla/4\.0\(compatible; MSIE 6\.0; Windows NT 5\.1\)|Mozilla/5\.0 \(Windows NT 10\.0; Win64; x64\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 10\.0; Win64; x64\)|Mozilla/4\.0 \(compatible; MSIE 8\.0; Windows NT 6\.1; Win64; x64\)|Mozilla/4\.0 \(compatible; MSIE 7\.0; Windows NT 6\.2; WOW64; Trident/7\.0; \.NET4\.0C; \.NET4\.0E; InfoPath\.3\)|Mozilla/5\.0 \(Windows NT 6\.1\)|AppleWebkit/587\.38 \(KHTML, like Gecko\)|Chrome/91\.0\.4472\.77|Safari/537\.36|Edge/91\.0\.864\.37|Firefox/89\.0|Gecko/20100101|\* pxyscand\*|\* asd|\* mdms|sample|nocase|Moxilla|Win32 \*|\*Microsoft Internet Explorer\*|agent \*|AutoIt|IczelionDownLoad|Mozilla/4\.0 \(compatible; MSIE 9\.0; Windows NT 10\.0; \.NET4\.0C; \.NET4\.0E; Tablet PC 2\.0\)|record|mozzzzzzzzzzz|Mozilla/5\.0 \(Windows NT 10\.0; Win64; x64; rv:76\.0\) Gecko/20100101 Firefox/76\.0|Havana/0\.1|antSword/v2\.1|rqwrwqrqwrqw|qwrqrwrqwrqwr|rc2\.0/client|TakeMyPainBack|xxx|20112211|23591|901785252112|1235125521512|125122112551|B1D3N_RIM_MY_ASS|AYAYAYAY1337|iMightJustPayMySelfForAFeature|ForAFeature|Ares_ldr_v_\*|Microsoft Internet Explorer|CLCTR|uploader|agent|License|vb wininet|Client|Lilith-Bot/3\.0|svc/1\.0|WSHRAT|ZeroStresser Botnet/1\.5|OK|Project1sqlite|Project1|DuckTales|Zadanie|GunnaWunnaBlueTips|Xlmst|GeekingToTheMoon|SunShineMoonLight|BunnyRequester|BunnyTasks|BunnyStealer|BunnyLoader_Dropper|BunnyLoader|BunnyShell|SPARK-COMMIT|4B4DB4B3|SouthSide|Mozilla/4\.0 \(compatible; MSIE 7\.0; Windows NT 5\.1; Tob 1\.1\))[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: 5c84856b-55a5-45f1-826f-13f37250cf4e
+    sigma_status: test
+  - name: sigma_windows_powershell_user_agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?: WindowsPowerShell/)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: c8557060-9221-4448-8794-96320e6f3e74
+    sigma_status: test
+  - name: sigma_rclone_activity_via_proxy
+    event_type: SIGMA_WEB_PROXY
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:(rclone/v)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.exfiltration", "attack.t1567.002"]
+    sigma_id: 2c03648b-e081-41a5-b9fb-7d854a915091
+    sigma_status: test
+  - name: sigma_potential_base64_encoded_user-agent
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:=)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: 894a8613-cf12-48b3-8e57-9085f54aa0c3
+    sigma_status: test
+  - name: sigma_f5_big-ip_icontrol_rest_api_command_execution_-_webserver
+    event_type: SIGMA_WEB_ATTACK
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"POST\s+[^"]*?(?:/mgmt/tm/util/bash)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.execution", "attack.t1190", "attack.initial-access"]
+    sigma_id: 85254a62-22be-4239-b79c-2ec17e566c37
+    sigma_status: test
+  - name: sigma_successful_iis_shortname_fuzzing_scan
+    event_type: SIGMA_WEB_ATTACK
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:~1|a\.aspx)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.initial-access", "attack.t1190"]
+    sigma_id: 7cb02516-6d95-4ffc-8eee-162075e111ac
+    sigma_status: test
+  - name: sigma_java_payload_strings
+    event_type: SIGMA_WEB_ATTACK
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:%24%7B%28%23a%3D%40|\$\{\(#a=@|%24%7B%40java|\$\{@java|u0022java|%2F%24%7B%23|/\$\{#|new\+java\.|getRuntime\(\)\.exec\(|getRuntime%28%29\.exec%28)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["cve.2022-26134", "cve.2021-26084", "attack.initial-access", "attack.t1190"]
+    sigma_id: 583aa0a2-30b1-4d62-8bf3-ab73689efe6c
+    sigma_status: test
+  - name: sigma_jndiexploit_pattern
+    event_type: SIGMA_WEB_JNDI
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:/Basic/Command/Base64/|/Basic/ReverseShell/|/Basic/TomcatMemshell|/Basic/JettyMemshell|/Basic/WeblogicMemshell|/Basic/JBossMemshell|/Basic/WebsphereMemshell|/Basic/SpringMemshell|/Deserialization/URLDNS/|/Deserialization/CommonsCollections1/Dnslog/|/Deserialization/CommonsCollections2/Command/Base64/|/Deserialization/CommonsBeanutils1/ReverseShell/|/Deserialization/Jre8u20/TomcatMemshell|/TomcatBypass/Dnslog/|/TomcatBypass/Command/|/TomcatBypass/ReverseShell/|/TomcatBypass/TomcatMemshell|/TomcatBypass/SpringMemshell|/GroovyBypass/Command/|/WebsphereBypass/Upload/)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.initial-access", "attack.t1190"]
+    sigma_id: 412d55bc-7737-4d25-9542-5b396867ce55
+    sigma_status: test
+  - name: sigma_path_traversal_exploitation_attempts
+    event_type: SIGMA_WEB_PATH_TRAVERSAL
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.\./\.\./\.\./\.\./\.\./lib/password|\.\./\.\./\.\./\.\./windows/|\.\./\.\./\.\./etc/|\.\.%252f\.\.%252f\.\.%252fetc%252f|\.\.%c0%af\.\.%c0%af\.\.%c0%afetc%c0%af|%252e%252e%252fetc%252f)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.initial-access", "attack.t1190"]
+    sigma_id: 7745c2ea-24a5-4290-b680-04359cb84b35
+    sigma_status: test
+  - name: sigma_source_code_enumeration_detection_by_keyword
+    event_type: SIGMA_WEB_ENUM
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.git/)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: 953d460b-f810-420a-97a2-cfca4c98e602
+    sigma_status: test
+  - name: sigma_sql_injection_strings_in_uri
+    event_type: SIGMA_WEB_SQLI
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"GET\s+[^"]*?(?:@@version|%271%27%3D%271|=select |=select\(|=select%20|concat_ws\(|CONCAT\(0x|from mysql\.innodb_table_stats|from%20mysql\.innodb_table_stats|group_concat\(|information_schema\.tables|json_arrayagg\(|or 1=1#|or%201=1#|order by |order%20by%20|select \* |select database\(\)|select version\(\)|select%20\*%20|select%20database\(\)|select%20version\(\)|select%28sleep%2810%29|SELECTCHAR\(|table_schema|UNION ALL SELECT|UNION SELECT|UNION%20ALL%20SELECT|UNION%20SELECT|'1'='1)[^"]*?"\s+(?!404\s)\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.initial-access", "attack.t1190"]
+    sigma_id: 5513deaf-f49a-46c2-a6c8-3f111b5cb453
+    sigma_status: test
+  - name: sigma_server_side_template_injection_strings
+    event_type: SIGMA_WEB_SSTI
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"GET\s+[^"]*?(?:=\{\{|=%7B%7B|=\$\{|=\$%7B|=<%=|=%3C%25=|=@\(|freemarker\.template\.utility\.Execute|\.getClass\(\)\.forName\('javax\.script\.ScriptEngineManager'\)|T\(org\.apache\.commons\.io\.IOUtils\))[^"]*?"\s+(?!404\s)\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.stealth", "attack.t1221"]
+    sigma_id: ada3bc4f-f0fd-42b9-ba91-e105e8af7342
+    sigma_status: test
+  - name: sigma_suspicious_user-agents_related_to_recon_tools
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:Wfuzz/|WPScan v|Recon-ng/v|GIS - AppSec Team - Project Vision)[^"]*)"
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 300
+    tags: ["attack.initial-access", "attack.t1190"]
+    sigma_id: 19aa4f58-94ca-45ff-bc34-92e533c0994a
+    sigma_status: test
+  - name: sigma_suspicious_windows_strings_in_uri
+    event_type: SIGMA_WEB_ATTACK
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:=C:/Users|=C:/Program%20Files|=C:/Windows|=C%3A%5CUsers|=C%3A%5CProgram%20Files|=C%3A%5CWindows)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.persistence", "attack.exfiltration", "attack.t1505.003"]
+    sigma_id: 9f6a34b4-2688-4eb7-a7f5-e39fef573d0e
+    sigma_status: test
+  - name: sigma_webshell_regeorg_detection_via_web_logs
+    event_type: SIGMA_WEB_WEBSHELL
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"POST\s+[^"]*?(?:cmd=read|connect&target|cmd=connect|cmd=disconnect|cmd=forward)[^"]*?"\s+\d+\s+\S+\s+"-"\s+"-"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.persistence", "attack.t1505.003"]
+    sigma_id: 2ea44a60-cfda-11ea-87d0-0242ac130003
+    sigma_status: test
+  - name: sigma_cross_site_scripting_strings
+    event_type: SIGMA_WEB_XSS
+    regex: >-
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"GET\s+[^"]*?(?:=<script>|=%3Cscript%3E|=%253Cscript%253E|<iframe |%3Ciframe |<svg |%3Csvg |document\.cookie|document\.domain| onerror=| onresize=| onload="|onmouseover=|\$\{alert|javascript:alert|javascript%3Aalert)[^"]*?"\s+(?!404\s)\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+    tags: ["attack.initial-access", "attack.t1189"]
+    sigma_id: 65354b83-a2ea-4ea6-8414-3ab38be0d409
+    sigma_status: test

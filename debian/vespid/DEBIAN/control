@@ -1,0 +1,17 @@
+Package: vespid
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.10), python3-venv, python3-pip, nftables
+Maintainer: Vespid Team <team@vespid.dev>
+Homepage: https://github.com/your-org/vespid
+Description: Vespid — lightweight security daemon
+ Vespid is a lightweight, high-performance security daemon that tails
+ local log files, detects brute-force and reconnaissance activity using
+ sliding-window analysis, and blocks offending IPs via nftables sets.
+ .
+ Features include built-in detection rules for SSH, HTTP, and banner-grab
+ attacks, user-defined custom regex rules via YAML config, external IP
+ blocklist subscriptions, structured JSON telemetry, and a local CLI for
+ inspection and management.

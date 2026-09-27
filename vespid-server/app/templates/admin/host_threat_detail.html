@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% block title %}Host: {{ hostname }} — Host Threats{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+{% if not_found %}
+<div class="card">
+    <div class="empty-state">
+        <p>Host "{{ hostname }}" not found.</p>
+        <a href="{{ url_for('host_threats.host_threats_page') }}" class="btn btn-secondary" style="margin-top:0.75rem;">← Back to Host Threats</a>
+    </div>
+</div>
+{% else %}
+
+<!-- Hero header -->
+<div class="hero-banner" style="margin-bottom:1.25rem;">
+    <div class="hero-banner-top">
+        <div class="hero-actions" style="order:-1;">
+            <a href="{{ url_for('host_threats.host_threats_page') }}" class="btn btn-sm btn-secondary" style="text-decoration:none;">← Back</a>
+        </div>
+        <h2 class="hero-title" id="detail-host-title" style="flex:1;">{{ hostname }}</h2>
+        <div class="hero-badges">
+            <span class="agent-badge agent-online" id="host-agent-badge" style="display:none;">—</span>
+            <select id="detail-mode-select" onchange="changeHostMode(this)"
+                    style="padding:0.25rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.75rem; font-weight:600; text-transform:uppercase; background:var(--bg-input); color:var(--text); cursor:pointer;">
+                <option value="learning">Learning</option>
+                <option value="detecting" selected>Detecting</option>
+                <option value="alerting">Alerting</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- Global time window filter -->
+<div style="margin-bottom:0.75rem; display:flex; align-items:center; gap:0.75rem;">
+    <div class="form-group" style="margin:0;">
+        <label for="global-time-window" style="font-size:0.75rem;color:var(--text-muted);margin-right:0.4rem;">Window:</label>
+        <select id="global-time-window"
+                style="padding:0.35rem 0.5rem;border:1px solid var(--border);border-radius:6px;font-size:0.8rem;background:var(--bg-input);color:var(--text);">
+            <option value="1">1h</option>
+            <option value="6">6h</option>
+            <option value="12">12h</option>
+            <option value="24" selected>24h</option>
+            <option value="72">3d</option>
+            <option value="168">7d</option>
+        </select>
+    </div>
+</div>
+
+<!-- Noise Analysis Panel -->
+{% include "admin/host_threats/noise_analysis_panel.html" %}
+
+<!-- Two-column: Kill Chain + Score Sparkline -->
+<div id="host-detail-charts" style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin-bottom:1.5rem; align-items:stretch;">
+    <div id="panel-kill-chain" style="min-width:0; display:flex; flex-direction:column;">
+        {% include "admin/host_threats/kill_chain_timeline.html" %}
+    </div>
+    <div id="panel-sparkline" style="min-width:0; display:flex; flex-direction:column;">
+        {% include "admin/host_threats/score_sparkline.html" %}
+    </div>
+</div>
+
+<!-- Responsive: stack charts on smaller screens -->
+<style>
+@media (max-width: 1024px) {
+    #host-detail-charts { grid-template-columns: 1fr; }
+    #panel-kill-chain,
+    #panel-sparkline { grid-column: 1 / -1; }
+}
+</style>
+
+<!-- Events Timeline -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 class="card-title" style="margin:0;">Detection Events</h2>
+        <span style="font-size:0.75rem; color:var(--text-muted);">Auto-refreshes every 60s</span>
+    </div>
+    <div id="events-table-container"
+         hx-get="/admin/host-threats/events"
+         hx-trigger="refresh-events"
+         hx-swap="none"
+         hx-on::after-request="renderEventsTable(event)">
+        <p style="color:var(--text-muted); text-align:center; padding:2rem 0;">Loading detection events…</p>
+    </div>
+</div>
+
+<style>
+.events-table-wrap { overflow-x: auto; }
+.events-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.events-table th, .events-table td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.events-table th { font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); background: var(--bg-input, #f9fafb); }
+.events-table tbody tr:hover { background: rgba(128,128,128,0.05); }
+.events-table .col-cmdline { max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.8rem; }
+.events-table .col-pid { font-family: monospace; font-size: 0.8rem; text-align: right; }
+.events-pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-muted); }
+.events-pagination-controls { display: flex; gap: 0.4rem; align-items: center; }
+.events-pagination-controls button { padding: 0.25rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-input); color: var(--text); cursor: pointer; font-size: 0.8rem; }
+.events-pagination-controls button:disabled { opacity: 0.4; cursor: default; }
+.events-table-empty { text-align:center; padding:2rem 0; color:var(--text-muted); }
+.process-tree-link { font-size:0.75rem; color:var(--link,#3B82F6); text-decoration:none; }
+.process-tree-link:hover { text-decoration:underline; }
+</style>
+
+<script>
+(function() {
+    var hostname = {{ hostname|tojson }};
+    window._kcHostnameFilter = hostname;
+    window._noiseHostname = hostname;
+    window._noiseHostMode = 'detecting';
+
+    /* ── Global time window selector → time-window-changed event ── */
+    var _globalWindow = document.getElementById('global-time-window');
+    if (_globalWindow) {
+        _globalWindow.addEventListener('change', function() {
+            document.dispatchEvent(new CustomEvent('time-window-changed', {
+                detail: { hours: _globalWindow.value }
+            }));
+        });
+    }
+
+    /* ── Shared helpers (mirror from dashboard) ───────────────── */
+    function esc(str) { if (!str) return ''; return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+    function truncate(str, max) { if (!str) return ''; return str.length > max ? str.substring(0, max) + '…' : str; }
+    function formatTs(isoStr) { if (!isoStr) return '—'; try { var d=new Date(isoStr); return String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); } catch(e) { return isoStr; } }
+    function isAgentAlive(lastSeenAt) { if (!lastSeenAt) return false; try { return (Date.now() - new Date(lastSeenAt).getTime()) / 1000 < 300; } catch(e) { return false; } }
+    var _toastTimer = null;
+    function showToast(msg, type) {
+        var el = document.getElementById('last-refreshed');
+        if (!el) return;
+        if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+        var orig = el.textContent;
+        el.textContent = msg;
+        el.style.color = type === 'error' ? '#DC2626' : '#16A34A';
+        _toastTimer = setTimeout(function() { el.textContent = orig; el.style.color = ''; }, 5000);
+    }
+
+    function updateLastRefreshed() {
+        var el = document.getElementById('last-refreshed');
+        if (el) {
+            var now = new Date();
+            el.textContent = 'Last refreshed: ' +
+                String(now.getHours()).padStart(2,'0') + ':' +
+                String(now.getMinutes()).padStart(2,'0') + ':' +
+                String(now.getSeconds()).padStart(2,'0');
+        }
+    }
+
+    /* ── Mode Change ──────────────────────────────────────────── */
+    window.changeHostMode = function(selectEl) {
+        var mode = selectEl.value;
+        var prevMode = selectEl.getAttribute('data-prev-mode') || 'unknown';
+        if (mode === prevMode) return;
+        if (!confirm('Change host mode to ' + mode.toUpperCase() + '?')) { selectEl.value = prevMode; return; }
+        fetch('/admin/host-threats/set-mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hostname: hostname, mode: mode })
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(result) {
+            if (result.success) {
+                showToast('Mode changed to ' + mode, 'success');
+                selectEl.setAttribute('data-prev-mode', mode);
+            } else {
+                showToast('Mode change failed: ' + (result.error || 'unknown'), 'error');
+                selectEl.value = prevMode;
+            }
+        })
+        .catch(function() {
+            showToast('Mode change failed: network error', 'error');
+            selectEl.value = prevMode;
+        });
+    };
+
+    /* ── Load agent status & set initial mode ────────────────── */
+    function loadHostMeta() {
+        fetch('/admin/host-threats/summary?hostname=' + encodeURIComponent(hostname) + '&per_page=1')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.cards || data.cards.length === 0) return;
+                var card = data.cards[0];
+                var badgeEl = document.getElementById('host-agent-badge');
+                if (badgeEl) {
+                    var alive = card.last_seen_at && ((Date.now() - new Date(card.last_seen_at).getTime()) / 1000 < 300);
+                    badgeEl.textContent = alive ? '● Online' : '○ Offline';
+                    badgeEl.style.color = alive ? '#16A34A' : '#94A3B8';
+                    badgeEl.style.display = 'inline';
+                }
+                var modeSelect = document.getElementById('detail-mode-select');
+                if (modeSelect && card.mode) {
+                    modeSelect.value = card.mode;
+                    modeSelect.setAttribute('data-prev-mode', card.mode);
+                    window._noiseHostMode = card.mode;
+                }
+            })
+            .catch(function() {});
+    }
+
+    /* ── Events Table ─────────────────────────────────────────── */
+    window.renderEventsTable = function(event) {
+        var xhr = event.detail.xhr;
+        var container = document.getElementById('events-table-container');
+        if (!container) return;
+        if (!xhr || xhr.status !== 200) {
+            container.innerHTML = '<p style="text-align:center; padding:2rem 0; color:var(--text-muted);">Failed to load events.</p>';
+            return;
+        }
+        var data;
+        try { data = JSON.parse(xhr.responseText); } catch(e) {
+            container.innerHTML = '<p style="text-align:center; padding:2rem 0; color:var(--text-muted);">Error parsing events.</p>';
+            return;
+        }
+        if (!data.events || data.events.length === 0) {
+            container.innerHTML = '<p style="text-align:center; padding:2rem 0; color:var(--text-muted);">No detection events found for this host.</p>';
+            return;
+        }
+
+        var html = '<div class="events-table-wrap"><table class="events-table"><thead><tr>';
+        html += '<th>Timestamp</th><th>Rule Name</th><th>Command Line</th><th>PID</th><th>PPID</th><th></th>';
+        html += '</tr></thead><tbody>';
+
+        data.events.forEach(function(evt) {
+            html += '<tr>';
+            html += '<td>' + formatTs(evt.timestamp) + '</td>';
+            html += '<td><span class="badge badge-warning">' + esc(evt.rule_name) + '</span></td>';
+            html += '<td class="col-cmdline" title="' + esc(evt.command_line) + '">' + esc(truncate(evt.command_line, 120)) + '</td>';
+            html += '<td class="col-pid">' + (evt.pid != null ? evt.pid : '—') + '</td>';
+            html += '<td class="col-pid">' + (evt.ppid != null ? evt.ppid : '—') + '</td>';
+            html += '<td><a class="process-tree-link" href="/admin/host-threats/process-tree?hostname=' + encodeURIComponent(evt.hostname||'') + '">🌳 Tree</a></td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        html += '<div class="events-pagination">';
+        html += '<span>Page ' + data.page + ' of ' + data.total_pages + ' (' + data.total + ' events)</span>';
+        html += '<div class="events-pagination-controls">';
+        if (data.has_prev) { html += '<button onclick="loadEventsPage(' + (data.page-1) + ')">← Prev</button>'; }
+        else { html += '<button disabled>← Prev</button>'; }
+        html += '<span>' + data.page + ' / ' + data.total_pages + '</span>';
+        if (data.has_next) { html += '<button onclick="loadEventsPage(' + (data.page+1) + ')">Next →</button>'; }
+        else { html += '<button disabled>Next →</button>'; }
+        html += '</div></div>';
+
+        container.innerHTML = html;
+    };
+
+    window.loadEventsPage = function(page) {
+        var container = document.getElementById('events-table-container');
+        if (!container) return;
+        var url = '/admin/host-threats/events?page=' + page;
+        if (hostname) url += '&hostname=' + encodeURIComponent(hostname);
+        container.setAttribute('hx-get', url);
+        container.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, page: String(page) }));
+        htmx.trigger(container, 'refresh-events');
+    };
+
+    /* ── Initial data loads ───────────────────────────────────── */
+    function initPage() {
+        loadHostMeta();
+
+        /* Kill Chain */
+        var kcEl = document.getElementById('kc-timeline-data');
+        if (kcEl) {
+            var hours = document.getElementById('global-time-window').value;
+            kcEl.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, hours: hours }));
+            htmx.trigger(kcEl, 'refresh-killchain');
+        }
+
+        /* Score Sparkline */
+        if (window.loadScoreSparklineData) {
+            window.loadScoreSparklineData();
+        }
+
+        /* Events Table */
+        var eventsEl = document.getElementById('events-table-container');
+        if (eventsEl) {
+            eventsEl.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, page: '1' }));
+            htmx.trigger(eventsEl, 'refresh-events');
+        }
+
+        /* Noise Analysis */
+        if (typeof window.showNoisePanel === 'function') window.showNoisePanel();
+        if (typeof window.showNoiseLoading === 'function') window.showNoiseLoading();
+        fetch('/admin/host-threats/noise-analysis?hostname=' + encodeURIComponent(hostname))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (typeof window.renderNoiseAnalysis === 'function') window.renderNoiseAnalysis(data);
+                var mode = document.getElementById('detail-mode-select');
+                if (mode && mode.value === 'learning') {
+                    var btn = document.getElementById('noise-suppress-btn');
+                    if (btn) { btn.disabled = true; btn.title = 'Suppression unavailable while host is in learning mode'; }
+                }
+            })
+            .catch(function() {});
+
+        updateLastRefreshed();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initPage);
+    } else {
+        initPage();
+    }
+
+    /* ── Auto-refresh every 60s ───────────────────────────────── */
+    setInterval(function() {
+        var kcEl = document.getElementById('kc-timeline-data');
+        if (kcEl) {
+            var hours = document.getElementById('global-time-window').value;
+            kcEl.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, hours: hours }));
+            htmx.trigger(kcEl, 'refresh-killchain');
+        }
+        if (window.loadScoreSparklineData) {
+            window.loadScoreSparklineData();
+        }
+        var eventsEl = document.getElementById('events-table-container');
+        if (eventsEl) {
+            eventsEl.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, page: '1' }));
+            htmx.trigger(eventsEl, 'refresh-events');
+        }
+        updateLastRefreshed();
+    }, 60000);
+
+})();
+</script>
+
+{% endif %}
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Nodes — Vespid Server{% endblock %}
+{% block content %}
+<h1 class="page-title">🖥️ Node Management</h1>
+
+<div class="stats-grid" style="margin-bottom:1.5rem;">
+    <div class="stat-card">
+        <div class="stat-label">Total Nodes</div>
+        <div class="stat-value">{{ nodes|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Healthy</div>
+        <div class="stat-value" style="color:var(--success)">{{ nodes|selectattr('health', 'equalto', 'healthy')|list|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Degraded</div>
+        <div class="stat-value" style="color:var(--warning)">{{ nodes|selectattr('health', 'equalto', 'degraded')|list|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Offline</div>
+        <div class="stat-value" style="color:var(--danger)">{{ nodes|selectattr('health', 'equalto', 'offline')|list|length }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Registered Nodes</h2>
+    {% if nodes %}
+    <table>
+        <thead>
+            <tr>
+                <th>Node</th>
+                <th>Version</th>
+                <th>OS</th>
+                <th>Health</th>
+                <th>Policy</th>
+                <th>Last Seen</th>
+                <th>Total Events</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for node in nodes %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}"><strong>{{ node.node_display or node.node_id }}</strong></a>
+                    <br><code style="font-size:0.7rem; color:var(--text-muted);">{{ node.node_id }}</code>
+                </td>
+                <td style="font-size:0.8rem; white-space:nowrap;">{{ node.agent_version or '—' }}</td>
+                <td style="font-size:0.8rem; white-space:nowrap;">{{ node.os_name or '—' }}</td>
+                <td>
+                    <span class="badge badge-{{ node.health }}">
+                        {% if node.health == 'healthy' %}● {% elif node.health == 'degraded' %}◐ {% else %}○ {% endif %}
+                        {{ node.health }}
+                    </span>
+                </td>
+                <td>
+                    {% set current_profile = node_profiles.get(node.node_id) %}
+                    <form method="POST" action="{{ url_for('dashboard.node_assign_profile', node_id=node.node_id) }}" style="display:inline-flex; align-items:center; gap:0.25rem;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <select name="profile_id" style="font-size:0.8rem; padding:0.2rem 0.4rem; max-width:140px;"
+                                onchange="if(confirm('Change policy for node {{ node.node_id }} to &quot;' + this.options[this.selectedIndex].text + '&quot;?')) { this.form.submit(); } else { this.selectedIndex = this.dataset.prev; }"
+                                onfocus="this.dataset.prev = this.selectedIndex">
+                            <option value="">— None —</option>
+                            {% for p in profiles %}
+                            <option value="{{ p.id }}" {% if current_profile and current_profile.id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </td>
+                <td><span data-ts="{{ node.last_event_at or '' }}">{{ node.last_event_at or '—' }}</span></td>
+                <td>{{ "{:,}".format(node.total_events) }}</td>
+                <td>
+                    <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}" class="btn btn-sm" title="View node details and manage blocks">View</a>
+                    <a href="{{ url_for('dashboard.rules') }}" class="btn btn-sm btn-secondary" title="Global rules management">Rules</a>
+                    {% if current_user.role == 'admin' %}
+                    <form method="POST" action="{{ url_for('dashboard.node_delete', node_id=node.node_id) }}" style="display:inline;"
+                          onsubmit="return confirm('Permanently delete node {{ node.node_id }}? It will re-register if it connects again.');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-danger" title="Delete this node">Delete</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--text-muted)">No nodes registered yet. Nodes are auto-registered when they send their first event batch.</p>
+    {% endif %}
+</div>
+{% endblock %}

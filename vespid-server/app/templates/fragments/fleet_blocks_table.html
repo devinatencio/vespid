@@ -1,0 +1,150 @@
+<div id="fleet-blocks-table-container">
+{% if blocks %}
+{% set _pa = dict(source_ip=filters.source_ip, event_type=filters.event_type, status=filters.status, node_id=filters.node_id, search=search, sort_by=sort_by, sort_order=sort_order, per_page=per_page) %}
+<!-- Summary stats & export -->
+<div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:0.75rem;flex-wrap:wrap;">
+    <div style="display:flex;gap:0.5rem;font-size:0.8rem;">
+        <span><strong>{{ stats.active }}</strong> active</span>
+        <span class="text-muted">·</span>
+        <span><strong>{{ stats.expired }}</strong> expired</span>
+        <span class="text-muted">·</span>
+        <span><strong>{{ stats.removed }}</strong> removed</span>
+        <span class="text-muted">·</span>
+        <span><strong>{{ total }}</strong> total</span>
+    </div>
+    <a href="{{ url_for('fleet_dashboard.fragment_blocks_table', source_ip=filters.source_ip, event_type=filters.event_type, status=filters.status, node_id=filters.node_id, search=search, sort_by=sort_by, sort_order=sort_order, export='csv') }}" class="btn btn-sm btn-secondary">⬇ CSV</a>
+</div>
+
+{% macro sort_link(label, col) %}
+{% set next_order = 'ASC' if sort_by == col and sort_order == 'DESC' else 'DESC' %}
+{% set indicator = ' ▲' if sort_by == col and sort_order == 'ASC' else (' ▼' if sort_by == col else '') %}
+<a href="#"
+   hx-get="{{ url_for('fleet_dashboard.fragment_blocks_table', sort_by=col, sort_order=next_order, source_ip=filters.source_ip, event_type=filters.event_type, status=filters.status, node_id=filters.node_id, search=search, per_page=per_page, page=page) }}"
+   hx-target="#blocks-table"
+   hx-swap="innerHTML"
+   style="color:inherit;text-decoration:none;{% if sort_by == col %}font-weight:700;{% endif %}">{{ label }}{% if indicator %}<span style="font-size:0.65rem;">{{ indicator }}</span>{% endif %}</a>
+{% endmacro %}
+
+<table>
+    <thead>
+        <tr>
+            <th>{{ sort_link('Source IP', 'source_ip') }}</th>
+            <th>{{ sort_link('Status', 'status') }}</th>
+            <th>{{ sort_link('First Reported', 'first_reported_at') }}</th>
+            <th>{{ sort_link('Last Renewed', 'last_renewed_at') }}</th>
+            <th>{{ sort_link('Nodes', 'reporting_node_count') }}</th>
+            <th>{{ sort_link('Event Type', 'event_type') }}</th>
+            <th>{{ sort_link('TTL', 'ttl_seconds') }}</th>
+            <th>{{ sort_link('Origin Node', 'originating_node_id') }}</th>
+            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+            <th>Actions</th>
+            {% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for block in blocks %}
+        <tr>
+            <td>
+                <code class="ip-copy" onclick="event.stopPropagation(); copyIpToClipboard('{{ block.source_ip }}', this)" title="Click to copy">{{ block.source_ip }}</code>
+                <a href="#" class="ip-intel-icon" onclick="event.preventDefault(); openIpIntelModal('{{ block.source_ip }}')" title="View IP intelligence">🔍</a>
+                <a href="#" style="cursor:pointer;"
+                   hx-get="{{ url_for('fleet_dashboard.fragment_block_detail', ip=block.source_ip) }}"
+                   hx-target="#block-detail"
+                   hx-swap="innerHTML"
+                   title="Show block detail">📋</a>
+            </td>
+            <td>
+                {% if block.status == 'active' %}
+                <span class="badge badge-healthy">active</span>
+                {% elif block.status == 'expired' %}
+                <span class="badge badge-degraded">expired</span>
+                {% elif block.status == 'removed' %}
+                <span class="badge badge-offline">removed</span>
+                {% else %}
+                <span class="badge">{{ block.status }}</span>
+                {% endif %}
+            </td>
+            <td><span data-ts="{{ block.first_reported_at or '—' }}">{{ block.first_reported_at or '—' }}</span></td>
+            <td><span data-ts="{{ block.last_renewed_at or '—' }}">{{ block.last_renewed_at or '—' }}</span></td>
+            <td>{{ block.reporting_node_count or block.get('reporting_node_count', '—') }}</td>
+            <td>
+                {% if block.event_type %}
+                <span class="badge badge-event-{{ block.event_type|lower|replace('_', '-') }}">{{ block.event_type }}</span>
+                {% else %}
+                —
+                {% endif %}
+            </td>
+            <td>{{ block.ttl_seconds|pretty_duration if block.ttl_seconds else '—' }}</td>
+            <td><code>{{ block.originating_node_id|node_display_name if block.originating_node_id else '—' }}</code></td>
+            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+            <td>
+                {% if block.status == 'active' %}
+                <button class="btn btn-sm btn-danger"
+                        hx-delete="{{ url_for('fleet_dashboard.remove_block', ip=block.source_ip) }}"
+                        hx-target="#blocks-table"
+                        hx-swap="innerHTML"
+                        hx-confirm="Remove fleet block for {{ block.source_ip }}?">
+                    Remove
+                </button>
+                <button class="btn btn-sm"
+                        hx-post="{{ url_for('fleet_dashboard.reset_block_ttl', ip=block.source_ip) }}"
+                        hx-target="#blocks-table"
+                        hx-swap="innerHTML"
+                        hx-confirm="Reset TTL for {{ block.source_ip }} to fleet default?"
+                        title="Reset TTL to fleet default">
+                    Reset TTL
+                </button>
+                {% elif block.status in ('expired', 'removed') %}
+                <button class="btn btn-sm btn-success"
+                        hx-post="{{ url_for('fleet_dashboard.reenable_block', ip=block.source_ip) }}"
+                        hx-target="#blocks-table"
+                        hx-swap="innerHTML"
+                        hx-confirm="Re-enable fleet block for {{ block.source_ip }}? It will use the current default TTL.">
+                    Re-enable
+                </button>
+                {% endif %}
+            </td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+    <a href="#"
+       hx-get="{{ url_for('fleet_dashboard.fragment_blocks_table', page=page-1, **_pa) }}"
+       hx-target="#blocks-table"
+       hx-swap="innerHTML">← Prev</a>
+    {% endif %}
+
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+        <span class="current">{{ p }}</span>
+        {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
+        <a href="#"
+           hx-get="{{ url_for('fleet_dashboard.fragment_blocks_table', page=p, **_pa) }}"
+           hx-target="#blocks-table"
+           hx-swap="innerHTML">{{ p }}</a>
+        {% elif p == 4 or p == total_pages - 3 %}
+        <span>…</span>
+        {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+    <a href="#"
+       hx-get="{{ url_for('fleet_dashboard.fragment_blocks_table', page=page+1, **_pa) }}"
+       hx-target="#blocks-table"
+       hx-swap="innerHTML">Next →</a>
+    {% endif %}
+</div>
+{% endif %}
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">🌐</div>
+    <p>No fleet blocks found matching your criteria.</p>
+</div>
+{% endif %}
+</div>

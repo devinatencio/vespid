@@ -1,0 +1,84 @@
+{% if not offenders %}
+<p class="text-muted" style="text-align:center; padding:2rem;">{% if block_count %}No repeat offenders blocked {{ block_count }}+ times.{% else %}No repeat offenders found.{% endif %}</p>
+{% else %}
+<p class="result-count" style="margin-bottom:0.5rem;">{{ total }} repeat offender{{ 's' if total != 1 else '' }} (page {{ page }} of {{ total_pages }})</p>
+<div style="margin:0 0 0.75rem 0; display:flex; gap:0.4rem; flex-wrap:wrap; font-size:0.8rem;">
+    {% set active = block_count %}
+    <a href="#" role="button"
+       style="padding:0.2rem 0.6rem; border-radius:4px; text-decoration:none; color:var(--text-muted,#94a3b8);{% if not active %}background:var(--bg-input,rgba(0,0,0,0.2));color:var(--text,#e2e8f0);font-weight:600;{% endif %}"
+       hx-get="{{ url_for('intel_dashboard.analytics_repeat_offenders', page=1, per_page=per_page) }}"
+       hx-target="#repeat-offenders-body" hx-swap="innerHTML">All</a>
+    <a href="#" role="button"
+       style="padding:0.2rem 0.6rem; border-radius:4px; text-decoration:none; color:var(--text-muted,#94a3b8);{% if active == 2 %}background:var(--bg-input,rgba(0,0,0,0.2));color:var(--text,#e2e8f0);font-weight:600;{% endif %}"
+       hx-get="{{ url_for('intel_dashboard.analytics_repeat_offenders', page=1, per_page=per_page, block_count=2) }}"
+       hx-target="#repeat-offenders-body" hx-swap="innerHTML">{{ distribution.exact_2 }} blocked 2&times;</a>
+    <a href="#" role="button"
+       style="padding:0.2rem 0.6rem; border-radius:4px; text-decoration:none; color:var(--text-muted,#94a3b8);{% if active == 3 %}background:var(--bg-input,rgba(0,0,0,0.2));color:var(--text,#e2e8f0);font-weight:600;{% endif %}"
+       hx-get="{{ url_for('intel_dashboard.analytics_repeat_offenders', page=1, per_page=per_page, block_count=3) }}"
+       hx-target="#repeat-offenders-body" hx-swap="innerHTML">{{ distribution.exact_3 }} blocked 3&times;</a>
+    <a href="#" role="button"
+       style="padding:0.2rem 0.6rem; border-radius:4px; text-decoration:none; color:var(--text-muted,#94a3b8);{% if active and active >= 4 %}background:var(--bg-input,rgba(0,0,0,0.2));color:var(--text,#e2e8f0);font-weight:600;{% endif %}"
+       hx-get="{{ url_for('intel_dashboard.analytics_repeat_offenders', page=1, per_page=per_page, block_count=4) }}"
+       hx-target="#repeat-offenders-body" hx-swap="innerHTML">{{ distribution.over_3 }} blocked 4+&times;</a>
+</div>
+<table class="table" role="table" aria-label="Repeat offenders list">
+    <thead>
+        <tr>
+            <th scope="col">IP Address</th>
+            <th scope="col">Repeat Since</th>
+            <th scope="col">Times Seen</th>
+            <th scope="col">Times Blocked</th>
+            <th scope="col">Last Seen</th>
+            <th scope="col">Country</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for o in offenders %}
+        <tr>
+            <td><a href="/intel/ip/{{ o.ip_address }}"><code>{{ o.ip_address }}</code></a></td>
+            <td>{% if o.repeat_offender_since %}<span data-ts="{{ o.repeat_offender_since }}">{{ o.repeat_offender_since }}</span>{% else %}—{% endif %}</td>
+            <td>{{ o.total_times_seen }}</td>
+            <td>{{ o.total_times_blocked }}</td>
+            <td>{% if o.last_seen_at %}<span data-ts="{{ o.last_seen_at }}">{{ o.last_seen_at }}</span>{% else %}—{% endif %}</td>
+            <td>{{ o.geo_country or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Repeat offenders pagination" style="position:sticky;bottom:0;background:var(--bg-card,#1e2235);padding:0.75rem 0;margin-top:0.5rem;border-top:1px solid var(--border,#3a3f5c);">
+    <span class="pagination-info">Page {{ page }} of {{ total_pages }} ({{ total }} total)</span>
+    <div class="pagination-controls">
+        {% if page > 1 %}
+        <a href="#" class="btn btn-sm btn-secondary"
+           hx-get="{{ url_for('intel_dashboard.analytics_repeat_offenders', page=page - 1, per_page=per_page, block_count=block_count) }}"
+           hx-target="#repeat-offenders-body"
+           hx-swap="innerHTML"
+           aria-label="Previous page">← Prev</a>
+        {% endif %}
+
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="btn btn-sm btn-primary current" aria-current="page">{{ p }}</span>
+            {% elif p <= 3 or p > total_pages - 3 or (p >= page - 1 and p <= page + 1) %}
+            <a href="#" class="btn btn-sm btn-secondary"
+               hx-get="{{ url_for('intel_dashboard.analytics_repeat_offenders', page=p, per_page=per_page, block_count=block_count) }}"
+               hx-target="#repeat-offenders-body"
+               hx-swap="innerHTML">{{ p }}</a>
+            {% elif p == 4 or p == total_pages - 3 %}
+            <span class="pagination-ellipsis">…</span>
+            {% endif %}
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <a href="#" class="btn btn-sm btn-secondary"
+           hx-get="{{ url_for('intel_dashboard.analytics_repeat_offenders', page=page + 1, per_page=per_page, block_count=block_count) }}"
+           hx-target="#repeat-offenders-body"
+           hx-swap="innerHTML"
+           aria-label="Next page">Next →</a>
+        {% endif %}
+    </div>
+</nav>
+{% endif %}
+{% endif %}

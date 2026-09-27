@@ -1,0 +1,35 @@
+[package]
+name = "vespid-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "vespid-agent"
+path = "src/main.rs"
+
+[dependencies]
+vespid-agent-common = { path = "../vespid-agent-common" }
+vespid-agent-enroll = { path = "../vespid-agent-enroll" }
+tokio.workspace = true
+reqwest.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+bytes.workspace = true
+snap.workspace = true
+libc.workspace = true
+hostname.workspace = true
+tokio-util = { workspace = true, features = ["rt"] }
+async-trait.workspace = true
+regex.workspace = true
+sd-notify.workspace = true
+url.workspace = true

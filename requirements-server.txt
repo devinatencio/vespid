@@ -1,0 +1,10 @@
+# The server is a standalone project — install it from its own directory so it
+# gets its own virtualenv:
+#
+#   python3 -m venv vespid-server/.venv
+#   vespid-server/.venv/bin/pip install -r vespid-server/requirements.txt
+#
+# Runtime dependencies are declared in vespid-server/pyproject.toml.
+# Do NOT install this into the agent environment: the server pulls
+# Flask-Limiter (rich<14) while the agent requires rich>=14.
+-e ./vespid-server

@@ -1,0 +1,2 @@
+/etc/vespid/vespid.yaml
+/etc/rsyslog.d/20-vespid.conf

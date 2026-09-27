@@ -1,0 +1,22 @@
+# ==========================================================================
+# Vespid Agent Configuration — Fully Managed Mode
+# ==========================================================================
+# Use this config when the Vespid server manages all settings.
+# Copy to /etc/vespid/vespid.yaml to activate.
+#
+# All detection rules, feeds, allowlist, and operational settings will be
+# pushed from the server via a configuration profile. The agent uses
+# built-in defaults until the first successful check-in.
+# ==========================================================================
+
+# Your Vespid server URL
+SERVER_URL: "https://your-vespid-server.example.com/api/v1/events"
+
+# API key (Define in API Keys in Gui, or leave blank to auto-enroll)
+API_KEY: ""
+
+# Enable server communication
+upload_enabled: true
+
+# Let the server manage this agent's configuration
+management_mode: "server-managed"

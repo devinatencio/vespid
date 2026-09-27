@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Command Queue — Vespid Tower{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">📋</div>
+    <div style="flex:1;">
+        <h1 style="margin:0;font-size:1.2rem;">Command Queue</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Agent command dispatch and tracking
+        </div>
+    </div>
+    <div style="display:flex;gap:1rem;text-align:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ total }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">total</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;{% if counts.get('pending', 0) > 0 %}color:var(--warning);{% endif %}">{{ counts.get('pending', 0) }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">pending</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;{% if counts.get('failed', 0) > 0 %}color:var(--danger);{% endif %}">{{ counts.get('failed', 0) }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">failed</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ counts.get('completed', 0) }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">done</div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <h2 class="card-title">Reaper Settings</h2>
+        <p class="text-muted" style="margin-bottom:1rem;">Auto-expire stale pending commands and purge old completed ones.</p>
+        <form method="POST" action="{{ url_for('admin.commands') }}">
+            <input type="hidden" name="action" value="save_settings">
+            <div style="display:flex; gap:0.5rem; align-items:end; margin-bottom:0.75rem;">
+                <div class="form-group" style="margin-bottom:0; flex:1;">
+                    <label for="expiry_hours">Pending expiry (hours)</label>
+                    <input type="number" id="expiry_hours" name="expiry_hours" value="{{ expiry_hours }}" min="1" max="720" required>
+                </div>
+                <div class="form-group" style="margin-bottom:0; flex:1;">
+                    <label for="retention_days">Retention (days)</label>
+                    <input type="number" id="retention_days" name="retention_days" value="{{ retention_days }}" min="1" max="3650" required>
+                </div>
+                <button type="submit" class="btn">Save</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Manual Actions</h2>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <form method="POST" action="{{ url_for('admin.commands') }}" onsubmit="return confirm('Expire all pending commands older than {{ expiry_hours }}h?')" style="display:inline;">
+                <input type="hidden" name="action" value="expire_pending">
+                <input type="hidden" name="hours" value="{{ expiry_hours }}">
+                <button type="submit" class="btn btn-secondary">Expire Stale Pending ({{ counts.get('pending', 0) }})</button>
+            </form>
+            <form method="POST" action="{{ url_for('admin.commands') }}" onsubmit="return confirm('Purge all completed/failed/expired commands older than {{ retention_days }}d?')" style="display:inline;">
+                <input type="hidden" name="action" value="purge_old">
+                <input type="hidden" name="days" value="{{ retention_days }}">
+                <button type="submit" class="btn btn-danger">Purge Old Commands</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+    <h2 class="card-title">Commands</h2>
+    <form id="cmd-filter-form" method="GET" action="{{ url_for('admin.commands') }}">
+    <div style="display:flex; gap:0.5rem; margin-bottom:1rem; align-items:end; flex-wrap:wrap;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label for="cmd-status">Status</label>
+            <select id="cmd-status" name="status">
+                <option value="">All</option>
+                {% for s in ['pending', 'acknowledged', 'completed', 'failed', 'expired'] %}
+                <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s|capitalize }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label for="cmd-node_id">Node</label>
+            <input type="text" id="cmd-node_id" name="node_id" value="{{ node_filter }}" placeholder="All nodes">
+        </div>
+        <button type="submit" class="btn btn-secondary">Filter</button>
+        {% if status_filter or node_filter %}
+        <a href="{{ url_for('admin.commands') }}" class="btn btn-secondary">Clear</a>
+        {% endif %}
+    </div>
+    </form>
+
+    {% if commands %}
+    <div style="overflow-x:auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Command ID</th>
+                    <th>Node</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Acknowledged</th>
+                    <th>Result</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cmd in commands %}
+                <tr>
+                    <td><code style="font-size:0.8em;">{{ cmd.command_id[:8] }}…</code></td>
+                    <td>{{ cmd.node_id }}</td>
+                    <td>{{ cmd.command_type }}</td>
+                    <td>
+                        {% if cmd.status == 'pending' %}
+                        <span style="color:var(--warning);">⏳ Pending</span>
+                        {% elif cmd.status == 'acknowledged' %}
+                        <span style="color:var(--info, #3498db);">📬 Acknowledged</span>
+                        {% elif cmd.status == 'completed' %}
+                        <span style="color:var(--success);">✅ Completed</span>
+                        {% elif cmd.status == 'failed' %}
+                        <span style="color:var(--danger);">❌ Failed</span>
+                        {% elif cmd.status == 'expired' %}
+                        <span style="color:var(--muted);">⌛ Expired</span>
+                        {% else %}
+                        {{ cmd.status }}
+                        {% endif %}
+                    </td>
+                    <td style="white-space:nowrap;">{{ cmd.created_at or '—' }}</td>
+                    <td style="white-space:nowrap;">{{ cmd.acknowledged_at or '—' }}</td>
+                    <td style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ cmd.result or '' }}">{{ cmd.result or '—' }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('admin.commands') }}" style="display:inline;" onsubmit="return confirm('Delete command {{ cmd.command_id[:8] }}…?')">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="command_id" value="{{ cmd.command_id }}">
+                            <button type="submit" class="btn btn-danger" style="padding:0.2rem 0.5rem; font-size:0.8em;">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📡</div>
+        <p>No commands found.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

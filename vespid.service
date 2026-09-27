@@ -1,0 +1,32 @@
+[Unit]
+Description=Vespid security daemon
+Documentation=https://github.com/your-org/vespid
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vespid
+ExecStart=/usr/bin/vespid
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+# Runs as root — required for nftables and reading /var/log/secure
+User=root
+Group=root
+
+# Stable syslog identifier so rsyslog can be configured to drop vespid's own
+# log lines from /var/log/messages (and /var/log/syslog) — otherwise the
+# daemon re-tails its own mirrored output via journald -> rsyslog.
+SyslogIdentifier=vespid
+
+# Security hardening (as much as root allows)
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/vespid /var/log/vespid /run
+
+[Install]
+WantedBy=multi-user.target

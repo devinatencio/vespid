@@ -1,0 +1,312 @@
+{% extends "base.html" %}
+{% block title %}API Key Management — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+{% set active_keys = namespace(n=0) %}
+{% set revoked_keys = namespace(n=0) %}
+{% for k in flat %}{% if k.is_active %}{% set active_keys.n = active_keys.n + 1 %}{% else %}{% set revoked_keys.n = revoked_keys.n + 1 %}{% endif %}{% endfor %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">🔑</div>
+    <div style="flex:1;">
+        <h1 style="margin:0;font-size:1.2rem;">API Key Management</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Service authentication tokens for agent nodes
+        </div>
+    </div>
+    <div style="display:flex;gap:1rem;text-align:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ flat|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">total</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ active_keys.n }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">active</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ revoked_keys.n }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">revoked</div>
+        </div>
+    </div>
+    <button type="button" class="btn" onclick="showCreateKeyModal()">Create Key</button>
+</div>
+
+{% with msgs = get_flashed_messages(with_categories=true) %}
+{% for cat, msg in msgs %}
+{% if 'Copy this token' in msg and 'success' in cat %}
+<div class="card" style="border-color:var(--accent); margin-bottom:1rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="color:var(--accent); margin:0;">New API Key Created</h3>
+        <span style="color:var(--text-muted); font-size:0.8rem;">Copy now — it won't be shown again</span>
+    </div>
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.75rem; background:var(--bg-input); padding:0.6rem 0.8rem; border-radius:6px; border:1px solid var(--border);">
+        <code style="font-size:0.875rem; word-break:break-all; flex:1;">{{ msg.split(': ')[-1] }}</code>
+        <button class="btn btn-sm btn-password" onclick="copyKey(this)" title="Copy to clipboard">Copy</button>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+{% endwith %}
+
+{# ── Search bar ── #}
+<div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem;">
+    <input type="search" id="keySearch" placeholder="Search hostname, key prefix, or node ID…" style="flex:1; padding:0.5rem 0.75rem; border:1px solid var(--border); border-radius:6px; font-size:0.85rem; background:var(--bg-input); color:var(--text);" oninput="filterKeys()">
+    <button type="button" id="groupToggle" class="btn btn-sm btn-secondary" onclick="toggleGroupByHost()">Group by host</button>
+    <span style="font-size:0.85rem; color:var(--text-muted); white-space:nowrap;">{{ flat|length }} key{% if flat|length != 1 %}s{% endif %}</span>
+</div>
+
+{# ── Key cards ── #}
+{% if flat %}
+<div id="keyList" style="display:flex; flex-direction:column; gap:0.5rem;">
+{% for k in flat %}
+<div class="card key-card" style="cursor:pointer; padding:0.75rem 1rem; margin:0; transition:border-color 0.15s; border:1px solid var(--border);" data-host="{{ k.hostname|lower }}" data-prefix="{{ k.prefix|lower }}" data-node="{{ k.node_id|lower }}" onclick="showDetails({{ k.key_id }})"
+     onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor=''">
+    <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+        <div style="flex:1; min-width:150px;">
+            <strong style="font-size:0.9rem;">{{ k.hostname }}</strong>
+            {% if k.labels.get('env') %}<span class="badge badge-geo" style="font-size:0.6rem; margin-left:0.3rem;">{{ k.labels.env }}</span>{% endif %}
+            {% if k.labels.get('tier') %}<span class="badge" style="font-size:0.6rem; background:var(--surface-2); margin-left:0.2rem;">{{ k.labels.tier }}</span>{% endif %}
+            {% if k.ip %}<code style="font-size:0.65rem; color:var(--text-muted); margin-left:0.4rem;">{{ k.ip }}</code>{% endif %}
+        </div>
+        <div><span class="badge" style="background:var(--surface-2); font-size:0.75rem; width:10em; text-align:center; display:inline-block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ k.service }}</span></div>
+        <div><code style="font-size:0.8rem; font-family:'JetBrains Mono',monospace; background:var(--bg-input); padding:0.2rem 0.5rem; border-radius:4px;">{{ k.prefix }}</code></div>
+        <div>
+            {% if k.is_active %}
+            <span class="badge badge-active">Active</span>
+            {% else %}
+            <span class="badge badge-revoked">Revoked</span>
+            {% endif %}
+        </div>
+        <div style="font-size:0.8rem; color:var(--text-muted); text-align:right; min-width:80px;">
+            {% if k.last_used_at %}
+            <span class="ts-rel" data-ts="{{ k.last_used_at }}">{{ k.last_used_at }}</span>
+            {% else %}
+            <span>—</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endfor %}
+</div>
+<div id="keyListGrouped" style="display:none; flex-direction:column; gap:0.75rem;"></div>
+{% else %}
+<div class="card">
+    <p>No API keys created yet.</p>
+</div>
+{% endif %}
+
+{# ── Detail modal ── #}
+<div id="keyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)hideDetails()">
+    <div style="background:var(--bg-card); border-radius:8px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto; padding:1.5rem; box-shadow:0 8px 32px rgba(0,0,0,0.3); position:relative;">
+        <button style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--text-muted);" onclick="hideDetails()">&times;</button>
+        <div id="modalContent"></div>
+    </div>
+</div>
+
+{# ── Create key modal ── #}
+<div id="createKeyModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1001; align-items:center; justify-content:center;" onclick="if(event.target===this)hideCreateKeyModal()">
+    <div style="background:var(--bg-card); border-radius:8px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto; padding:1.5rem; box-shadow:0 8px 32px rgba(0,0,0,0.3); position:relative;">
+        <button style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--text-muted);" onclick="hideCreateKeyModal()">&times;</button>
+        <h2 style="margin-top:0;">Create API Key</h2>
+        <form method="POST" action="{{ url_for('admin.create_key_endpoint') }}" style="display:flex; flex-direction:column; gap:1rem; margin-top:1rem;">
+            <div class="form-group" style="margin:0;">
+                <label for="label">Label</label>
+                <input type="text" id="label" name="label" placeholder="e.g. web-node-01" required style="width:100%;">
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label for="node_select">Node</label>
+                <select id="node_select" onchange="document.getElementById('node_id_restriction').value = this.value" style="width:100%;">
+                    {% if enrollment_settings.get('allow_unrestricted_api_keys', 'true') == 'true' %}
+                    <option value="">— Any node (no restriction) —</option>
+                    {% else %}
+                    <option value="">— Select a node —</option>
+                    {% endif %}
+                    {% for n in nodes %}
+                    <option value="{{ n.node_id }}">{{ n.display_name or node_to_er.get(n.node_id, {}).hostname or n.node_id[:12] ~ '...' }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label for="node_id_restriction">Or type Node ID{% if enrollment_settings.get('allow_unrestricted_api_keys', 'true') != 'true' %} <span style="color:var(--accent-warn);">(required by server policy)</span>{% endif %}</label>
+                <input type="text" id="node_id_restriction" name="node_id_restriction" placeholder="UUID" style="width:100%;" oninput="document.getElementById('node_select').value = ''"{% if enrollment_settings.get('allow_unrestricted_api_keys', 'true') != 'true' %} required{% endif %}>
+            </div>
+            <div class="form-group" style="margin:0;">
+                <button type="submit" class="btn" style="width:100%;">Create Key</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+var _flatKeys = {{ flat|tojson }};
+var _groupByHost = false;
+
+function copyToClipboard(text, btn) {
+    navigator.clipboard.writeText(text).then(function() {
+        var orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        btn.style.background = 'var(--success)';
+        btn.style.color = '#fff';
+        setTimeout(function() { btn.textContent = orig; btn.style.background = ''; btn.style.color = ''; }, 1500);
+    });
+}
+function copyKey(btn) {
+    var code = btn.parentElement.querySelector('code');
+    if (code) copyToClipboard(code.textContent, btn);
+}
+function editNR(keyId, current) {
+    var val = prompt('Node ID (leave empty for any node):', current || '');
+    if (val === null) return;
+    val = val.trim();
+    var formData = new FormData();
+    formData.append('node_id_restriction', val);
+    fetch('/admin/keys/' + keyId + '/node-restriction', { method: 'PUT', body: formData })
+        .then(function(r) { if (!r.ok) throw r; return r.text(); })
+        .then(function(html) { location.reload(); })
+        .catch(function() { alert('Failed to update node restriction.'); });
+}
+function getVisibleKeys() {
+    var q = document.getElementById('keySearch').value.toLowerCase();
+    return _flatKeys.filter(function(k) {
+        return !q ||
+            (k.hostname || '').toLowerCase().includes(q) ||
+            (k.prefix || '').toLowerCase().includes(q) ||
+            (k.node_id || '').toLowerCase().includes(q);
+    });
+}
+
+function filterKeys() {
+    if (_groupByHost) {
+        renderGrouped();
+        return;
+    }
+    var q = document.getElementById('keySearch').value.toLowerCase();
+    document.querySelectorAll('#keyList .key-card').forEach(function(c) {
+        c.style.display = (!q || c.dataset.host.includes(q) || c.dataset.prefix.includes(q) || c.dataset.node.includes(q)) ? '' : 'none';
+    });
+}
+
+function renderGrouped() {
+    var keys = getVisibleKeys();
+    var groups = {};
+    keys.forEach(function(k) {
+        var host = k.hostname || 'Unlinked';
+        if (!groups[host]) groups[host] = [];
+        groups[host].push(k);
+    });
+
+    var hostOrder = Object.keys(groups).sort(function(a, b) {
+        var aActive = groups[a].some(function(k) { return k.is_active; });
+        var bActive = groups[b].some(function(k) { return k.is_active; });
+        if (aActive !== bActive) return bActive - aActive;
+        return a.toLowerCase().localeCompare(b.toLowerCase());
+    });
+
+    var html = '';
+    hostOrder.forEach(function(host) {
+        var hostKeys = groups[host];
+        var activeCount = hostKeys.filter(function(k) { return k.is_active; }).length;
+        var ip = hostKeys[0].ip || '';
+        html += '<div class="card" style="padding:0; overflow:hidden; border:1px solid var(--border);">';
+        html += '<div style="padding:0.75rem 1rem; background:var(--bg-secondary); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">';
+        html += '<strong style="font-size:0.95rem;">' + host + '</strong>';
+        if (ip) html += '<code style="font-size:0.7rem; color:var(--text-muted);">' + ip + '</code>';
+        html += '<span style="margin-left:auto; font-size:0.8rem; color:var(--text-muted);">' + activeCount + '/' + hostKeys.length + ' active</span>';
+        html += '</div>';
+        html += '<div style="display:flex; flex-direction:column;">';
+        hostKeys.forEach(function(k) {
+            html += '<div class="key-card" data-host="' + (k.hostname || '').toLowerCase() + '" data-prefix="' + (k.prefix || '').toLowerCase() + '" data-node="' + (k.node_id || '').toLowerCase() + '" onclick="showDetails(' + k.key_id + ')" style="cursor:pointer; padding:0.6rem 1rem; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; transition:background 0.15s;" onmouseover="this.style.background=\'var(--bg-card-hover)\'" onmouseout="this.style.background=\'\'">';
+            html += '<div style="flex:1; min-width:120px;"><span class="badge" style="background:var(--surface-2); font-size:0.75rem;">' + k.service + '</span></div>';
+            html += '<div><code style="font-size:0.8rem; font-family:\'JetBrains Mono\',monospace; background:var(--bg-input); padding:0.2rem 0.5rem; border-radius:4px;">' + k.prefix + '</code></div>';
+            html += '<div>' + (k.is_active ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-revoked">Revoked</span>') + '</div>';
+            html += '<div style="font-size:0.8rem; color:var(--text-muted); text-align:right; min-width:80px; margin-left:auto;">' + (k.last_used_at || '—') + '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+        html += '</div>';
+    });
+
+    document.getElementById('keyListGrouped').innerHTML = html;
+    if (typeof applyRelativeTimestamps === 'function') applyRelativeTimestamps();
+}
+
+function toggleGroupByHost() {
+    _groupByHost = !_groupByHost;
+    localStorage.setItem('apiKeysGroupByHost', _groupByHost ? '1' : '0');
+    var btn = document.getElementById('groupToggle');
+    var flatList = document.getElementById('keyList');
+    var groupedList = document.getElementById('keyListGrouped');
+    if (_groupByHost) {
+        btn.textContent = 'Flat list';
+        btn.style.background = 'var(--accent)';
+        btn.style.color = '#fff';
+        flatList.style.display = 'none';
+        groupedList.style.display = 'flex';
+        renderGrouped();
+    } else {
+        btn.textContent = 'Group by host';
+        btn.style.background = '';
+        btn.style.color = '';
+        flatList.style.display = 'flex';
+        groupedList.style.display = 'none';
+    }
+}
+
+function showDetails(keyId) {
+    var k = _flatKeys.find(function(x) { return x.key_id === keyId; });
+    if (!k) return;
+    var html = '';
+    html += '<h3 style="margin-top:0;">' + k.hostname + '</h3>';
+    html += '<p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">' + k.service + ' &middot; ' + k.prefix + '…</p>';
+    html += '<table style="width:100%; font-size:0.85rem;">';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted); width:110px;">Key ID</td><td style="padding:0.3rem 0.5rem;"><code>' + k.key_id + '</code></td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Service</td><td style="padding:0.3rem 0.5rem;"><span class="badge" style="background:var(--surface-2);">' + k.service + '</span></td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Status</td><td style="padding:0.3rem 0.5rem;">' + (k.is_active ? '<span class="badge badge-active">Active</span>' : '<span class="badge badge-revoked">Revoked</span>') + '</td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Host</td><td style="padding:0.3rem 0.5rem;">' + k.hostname + (k.ip ? ' <code style="font-size:0.7rem;">' + k.ip + '</code>' : '') + '</td></tr>';
+    if (k.host_id) html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Host ID</td><td style="padding:0.3rem 0.5rem;"><code style="font-size:0.7rem;">' + k.host_id + '</code></td></tr>';
+    if (k.asset_id) html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Asset ID</td><td style="padding:0.3rem 0.5rem;"><code style="font-size:0.7rem;">' + k.asset_id + '</code></td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Node Restriction</td><td style="padding:0.3rem 0.5rem;">';
+    if (k.node_id) {
+        html += '<code style="font-size:0.7rem;">' + k.node_id + '</code>';
+        html += ' <button class="btn btn-sm btn-password" style="padding:0.1rem 0.4rem;font-size:0.65rem;" onclick="editNR(' + k.key_id + ',\'' + k.node_id + '\')">Edit</button>';
+    } else {
+        html += '<span style="color:var(--text-muted);">Any (global key)</span>';
+    }
+    html += '</td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Created By</td><td style="padding:0.3rem 0.5rem;">' + k.created_by + '</td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Created</td><td style="padding:0.3rem 0.5rem;">' + k.created_at + '</td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Last Used</td><td style="padding:0.3rem 0.5rem;">' + (k.last_used_at || '—') + '</td></tr>';
+    html += '</table>';
+    html += '<div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border); display:flex; gap:0.5rem;">';
+    if (k.host_id) {
+        html += '<a class="btn btn-sm" style="flex:1; justify-content:center;" href="/admin/enrollment?host=' + k.host_id + '">View Enrollments</a>';
+    }
+    if (k.is_active) {
+        html += '<form method="POST" action="/admin/keys/' + k.key_id + '/revoke" style="flex:1; display:inline-flex;" onsubmit="return confirm(\'Revoke this API key?\')"><button type="submit" class="btn btn-sm btn-danger" style="width:100%; justify-content:center;">Revoke Key</button></form>';
+    } else {
+        html += '<form method="POST" action="/admin/keys/' + k.key_id + '/delete" style="flex:1; display:inline-flex;" onsubmit="return confirm(\'Permanently delete this API key? This cannot be undone.\')"><button type="submit" class="btn btn-sm btn-danger" style="width:100%; justify-content:center;">Delete Key</button></form>';
+    }
+    html += '</div>';
+    document.getElementById('modalContent').innerHTML = html;
+    document.getElementById('keyModal').style.display = 'flex';
+}
+function hideDetails() {
+    document.getElementById('keyModal').style.display = 'none';
+}
+
+function showCreateKeyModal() {
+    document.getElementById('createKeyModal').style.display = 'flex';
+}
+function hideCreateKeyModal() {
+    document.getElementById('createKeyModal').style.display = 'none';
+}
+
+/* Restore group-by-host preference */
+(function() {
+    if (localStorage.getItem('apiKeysGroupByHost') === '1') {
+        toggleGroupByHost();
+    }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,1619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}Vespid Server{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=38">
+    {% if custom_theme_css %}
+    <style>{{ custom_theme_css | safe }}</style>
+    {% endif %}
+    <script src="{{ url_for('static', filename='htmx.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='sse.js') }}"></script>
+    <script src="{{ url_for('static', filename='chart.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='chartjs-adapter-date-fns.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='chart-theme.js') }}"></script>
+    <script>
+    /* Close all SSE/EventSource connections immediately on page navigation.
+       Prevents the browser's 6-connection-per-origin limit (HTTP/1.1)
+       from blocking the next page load while old SSE connections linger. */
+    window.addEventListener('pagehide', function() {
+        /* Walk all elements with htmx SSE internal data and close their sources */
+        var sseEls = document.querySelectorAll('[sse-connect]');
+        for (var i = 0; i < sseEls.length; i++) {
+            try {
+                var data = htmx._ && htmx._.getInternalData ? htmx._.getInternalData(sseEls[i]) : null;
+                if (data && data.sseEventSource) {
+                    data.sseEventSource.close();
+                    data.sseEventSource = null;
+                }
+            } catch(e) {}
+        }
+    });
+    </script>
+</head>
+<body class="theme-{{ current_user.theme if current_user.is_authenticated and current_user.theme else 'dark' }}">
+    <script>
+    (function() {
+        var csrfToken = document.querySelector('meta[name="csrf-token"]');
+        if (!csrfToken) return;
+        var token = csrfToken.getAttribute('content');
+        document.addEventListener('submit', function(e) {
+            var form = e.target;
+            if (form.method && form.method.toUpperCase() !== 'GET' && form.method.toUpperCase() !== 'HEAD') {
+                if (!form.querySelector('input[name="csrf_token"]')) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'csrf_token';
+                    input.value = token;
+                    form.appendChild(input);
+                }
+            }
+        });
+        document.body.addEventListener('htmx:configRequest', function(e) {
+            e.detail.headers['X-CSRFToken'] = token;
+        });
+    })();
+
+    /* Auto-inject X-CSRFToken into same-origin fetch() calls.
+       Rely on the meta[name="csrf-token"] tag (set above) and only
+       touch non-safe methods to avoid interfering with GET preloads
+       and external requests. */
+    (function() {
+        var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+        if (!tokenMeta) return;
+        var token = tokenMeta.getAttribute('content');
+        var _fetch = window.fetch;
+        window.fetch = function(input, init) {
+            init = init || {};
+            var method = (init.method || 'get').toUpperCase();
+            if (method === 'GET' || method === 'HEAD')
+                return _fetch(input, init);
+            var url = typeof input === 'string' ? input
+                    : (input instanceof Request ? input.url : '');
+            if (url.startsWith('http') && !url.startsWith(location.origin))
+                return _fetch(input, init);
+            init.headers = init.headers || {};
+            if (!init.headers['X-CSRFToken'])
+                init.headers['X-CSRFToken'] = token;
+            return _fetch(input, init);
+        };
+    })();
+</script>
+    <div class="htmx-progress-bar" id="htmx-progress"></div>
+    <div id="side-panel-overlay" class="side-panel-overlay" onclick="closeSidePanel()"></div>
+    <div id="side-panel" class="side-panel">
+        <div class="side-panel-header">
+            <span class="side-panel-title">Vespid Nest&trade;</span>
+            <button class="side-panel-close" onclick="closeSidePanel()">✕</button>
+        </div>
+        <div class="module-tabs" id="moduleTabs">
+            {% if config.SECURITY_ENABLED %}<button class="module-tab {% if not (request.endpoint and (request.endpoint.startswith('metrics.') or request.endpoint.startswith('inventory.'))) %}active{% endif %}" data-module="security" onclick="switchModule('security')">🔒 Security</button>{% endif %}
+            {% if config.METRICS_ENABLED %}<button class="module-tab {% if request.endpoint and request.endpoint.startswith('metrics.') %}active{% endif %}" data-module="monitoring" onclick="switchModule('monitoring')">🔔 Monitoring</button>{% endif %}
+            <button class="module-tab {% if request.endpoint and request.endpoint.startswith('inventory.') %}active{% endif %}" data-module="inventory" onclick="switchModule('inventory')">🗄️ Inventory</button>
+        </div>
+        {% if current_user.is_authenticated %}
+        <div class="side-panel-search">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="global-search" class="search-input"
+                   placeholder="Search IP, event type, or country…"
+                   autocomplete="off"
+                   onfocus="showSearchDropdown()"
+                   onblur="hideSearchDropdown()"
+                   oninput="quickSearch()"
+                   onkeydown="handleSearchKey(event)">
+            <div class="search-dropdown" id="search-dropdown" style="display:none;"></div>
+        </div>
+        {% endif %}
+        <nav class="side-panel-nav">
+            <a href="{{ url_for('dashboard.index') }}" class="spn-item spn-item-home {% if request.endpoint == 'dashboard.index' %}active{% endif %}" onclick="closeSidePanel()">📊 Dashboard</a>
+            {% if config.SECURITY_ENABLED %}
+            <div class="spn-section" data-module="security">
+                <div class="spn-section-title">📈 Analytics</div>
+                <a href="{{ url_for('dashboard.events') }}" class="spn-item spn-item-sub {% if request.endpoint == 'dashboard.events' %}active{% endif %}" onclick="closeSidePanel()">Events</a>
+                <a href="{{ url_for('dashboard.counters') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('dashboard.counters') %}active{% endif %}" onclick="closeSidePanel()">Counters &amp; Blocks</a>
+                <a href="{{ url_for('dashboard.geo') }}" class="spn-item spn-item-sub {% if request.endpoint == 'dashboard.geo' %}active{% endif %}" onclick="closeSidePanel()">Geo</a>
+                <a href="{{ url_for('dashboard.trends') }}" class="spn-item spn-item-sub {% if request.endpoint == 'dashboard.trends' %}active{% endif %}" onclick="closeSidePanel()">Trends</a>
+            </div>
+            {% if current_user.is_authenticated %}
+            <div class="spn-section" data-module="security">
+                <div class="spn-section-title">🧠 Intelligence</div>
+                <a href="{{ url_for('intel_dashboard.search_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'intel_dashboard.search_page' %}active{% endif %}" onclick="closeSidePanel()">Search</a>
+                <a href="{{ url_for('intel_dashboard.analytics_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'intel_dashboard.analytics_page' %}active{% endif %}" onclick="closeSidePanel()">Threat Metrics</a>
+            </div>
+            {% endif %}
+            {% endif %}
+            {% if config.METRICS_ENABLED %}
+            <div class="spn-section" data-module="monitoring">
+                <div class="spn-section-title">🔔 Monitoring</div>
+                {% if config.ALERTS_ENABLED %}
+                <a href="{{ url_for('alerts.alerts_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.alerts_page' %}active{% endif %}" onclick="closeSidePanel()">
+                    Alerts <span id="alertNavBadge" class="nav-badge" style="display:none;"></span>
+                </a>
+                <a href="{{ url_for('alerts.hosts_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.hosts_page' %}active{% endif %}" onclick="closeSidePanel()">Hosts</a>
+                <a href="{{ url_for('alerts.history_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.history_page' %}active{% endif %}" onclick="closeSidePanel()">History</a>
+                <div class="spn-subsection-title">⚙️ Configuration</div>
+                <a href="{{ url_for('alerts.channels_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.channels_page' %}active{% endif %}" onclick="closeSidePanel()">Channels</a>
+                <a href="{{ url_for('alerts.silences_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.silences_page' %}active{% endif %}" onclick="closeSidePanel()">Silences</a>
+                <a href="{{ url_for('alerts.rules_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.rules_page' %}active{% endif %}" onclick="closeSidePanel()">PromQL Rules</a>
+                <a href="{{ url_for('alerts.groups_page') }}" class="spn-item spn-item-sub {% if request.endpoint in ('alerts.groups_page', 'alerts.new_group_page', 'alerts.group_detail_page', 'alerts.edit_group_page') %}active{% endif %}" onclick="closeSidePanel()">Host Monitoring</a>
+                <a href="{{ url_for('synthetic_checks.list_page') }}" class="spn-item spn-item-sub {% if request.endpoint and (request.endpoint.startswith('synthetic_checks.list') or request.endpoint.startswith('synthetic_checks.alert')) %}active{% endif %}" onclick="closeSidePanel()">Synthetic Checks</a>
+                <a href="{{ url_for('metrics.checks_dashboard') }}" class="spn-item spn-item-sub {% if request.endpoint == 'metrics.checks_dashboard' %}active{% endif %}" onclick="closeSidePanel()">Health Checks</a>
+                {% endif %}
+                <div class="spn-subsection-title" style="border-top:1px solid var(--border-color,#334155);padding-top:0.75rem;margin-top:0.5rem;">📊 Metrics</div>
+                <a href="{{ url_for('metrics.overview') }}" class="spn-item spn-item-sub {% if request.endpoint and (request.endpoint.startswith('metrics.overview') or request.endpoint.startswith('metrics.host_detail')) %}active{% endif %}" onclick="closeSidePanel()">System Metrics</a>
+                <a href="{{ url_for('metrics.query_explorer') }}" class="spn-item spn-item-sub {% if request.endpoint == 'metrics.query_explorer' %}active{% endif %}" onclick="closeSidePanel()">Query Explorer</a>
+            </div>
+            {% endif %}
+            <div class="spn-section" data-module="inventory">
+                <div class="spn-section-title">🗄️ Inventory</div>
+                <a href="{{ url_for('inventory.overview') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('inventory.overview') %}active{% endif %}" onclick="closeSidePanel()">Assets</a>
+                <a href="{{ url_for('inventory.query_page') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('inventory.query') %}active{% endif %}" onclick="closeSidePanel()">CMDB Query</a>
+            </div>
+            {% if config.SECURITY_ENABLED %}
+            <div class="spn-section" data-module="security">
+                <div class="spn-section-title">🔒 Security</div>
+                <a href="{{ url_for('dashboard.blocked_ips') }}" class="spn-item spn-item-sub {% if request.endpoint == 'dashboard.blocked_ips' %}active{% endif %}" onclick="closeSidePanel()">Blocked</a>
+                <a href="{{ url_for('dashboard.feeds') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('dashboard.feeds') %}active{% endif %}" onclick="closeSidePanel()">Feeds</a>
+                <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('fleet_dashboard.') %}active{% endif %}" onclick="closeSidePanel()">Fleet</a>
+                <a href="{{ url_for('host_threats.host_threats_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'host_threats.host_threats_page' %}active{% endif %}" onclick="closeSidePanel()">Host Threats</a>
+                <a href="{{ url_for('dashboard.rules') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('dashboard.rules') %}active{% endif %}" onclick="closeSidePanel()">IP Rules Management</a>
+                <a href="{{ url_for('dashboard.nodes') }}" class="spn-item spn-item-sub {% if request.endpoint in ['dashboard.nodes', 'dashboard.node_detail'] %}active{% endif %}" onclick="closeSidePanel()">Nodes</a>
+                {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                <a href="{{ url_for('admin.rules') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.rules' %}active{% endif %}" onclick="closeSidePanel()">Detection Rules</a>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% if current_user.is_authenticated and current_user.role == 'admin' %}
+            <div class="spn-section" data-module="shared">
+                <div class="spn-section-title">⚙️ Admin</div>
+                <div class="spn-subsection-title">🔐 Access</div>
+                <a href="{{ url_for('admin.users') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.users' %}active{% endif %}" onclick="closeSidePanel()">Users</a>
+                <a href="{{ url_for('admin.keys') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.keys' %}active{% endif %}" onclick="closeSidePanel()">API Keys</a>
+                <div class="spn-subsection-title">🤖 Agents</div>
+                {% if config.SECURITY_ENABLED %}
+                <a href="{{ url_for('config_dashboard.config_page') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('config_dashboard.') %}active{% endif %}" onclick="closeSidePanel()">Config Management</a>
+                <a href="{{ url_for('admin.enrollment') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('admin.enrollment') %}active{% endif %}" onclick="closeSidePanel()">Enrollment</a>
+                {% endif %}
+                <div class="spn-subsection-title">📋 Monitoring</div>
+                <a href="{{ url_for('admin.audit') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.audit' %}active{% endif %}" onclick="closeSidePanel()">Audit Log</a>
+                <a href="{{ url_for('admin.logs') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.logs' %}active{% endif %}" onclick="closeSidePanel()">Server Logs</a>
+                <div class="spn-subsection-title">🔧 Maintenance</div>
+                <a href="{{ url_for('admin.backups') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.backups' %}active{% endif %}" onclick="closeSidePanel()">DB Backups</a>
+                <a href="{{ url_for('intel_dashboard.admin_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'intel_dashboard.admin_page' %}active{% endif %}" onclick="closeSidePanel()">Intel DB</a>
+                <a href="{{ url_for('admin.cleanup') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.cleanup' %}active{% endif %}" onclick="closeSidePanel()">Cleanup</a>
+                <a href="{{ url_for('admin.commands') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.commands' %}active{% endif %}" onclick="closeSidePanel()">Commands</a>
+                <div class="spn-subsection-title">🛠️ Tools</div>
+                {% if config.SECURITY_ENABLED %}
+                <a href="{{ url_for('test_rules.index') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('test_rules.') %}active{% endif %}" onclick="closeSidePanel()">Test Rules</a>
+                {% endif %}
+                <a href="{{ url_for('admin.inventory_admin') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.inventory_admin' %}active{% endif %}" onclick="closeSidePanel()">Inventory</a>
+                <div class="spn-subsection-title">ℹ️ About</div>
+                <a href="{{ url_for('admin.changelog') }}" class="spn-item spn-item-sub {% if request.endpoint == 'admin.changelog' %}active{% endif %}" onclick="closeSidePanel()">What's New</a>
+            </div>
+            {% endif %}
+        </nav>
+        <div class="side-panel-footer">
+            <img class="side-panel-logo" src="{{ url_for('static', filename='vespid_monitor.png') }}" alt="Vespid">
+        </div>
+    </div>
+
+    <nav class="main-nav">
+        <div class="nav-left">
+            <button class="hamburger" onclick="toggleSidePanel()" title="Menu">☰</button>
+            <div class="nav-brand{% if current_user.is_authenticated and not current_user.brand_beam_enabled %} nav-brand-no-beam{% endif %}">
+Vespid Nest&trade;
+                {% if not current_user.is_authenticated or current_user.brand_beam_enabled %}
+                <div class="nav-brand-beam"></div>
+                {% endif %}
+            </div>
+        </div>
+        <div class="nav-center">
+            {% if current_user.is_authenticated %}
+            <div class="nav-stats-pill" id="nav-stats-pill">
+                <a href="{{ url_for('dashboard.index') }}" class="stat-item" title="Dashboard"><span class="stat-icon">🏠</span></a>
+                <span class="stat-sep">|</span>
+                <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="stat-item" title="Fleet Blocks"><span class="stat-val" id="stat-blocks">{{ nav_stats.get('active_blocks', '—') }}</span><span class="stat-label"> fleet blocks</span><span class="stat-icon">🔒</span></a>
+                <span class="stat-sep">|</span>
+                <a href="{{ url_for('dashboard.nodes') }}" class="stat-item" title="Nodes"><span class="stat-val" id="stat-nodes">{{ nav_stats.get('active_nodes', '—') }}/{{ nav_stats.get('total_nodes', '—') }}</span><span class="stat-label"> nodes</span><span class="stat-icon">🖥️</span></a>
+                <span class="stat-sep">|</span>
+                <a href="{{ url_for('dashboard.events') }}" class="stat-item" title="Events"><span class="stat-val" id="stat-events">{{ nav_stats.get('events_24h', '—') }}</span><span class="stat-label"> /24h</span><span class="stat-icon">⚡</span></a>
+                <span class="stat-sep">|</span>
+                <a href="{{ url_for('dashboard.geo') }}" class="stat-item" title="Geography"><span class="stat-val" id="stat-countries">{{ nav_stats.get('countries_24h', '—') }}</span><span class="stat-label"> countries</span><span class="stat-icon">🌍</span></a>
+            </div>
+            {% endif %}
+        </div>
+        <div class="nav-right">
+            <div class="notif-bell-wrap">
+                <button class="notif-bell" onclick="toggleNotifPanel()" title="Notifications">🔔<span class="notif-badge" id="notif-badge" style="display:none;">0</span></button>
+                <div class="notif-panel" id="notif-panel" style="display:none;">
+                    <div class="notif-panel-header"><span class="notif-panel-title">Notifications</span><button class="notif-clear-btn" onclick="clearNotifications()" title="Clear all">Clear</button></div>
+                    <div class="notif-panel-body" id="notif-panel-body"><div class="notif-empty">No notifications yet</div></div>
+                </div>
+            </div>
+            <button class="theme-toggle" onclick="cycleTheme()" title="Switch theme (dark / light / nord)">🌓</button>
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('auth.account') }}" class="nav-username" style="text-decoration: none;">{{ current_user.display_name or current_user.username }} · {{ current_user.role }}</a>
+            <form method="POST" action="{{ url_for('auth.logout') }}" class="nav-logout-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-secondary">Logout</button>
+            </form>
+            {% endif %}
+        </div>
+    </nav>
+
+    <script>
+    /* Core UI functions — defined before content block so child template
+       script errors don't break the hamburger, module tabs, theme toggle, etc. */
+    window.toggleSidePanel = function() {
+        var panel = document.getElementById('side-panel');
+        var overlay = document.getElementById('side-panel-overlay');
+        var isOpen = panel.classList.contains('open');
+        if (isOpen) { closeSidePanel(); }
+        else { panel.classList.add('open'); overlay.classList.add('open'); }
+    };
+    window.closeSidePanel = function() {
+        document.getElementById('side-panel').classList.remove('open');
+        document.getElementById('side-panel-overlay').classList.remove('open');
+    };
+    window.switchModule = function(module) {
+        document.querySelectorAll('.spn-section[data-module]').forEach(function(el) {
+            if (el.dataset.module === 'shared' || el.dataset.module === module) {
+                el.style.display = '';
+            } else {
+                el.style.display = 'none';
+            }
+        });
+        document.querySelectorAll('.module-tab').forEach(function(btn) {
+            btn.classList.toggle('active', btn.dataset.module === module);
+        });
+        localStorage.setItem('vespid_module', module);
+    };
+    window.toggleNotifPanel = function() {
+        var panel = document.getElementById('notif-panel');
+        if (!panel) return;
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            if (window.renderNotifPanel) renderNotifPanel();
+        } else {
+            panel.style.display = 'none';
+        }
+    };
+    var THEMES = {{ all_themes | tojson | safe }};
+    var THEME_LABELS = { dark: '🌓', light: '☀️', nord: '🏔️', vespid: '🐝', 'catppuccin-mocha': '☕', 'catppuccin-latte': '🥛' };
+    function setTheme(theme) {
+        THEMES.forEach(function(t) {
+            document.body.classList.remove('theme-' + t);
+            if (t === 'light') document.body.classList.remove('light-theme');
+        });
+        document.body.classList.add('theme-' + theme);
+        if (theme === 'light') document.body.classList.add('light-theme');
+        localStorage.setItem('vespid-theme', theme);
+        var btn = document.querySelector('.theme-toggle');
+        if (btn) btn.textContent = THEME_LABELS[theme] || '🎨';
+        document.body.dispatchEvent(new CustomEvent('vespid:themechange', { detail: { theme: theme } }));
+    }
+    window.cycleTheme = function() {
+        var current = localStorage.getItem('vespid-theme') || 'dark';
+        var idx = THEMES.indexOf(current);
+        var next = THEMES[(idx + 1) % THEMES.length];
+        setTheme(next);
+        var form = new FormData();
+        form.append('theme', next);
+        var tokenMeta = document.querySelector('meta[name="csrf-token"]');
+        var headers = {};
+        if (tokenMeta) headers['X-CSRFToken'] = tokenMeta.getAttribute('content');
+        fetch('{{ url_for("auth.update_account_theme") }}', { method: 'POST', body: form, headers: headers });
+    };
+    /* Restore saved theme on page load */
+    (function() {
+        var saved;
+        var serverTheme = '{{ current_user.theme if current_user.is_authenticated else "" }}';
+        if (serverTheme) {
+            saved = serverTheme;
+            localStorage.setItem('vespid-theme', serverTheme);
+        } else {
+            saved = localStorage.getItem('vespid-theme') || 'dark';
+        }
+        if (THEMES.indexOf(saved) === -1) saved = 'dark';
+        setTheme(saved);
+    })();
+    /* Node ID → display name lookup map (injected by server) */
+    var _nodeDisplayMap = {{ node_display_map|tojson }};
+
+    function nodeDisplayName(nodeId) {
+        return _nodeDisplayMap[nodeId] || nodeId;
+    }
+
+    /* ── Notification bell state (persisted via localStorage) ── */
+    var _NOTIF_STORAGE_KEY = 'vespid-notifications';
+    var _notifMax = 50;
+    function _loadNotifications() {
+        try {
+            var raw = localStorage.getItem(_NOTIF_STORAGE_KEY);
+            if (raw) return JSON.parse(raw);
+        } catch(e) {}
+        return [];
+    }
+    function _saveNotifications() {
+        try {
+            localStorage.setItem(_NOTIF_STORAGE_KEY, JSON.stringify(_notifications));
+        } catch(e) {}
+    }
+    var _notifications = _loadNotifications();
+    function addNotification(evt) {
+        var notif = {
+            id: evt.event_id || Date.now().toString(),
+            event_type: evt.event_type,
+            source_ip: evt.source_ip || '?',
+            node_id: evt.node_id || '?',
+            action_taken: evt.action_taken || 'OBSERVED',
+            timestamp: evt.timestamp || new Date().toISOString(),
+        };
+        for (var i = 0; i < _notifications.length; i++) {
+            if (_notifications[i].id === notif.id) return;
+        }
+        _notifications.unshift(notif);
+        if (_notifications.length > _notifMax) _notifications.pop();
+        _saveNotifications();
+        updateNotifBadge();
+        renderNotifPanel();
+    }
+    function updateNotifBadge() {
+        var badge = document.getElementById('notif-badge');
+        var count = _notifications.length;
+        if (count > 0) {
+            badge.textContent = count > 99 ? '99+' : count;
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    }
+    function renderNotifPanel() {
+        var body = document.getElementById('notif-panel-body');
+        if (_notifications.length === 0) {
+            body.innerHTML = '<div class="notif-empty">No notifications yet</div>';
+            return;
+        }
+        var html = '';
+        _notifications.forEach(function(n) {
+            var isBlocked = n.action_taken === 'BLOCKED';
+            var cls = isBlocked ? 'notif-item notif-item-danger' : 'notif-item';
+            var icon = isBlocked ? '🚫' : (n.action_taken === 'UNBLOCKED' ? '🔓' : '🔔');
+            var actionLabel = (n.action_taken && n.action_taken !== 'OBSERVED')
+                ? ' <span class="notif-blocked-tag">' + n.action_taken + '</span>'
+                : '';
+            html += '<div class="' + cls + '" onclick="openEventModal(\'' + n.id + '\')" title="View event details">' +
+                '<div class="notif-item-icon">' + icon + '</div>' +
+                '<div class="notif-item-content">' +
+                '<div class="notif-item-title">' + n.event_type + actionLabel +
+                '</div>' +
+                '<div class="notif-item-meta"><code>' + n.source_ip + '</code> → <code>' + nodeDisplayName(n.node_id) + '</code></div>' +
+                '<div class="notif-item-time" data-ts="' + n.timestamp + '">' + timeAgo(n.timestamp) + '</div>' +
+                '</div></div>';
+        });
+        body.innerHTML = html;
+    }
+    function clearNotifications() {
+        _notifications = [];
+        _saveNotifications();
+        updateNotifBadge();
+        renderNotifPanel();
+    }
+    updateNotifBadge();
+    </script>
+
+    <script>
+(function() {
+    var input = document.getElementById('global-search');
+    var dropdown = document.getElementById('search-dropdown');
+    if (!input || !dropdown) return;
+
+    var debounceTimer;
+    var activeIdx = -1;
+
+    function isValidIP(v) {
+        v = v.trim();
+        if (/^(\d{1,3}\.){3}\d{1,3}$/.test(v)) {
+            var parts = v.split('.');
+            return parts.every(function(p) { var n = parseInt(p,10); return n >= 0 && n <= 255; });
+        }
+        if (v.includes(':') && /^[0-9a-f:]+$/i.test(v) && v.length >= 7) {
+            return true;
+        }
+        return false;
+    }
+
+    function classifyQuery(q) {
+        // 2-letter alpha → treat as country code
+        if (/^[a-z]{2}$/i.test(q)) return { type: 'geo_country', value: q.toUpperCase() };
+        return { type: 'event_type', value: q.replace(/-/g, '_').toUpperCase() };
+    }
+
+    window.quickSearch = function() {
+        clearTimeout(debounceTimer);
+        var q = input.value.trim();
+        if (q.length < 1) { dropdown.style.display = 'none'; activeIdx = -1; return; }
+        debounceTimer = setTimeout(function() {
+            fetch('/intel/api/quick-search?q=' + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var results = data.results || [];
+                    if (!results.length) {
+                        dropdown.innerHTML = '<div class="search-dropdown-empty">Press Enter to search events</div>';
+                    } else {
+                        var html = '';
+                        results.forEach(function(r, i) {
+                            var badges = '';
+                            if (r.repeat_offender) badges += '<span class="search-dropdown-badge" style="background:var(--danger);color:#fff;">repeat</span>';
+                            if (r.total_times_blocked > 0) badges += '<span class="search-dropdown-badge" style="background:var(--border);color:var(--text);">' + r.total_times_blocked + ' blocks</span>';
+                            if (r.geo_country) badges += '<span class="search-dropdown-flag">' + r.geo_country + '</span>';
+                            html += '<div class="search-dropdown-item' + (i === activeIdx ? ' active' : '') + '" data-ip="' + r.ip_address + '" onmousedown="selectIP(\'' + r.ip_address + '\')">' +
+                                '<span class="search-dropdown-ip">' + r.ip_address + '</span>' +
+                                '<span class="search-dropdown-meta">' + badges + '</span>' +
+                                '</div>';
+                        });
+                        dropdown.innerHTML = html;
+                    }
+                    dropdown.style.display = 'block';
+                });
+        }, 150);
+    };
+
+    window.showSearchDropdown = function() {
+        if (input.value.trim().length > 0) dropdown.style.display = 'block';
+    };
+
+    window.hideSearchDropdown = function() {
+        setTimeout(function() { dropdown.style.display = 'none'; activeIdx = -1; }, 200);
+    };
+
+    function navigateTo(url) {
+        fetch(url).then(function(r) { return r.text(); }).then(function(html) {
+            var parser = new DOMParser();
+            var doc = parser.parseFromString(html, 'text/html');
+            var newMain = doc.querySelector('#page-content');
+            var curMain = document.querySelector('#page-content');
+            if (newMain && curMain) {
+                curMain.innerHTML = newMain.innerHTML;
+                curMain.className = newMain.className;
+                var titleEl = doc.querySelector('title');
+                if (titleEl) document.title = titleEl.textContent;
+                var scripts = curMain.querySelectorAll('script');
+                scripts.forEach(function(s) {
+                    var newScript = document.createElement('script');
+                    newScript.textContent = s.textContent;
+                    s.replaceWith(newScript);
+                });
+                window.scrollTo(0, 0);
+            }
+        }).catch(function() {});
+        closeSidePanel();
+        input.blur();
+        dropdown.style.display = 'none';
+        activeIdx = -1;
+    }
+
+    window.handleSearchKey = function(e) {
+        var items = dropdown.querySelectorAll('.search-dropdown-item');
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIdx = Math.min(activeIdx + 1, items.length - 1);
+            updateActive(items);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIdx = Math.max(activeIdx - 1, 0);
+            updateActive(items);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (activeIdx >= 0 && items[activeIdx]) {
+                navigateTo('/intel/ip/' + items[activeIdx].getAttribute('data-ip'));
+            } else {
+                var q = input.value.trim();
+                if (!q) return;
+                var url;
+                if (isValidIP(q)) {
+                    url = '/intel/ip/' + q;
+                } else {
+                    var c = classifyQuery(q);
+                    url = '/events?' + c.type + '=' + encodeURIComponent(c.value);
+                }
+                navigateTo(url);
+            }
+        } else if (e.key === 'Escape') {
+            input.blur();
+            dropdown.style.display = 'none';
+            activeIdx = -1;
+        }
+    };
+
+    window.selectIP = function(ip) {
+        navigateTo('/intel/ip/' + ip);
+    };
+
+    function updateActive(items) {
+        items.forEach(function(item, i) {
+            item.classList.toggle('active', i === activeIdx);
+        });
+    }
+
+    // Keyboard shortcut: press / to focus search
+    document.addEventListener('keydown', function(e) {
+        if (e.key === '/' && document.activeElement !== input &&
+            document.activeElement.tagName !== 'INPUT' &&
+            document.activeElement.tagName !== 'TEXTAREA' &&
+            document.activeElement.tagName !== 'SELECT') {
+            e.preventDefault();
+            input.focus();
+        }
+    });
+})();
+
+    // Poll fleet stats for the nav pill
+    (function updateStats() {
+        var pill = document.getElementById('nav-stats-pill');
+        if (!pill) return;
+        var prev = {};
+        function fmt(n, compact) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 10000) return (n / 1000).toFixed(1) + 'k';
+            if (compact && n >= 1000) return (n / 1000).toFixed(1) + 'k';
+            return n.toLocaleString();
+        }
+        function set(id, val) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var compact = (id === 'stat-events' || id === 'stat-blocks');
+            var text = fmt(val, compact);
+            if (prev[id] !== undefined && prev[id] !== val) {
+                el.classList.remove('flash');
+                void el.offsetWidth;
+                el.classList.add('flash');
+            }
+            prev[id] = val;
+            el.textContent = text;
+        }
+        function poll() {
+            fetch('/api/stats').then(function(r) { return r.json(); }).then(function(d) {
+                set('stat-blocks', d.active_blocks);
+                set('stat-events', d.events_24h);
+                set('stat-countries', d.countries_24h);
+                if (d.total_nodes !== undefined) {
+                    var nel = document.getElementById('stat-nodes');
+                    if (nel) {
+                        var prevNodes = prev['stat-nodes'];
+                        var text = fmt(d.active_nodes, false) + '/' + fmt(d.total_nodes, false);
+                        if (prevNodes !== undefined && prevNodes !== d.active_nodes) {
+                            nel.classList.remove('flash');
+                            void nel.offsetWidth;
+                            nel.classList.add('flash');
+                        }
+                        prev['stat-nodes'] = d.active_nodes;
+                        nel.textContent = text;
+                    }
+                }
+            }).catch(function() {});
+        }
+        poll();
+    setInterval(poll, 60000);
+
+    // Format numbers with commas to match server-rendered values
+    var statEls = ['stat-blocks', 'stat-nodes', 'stat-events', 'stat-countries'];
+    statEls.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && el.textContent && el.textContent !== '—') {
+            var n = parseInt(el.textContent.replace(/,/g, ''), 10);
+            if (!isNaN(n)) {
+                var compact = (id === 'stat-events' || id === 'stat-blocks');
+                el.textContent = fmt(n, compact);
+            }
+        }
+    });
+})();
+</script>
+
+    <div id="main-content">
+    <main id="page-content" class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="flash-messages">
+                {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+    </div>
+
+    <!-- Global SSE connection for notifications.
+         Only activates on pages that DON'T have their own SSE feed AND
+         that actually benefit from live event notifications.
+         Pages like Intelligence, Config, Admin don't need live event push.
+         
+         To avoid exhausting the browser's 6-connection-per-origin limit
+         (HTTP/1.1), we use a SharedWorker or BroadcastChannel approach:
+         only ONE tab opens the SSE connection, others listen via
+         BroadcastChannel. If SharedWorker isn't available, we skip SSE
+         on secondary tabs entirely.
+    -->
+    {% if current_user.is_authenticated %}
+    <div id="global-sse-notif" style="display:none;"
+         hx-target="#global-sse-sink" hx-swap="innerHTML">
+    </div>
+    <div id="global-sse-sink" style="display:none;"></div>
+    <script>
+    (function() {
+        var globalEl = document.getElementById('global-sse-notif');
+        if (!globalEl) return;
+
+        /* Pages that have their own dedicated SSE connection don't need global */
+        var others = document.querySelectorAll('[sse-connect]');
+        for (var i = 0; i < others.length; i++) {
+            if (others[i].id !== 'global-sse-notif') {
+                globalEl.dataset.disabled = 'true';
+                return;
+            }
+        }
+
+        /* Use BroadcastChannel to ensure only ONE tab opens the SSE connection.
+           This prevents multiple tabs from each consuming a connection slot. */
+        var SSE_URL = "{{ url_for('api.event_stream') }}";
+        var channel = null;
+        var source = null;
+        var isLeader = false;
+
+        try {
+            channel = new BroadcastChannel('vespid-sse-events');
+        } catch(e) {
+            /* BroadcastChannel not supported — fall back to single-tab SSE */
+            channel = null;
+        }
+
+        function becomeLeader() {
+            if (isLeader) return;
+            isLeader = true;
+            source = new EventSource(SSE_URL, { withCredentials: true });
+            source.addEventListener('new_event', function(e) {
+                /* Forward to other tabs via BroadcastChannel */
+                if (channel) {
+                    try { channel.postMessage({ type: 'sse_event', data: e.data, id: e.lastEventId }); } catch(ex) {}
+                }
+                /* Also handle locally */
+                handleEvent(e.data, e.lastEventId);
+            });
+            source.onerror = function() {
+                /* If connection drops, other tabs can try to take over */
+                if (channel) {
+                    try { channel.postMessage({ type: 'leader_lost' }); } catch(ex) {}
+                }
+            };
+        }
+
+        function handleEvent(data, id) {
+            var sink = document.getElementById('global-sse-sink');
+            if (sink) sink.innerHTML = data;
+            try {
+                var evt = new CustomEvent('htmx:sseMessage', {
+                    bubbles: true,
+                    detail: { data: data, id: id }
+                });
+                document.body.dispatchEvent(evt);
+            } catch(e) {}
+        }
+
+        if (channel) {
+            /* Try to become leader — send a ping, wait briefly for a response */
+            var leaderTimeout = null;
+            channel.postMessage({ type: 'leader_check' });
+
+            leaderTimeout = setTimeout(function() {
+                /* No leader responded — we become leader */
+                becomeLeader();
+                channel.postMessage({ type: 'leader_announce' });
+            }, 200);
+
+            channel.onmessage = function(e) {
+                if (e.data.type === 'leader_announce' || e.data.type === 'leader_alive') {
+                    /* Another tab is leader — don't open SSE */
+                    clearTimeout(leaderTimeout);
+                    isLeader = false;
+                }
+                if (e.data.type === 'leader_check' && isLeader) {
+                    channel.postMessage({ type: 'leader_alive' });
+                }
+                if (e.data.type === 'leader_lost' && !isLeader) {
+                    /* Previous leader dropped — try to take over */
+                    setTimeout(function() {
+                        channel.postMessage({ type: 'leader_check' });
+                        leaderTimeout = setTimeout(function() {
+                            becomeLeader();
+                            channel.postMessage({ type: 'leader_announce' });
+                        }, 200);
+                    }, Math.random() * 500);
+                }
+                if (e.data.type === 'sse_event') {
+                    handleEvent(e.data.data, e.data.id);
+                }
+            };
+        } else {
+            /* No BroadcastChannel — just open SSE directly (single tab) */
+            becomeLeader();
+        }
+
+        /* Clean up on page unload */
+        window.addEventListener('beforeunload', function() {
+            if (source) { source.close(); }
+            if (channel && isLeader) {
+                try { channel.postMessage({ type: 'leader_lost' }); } catch(ex) {}
+            }
+        });
+    })();
+    </script>
+    {% endif %}
+
+    <!-- Event detail modal container -->
+    <div id="event-modal-overlay" class="event-modal-overlay" style="display:none;" onclick="closeEventModal(event)">
+        <div class="event-modal" onclick="event.stopPropagation()">
+            <div class="event-modal-header">
+                <h3 class="event-modal-title">Event Details</h3>
+                <button class="event-modal-close" onclick="closeEventModal()" title="Close (Esc)">&times;</button>
+            </div>
+            <div class="event-modal-body" id="event-modal-body">
+                <div class="event-modal-loading">Loading…</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification container -->
+    <div id="toast-container"></div>
+
+    <!-- Command Palette Overlay -->
+    <div id="cmd-palette-overlay" class="cmd-palette-overlay" style="display:none;" onclick="closeCmdPalette(event)">
+        <div class="cmd-palette" onclick="event.stopPropagation()">
+            <div class="cmd-palette-input-wrap">
+                <span class="cmd-palette-icon">⌘</span>
+                <input type="text" id="cmd-palette-input" class="cmd-palette-input"
+                       placeholder="Type a command or search…"
+                       autocomplete="off" spellcheck="false"
+                       oninput="filterCmdPalette(this.value)">
+                <kbd class="cmd-palette-kbd">ESC</kbd>
+            </div>
+            <div class="cmd-palette-results" id="cmd-palette-results"></div>
+        </div>
+    </div>
+
+    <script>
+    /* ── Relative timestamps ─────────────────────────────────── */
+    function timeAgo(isoStr) {
+        if (!isoStr || isoStr === '—') return isoStr;
+        var d;
+        try {
+            /* Handle both ISO-8601 (with T) and MySQL (with space) formats.
+               MySQL format "2026-05-09 19:06:16" needs to be treated as UTC. */
+            var normalized = isoStr;
+            if (isoStr.indexOf('T') === -1 && isoStr.indexOf(' ') !== -1) {
+                /* MySQL format: "2026-05-09 19:06:16" -> treat as UTC */
+                normalized = isoStr.replace(' ', 'T') + 'Z';
+            }
+            d = new Date(normalized.replace('Z', '+00:00'));
+            if (isNaN(d.getTime())) return isoStr;
+        } catch(e) { return isoStr; }
+        var now = new Date();
+        var diff = Math.floor((now - d) / 1000);
+        if (diff < 0) diff = 0;
+        if (diff < 60) return diff + 's ago';
+        if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+        return Math.floor(diff/86400) + 'd ago';
+    }
+
+    function _setTsText(el, text) {
+        var arrow = el.querySelector('.expand-arrow');
+        if (arrow) {
+            while (arrow.nextSibling) arrow.nextSibling.remove();
+            el.appendChild(document.createTextNode(' ' + text));
+        } else {
+            el.textContent = text;
+        }
+    }
+
+    function applyRelativeTimestamps() {
+        document.querySelectorAll('[data-ts]').forEach(function(el) {
+            var raw = el.getAttribute('data-ts');
+            if (!raw || raw === '—') return;
+            var rel = timeAgo(raw);
+            var d;
+            try {
+                /* Handle both ISO-8601 (with T) and MySQL (with space) formats.
+                   MySQL format "2026-05-09 19:06:16" needs to be treated as UTC. */
+                var normalized = raw;
+                if (raw.indexOf('T') === -1 && raw.indexOf(' ') !== -1) {
+                    /* MySQL format: "2026-05-09 19:06:16" -> treat as UTC */
+                    normalized = raw.replace(' ', 'T') + 'Z';
+                }
+                d = new Date(normalized.replace('Z', '+00:00'));
+                if (isNaN(d.getTime())) { _setTsText(el, raw); return; }
+            } catch(e) { _setTsText(el, raw); return; }
+            var ts = d.toLocaleString(undefined, {
+                month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: false
+            });
+            el.title = raw;
+
+            /* Two-line layout for stat cards with .stat-value-ts */
+            if (el.classList.contains('stat-value-ts')) {
+                var relColor = 'var(--text-muted)';
+                var diff = Math.floor((new Date() - d) / 1000);
+                if (diff < 86400) relColor = 'var(--success)';
+                else if (diff < 604800) relColor = 'var(--warning)';
+                el.innerHTML = '<span>' + ts + '</span>' +
+                    '<small style="display:block;margin-top:0.25rem;font-size:0.75rem;color:' + relColor + ';font-weight:500;">' +
+                    rel + '</small>';
+            } else if (el.classList.contains('ts-pill')) {
+                var diff = Math.floor((new Date() - d) / 1000);
+                var pillClass = '';
+                if (diff < 300) pillClass = 'badge-healthy';
+                else if (diff < 600) pillClass = 'badge-warning';
+                else pillClass = 'badge-danger';
+                el.innerHTML = '<span>' + ts + '</span> ' +
+                    '<span class="badge ' + pillClass + '" style="font-size:0.7rem;padding:0.1rem 0.4rem;">' + rel + '</span>';
+            } else if (el.classList.contains('ts-rel')) {
+                el.textContent = rel;
+            } else {
+                /* Preserve any leading child elements (e.g. expand-arrow ▶ in event history) */
+                _setTsText(el, ts + ' (' + rel + ')');
+            }
+        });
+    }
+
+    /* Run on load and after every HTMX swap */
+    document.addEventListener('DOMContentLoaded', applyRelativeTimestamps);
+    document.body.addEventListener('htmx:afterSwap', applyRelativeTimestamps);
+
+    /* Refresh relative timestamps every 30s */
+    setInterval(applyRelativeTimestamps, 30000);
+
+    /* ── Animated count-up on stat values ────────────────────── */
+    function animateCountUp(el, target) {
+        var start = parseInt(el.textContent) || 0;
+        if (start === target) return;
+        var duration = 600;
+        var startTime = null;
+        function step(ts) {
+            if (!startTime) startTime = ts;
+            var progress = Math.min((ts - startTime) / duration, 1);
+            var eased = 1 - Math.pow(1 - progress, 3);
+            el.textContent = Math.round(start + (target - start) * eased);
+            if (progress < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+    }
+
+    /* Observe stat-value elements for changes */
+    var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+            if (m.target.classList && m.target.classList.contains('stat-value')) {
+                var val = parseInt(m.target.textContent);
+                if (!isNaN(val)) animateCountUp(m.target, val);
+            }
+        });
+    });
+    document.querySelectorAll('.stat-value').forEach(function(el) {
+        observer.observe(el, { childList: true });
+    });
+
+    /* ── HTMX loading indicator ──────────────────────────────── */
+    document.body.addEventListener('htmx:beforeRequest', function(e) {
+        var trigger = e.detail.elt;
+        if (trigger && trigger.tagName === 'BUTTON') {
+            trigger.classList.add('htmx-loading');
+            trigger.dataset.origText = trigger.textContent;
+            trigger.textContent = '⏳';
+        }
+    });
+    document.body.addEventListener('htmx:afterRequest', function(e) {
+        var trigger = e.detail.elt;
+        if (trigger && trigger.tagName === 'BUTTON' && trigger.classList.contains('htmx-loading')) {
+            trigger.classList.remove('htmx-loading');
+            if (trigger.dataset.origText) trigger.textContent = trigger.dataset.origText;
+        }
+    });
+
+    /* ── Keyboard shortcuts ──────────────────────────────────── */
+    var gKeyTimer = null;
+    document.addEventListener('keydown', function(e) {
+        /* Don't trigger when typing in inputs */
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            var searchInput = document.getElementById('source_ip');
+            if (searchInput) { searchInput.focus(); return; }
+            window.location.href = '{{ url_for("dashboard.events") }}';
+        }
+        if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            var statsCards = document.getElementById('stats-cards');
+            if (statsCards) htmx.trigger(statsCards, 'htmx:trigger');
+            else window.location.reload();
+        }
+        /* g + letter navigation (GitHub / Gmail style) */
+        if (e.key === 'g' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (gKeyTimer) clearTimeout(gKeyTimer);
+            gKeyTimer = setTimeout(function() { gKeyTimer = null; }, 1500);
+            return;
+        }
+        if (gKeyTimer) {
+            clearTimeout(gKeyTimer);
+            gKeyTimer = null;
+            var nav = {
+                'd': '{{ url_for("dashboard.index") }}',
+                'e': '{{ url_for("dashboard.events") }}',
+                'b': '{{ url_for("dashboard.blocked_ips") }}',
+                'n': '{{ url_for("dashboard.nodes") }}',
+                'f': '{{ url_for("fleet_dashboard.blocks_page") }}',
+                'i': '{{ url_for("intel_dashboard.search_page") }}',
+            }[e.key];
+            if (nav) { e.preventDefault(); window.location.href = nav; }
+        }
+    });
+    /* ── Toast notifications for SSE events ──────────────────── */
+    function showToast(message, type) {
+        var container = document.getElementById('toast-container');
+        if (!container) return;
+        var toast = document.createElement('div');
+        toast.className = 'toast toast-' + (type || 'info');
+        toast.innerHTML = message;
+        container.appendChild(toast);
+        /* Trigger reflow for animation */
+        toast.offsetHeight;
+        toast.classList.add('toast-visible');
+        setTimeout(function() {
+            toast.classList.remove('toast-visible');
+            toast.classList.add('toast-hiding');
+            setTimeout(function() { toast.remove(); }, 300);
+        }, 5000);
+    }
+
+    /* Listen for SSE events and show toasts + notifications.
+       htmx:sseMessage does not bubble in all cases, so we use event
+       capturing on document to intercept it regardless of which element
+       fires it. */
+    (function() {
+        document.addEventListener('htmx:sseMessage', function(e) {
+            try {
+                var data = e.detail.data || '';
+                var evt;
+                try { evt = JSON.parse(data); } catch(ex) { evt = null; }
+
+                /* If data is HTML (rendered event_row), try to extract info */
+                if (!evt) {
+                    var tmp = document.createElement('tbody');
+                    tmp.innerHTML = data;
+                    var cells = tmp.querySelectorAll('td');
+                    var tr = tmp.querySelector('tr');
+                    if (tr && tr.getAttribute('data-event-id')) {
+                        evt = {
+                            event_id: tr.getAttribute('data-event-id'),
+                            timestamp: (cells[0].querySelector('[data-ts]') || {}).getAttribute('data-ts') || '',
+                            node_id: (cells[1].textContent || '').trim(),
+                            source_ip: (cells[2].textContent || '').trim(),
+                            event_type: (cells[3].querySelector('.badge') || {}).textContent || 'UNKNOWN',
+                            action_taken: 'OBSERVED',
+                        };
+                    } else if (cells.length >= 7) {
+                        evt = {
+                            event_id: (cells[6].getAttribute('title') || '').trim(),
+                            timestamp: (cells[0].querySelector('[data-ts]') || {}).getAttribute('data-ts') || '',
+                            node_id: (cells[1].textContent || '').trim(),
+                            source_ip: (cells[2].textContent || '').trim(),
+                            event_type: (cells[3].querySelector('.badge') || {}).textContent || 'UNKNOWN',
+                            action_taken: 'OBSERVED',
+                        };
+                    } else if (cells.length >= 4) {
+                        evt = {
+                            event_id: e.detail.id || ('sse-' + Date.now() + '-' + Math.random().toString(36).substr(2,6)),
+                            timestamp: (cells[0].querySelector('[data-ts]') || {}).getAttribute('data-ts') || '',
+                            node_id: (cells[1].textContent || '').trim(),
+                            source_ip: (cells[2].textContent || '').trim(),
+                            event_type: (cells[3].querySelector('.badge') || {}).textContent || 'UNKNOWN',
+                            action_taken: 'OBSERVED',
+                        };
+                    }
+                    var actionBadges = cells[3].querySelectorAll('[class*="badge-action-"]');
+                    if (actionBadges.length > 0) {
+                        evt.action_taken = actionBadges[actionBadges.length - 1].textContent.trim();
+                    }
+                    }
+
+                if (evt && evt.event_type) {
+                    var severity = (evt.action_taken === 'BLOCKED') ? 'danger' : 'info';
+                    var msg = '<strong>' + evt.event_type + '</strong> from <code>' +
+                        (evt.source_ip || '?') + '</code> on <code>' +
+                        (evt.node_id || '?') + '</code>';
+                    if (evt.action_taken && evt.action_taken !== 'OBSERVED') {
+                        msg += ' — <strong>' + evt.action_taken + '</strong>';
+                    }
+                    showToast(msg, severity);
+                    addNotification(evt);
+                }
+            } catch(ex) { /* ignore parse errors */ }
+        }, true); /* Use capture phase to catch non-bubbling events */
+    })();
+
+    /* Close panel when clicking outside */
+    document.addEventListener('click', function(e) {
+        var wrap = document.querySelector('.notif-bell-wrap');
+        var panel = document.getElementById('notif-panel');
+        if (wrap && !wrap.contains(e.target) && panel.style.display !== 'none') {
+            panel.style.display = 'none';
+        }
+    });
+
+    /* ── Dynamic badge colors for custom event types ────────── */
+    (function() {
+        /* Simple string hash → integer */
+        function hashStr(s) {
+            var h = 0;
+            for (var i = 0; i < s.length; i++) {
+                h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+            }
+            return Math.abs(h);
+        }
+
+        /* Color palette: 12 distinct hues spread across the wheel,
+           with saturation/lightness tuned for dark backgrounds. */
+        var PALETTE = [
+            {h:0,   s:72, l:65},  /* red */
+            {h:25,  s:80, l:60},  /* orange */
+            {h:45,  s:85, l:58},  /* amber */
+            {h:80,  s:60, l:55},  /* lime */
+            {h:145, s:55, l:55},  /* green */
+            {h:170, s:60, l:55},  /* teal */
+            {h:195, s:70, l:60},  /* cyan */
+            {h:220, s:70, l:65},  /* blue */
+            {h:255, s:60, l:65},  /* indigo */
+            {h:280, s:55, l:65},  /* purple */
+            {h:310, s:60, l:65},  /* pink */
+            {h:340, s:65, l:62},  /* rose */
+        ];
+
+        function colorForType(name) {
+            var entry = PALETTE[hashStr(name) % PALETTE.length];
+            var isLight = typeof window.isLightTheme === 'function' && window.isLightTheme();
+            /* Darken the foreground on light themes so it remains readable against
+               the very light pastel badge background. */
+            var fgL = isLight ? Math.max(25, entry.l - 35) : entry.l;
+            return {
+                fg:  'hsl(' + entry.h + ',' + entry.s + '%,' + fgL + '%)',
+                bg:  'hsla(' + entry.h + ',' + entry.s + '%,' + entry.l + '%,0.15)',
+            };
+        }
+
+        /* Cache of class names we've already injected rules for */
+        var injected = {};
+        var sheet = null;
+
+        function ensureSheet() {
+            if (sheet) return sheet;
+            var style = document.createElement('style');
+            style.setAttribute('data-dynamic-badges', '');
+            document.head.appendChild(style);
+            sheet = style.sheet;
+            return sheet;
+        }
+
+        function applyDynamicBadgeColors() {
+            /* Event type badges */
+            document.querySelectorAll('[class*="badge-event-"]').forEach(function(el) {
+                var cls = Array.from(el.classList).find(function(c) {
+                    return c.startsWith('badge-event-');
+                });
+                if (!cls || injected[cls]) return;
+                /* Check if this class already has explicit styles */
+                var computed = getComputedStyle(el);
+                var bg = computed.backgroundColor;
+                /* rgba(0, 0, 0, 0) means no explicit rule matched */
+                if (bg && bg !== 'rgba(0, 0, 0, 0)') {
+                    injected[cls] = true;
+                    return;
+                }
+                var typeName = cls.replace('badge-event-', '');
+                var c = colorForType(typeName);
+                var s = ensureSheet();
+                s.insertRule('.' + cls + ' { background: ' + c.bg + '; color: ' + c.fg + '; }', s.cssRules.length);
+                injected[cls] = true;
+            });
+
+            /* Action badges */
+            document.querySelectorAll('[class*="badge-action-"]').forEach(function(el) {
+                var cls = Array.from(el.classList).find(function(c) {
+                    return c.startsWith('badge-action-');
+                });
+                if (!cls || injected[cls]) return;
+                var computed = getComputedStyle(el);
+                var bg = computed.backgroundColor;
+                if (bg && bg !== 'rgba(0, 0, 0, 0)') {
+                    injected[cls] = true;
+                    return;
+                }
+                var actionName = cls.replace('badge-action-', '');
+                var c = colorForType(actionName);
+                var s = ensureSheet();
+                s.insertRule('.' + cls + ' { background: ' + c.bg + '; color: ' + c.fg + '; }', s.cssRules.length);
+                injected[cls] = true;
+            });
+
+            /* Country & Organization tags — variation colors */
+            document.querySelectorAll('.timeline-country, .timeline-asn').forEach(function(el) {
+                var val = el.textContent.trim();
+                var key = 'geo:' + val;
+                if (injected[key]) return;
+                var entry = PALETTE[hashStr(val) % PALETTE.length];
+                var c = colorForType(val);
+                el.style.setProperty('--tc-clr', c.fg);
+                el.style.setProperty('--tc-h', entry.h);
+                el.style.setProperty('--tc-s', entry.s);
+                el.style.setProperty('--tc-l', entry.l);
+                injected[key] = true;
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', applyDynamicBadgeColors);
+        document.body.addEventListener('htmx:afterSwap', applyDynamicBadgeColors);
+        document.body.addEventListener('htmx:sseMessage', function() {
+            setTimeout(applyDynamicBadgeColors, 50);
+        });
+
+        /* Expose globally for use by page-specific scripts */
+        window.applyDynamicBadgeColors = applyDynamicBadgeColors;
+    })();
+
+
+    /* ── Command Palette (Ctrl+K / Cmd+K) ─────────────────────── */
+    var CMD_PALETTE_ITEMS = [
+        { label: 'Dashboard', desc: 'Overview with stats and charts', url: '{{ url_for("dashboard.index") }}', icon: '📊' },
+        { label: 'Events', desc: 'Search and filter events', url: '{{ url_for("dashboard.events") }}', icon: '🔍' },
+        { label: 'Blocked IPs', desc: 'View blocked IP addresses', url: '{{ url_for("dashboard.blocked_ips") }}', icon: '🚫' },
+        { label: 'Rules', desc: 'Manage allowlist and blocklist', url: '{{ url_for("dashboard.rules") }}', icon: '📋' },
+        { label: 'Feeds', desc: 'Threat intelligence feeds', url: '{{ url_for("dashboard.feeds") }}', icon: '📡' },
+        { label: 'Nodes', desc: 'Node management', url: '{{ url_for("dashboard.nodes") }}', icon: '🖥️' },
+        { label: 'Geo', desc: 'Geographic breakdown', url: '{{ url_for("dashboard.geo") }}', icon: '🌍' },
+        { label: 'Trends', desc: 'Event trend charts', url: '{{ url_for("dashboard.trends") }}', icon: '📈' },
+        { label: 'Counters &amp; Blocks', desc: 'Rate counters and fleet block overview', url: '{{ url_for("dashboard.counters") }}', icon: '🔢' },
+        { label: 'Fleet Blocks', desc: 'Manage fleet-wide blocklist', url: '{{ url_for("fleet_dashboard.blocks_page") }}', icon: '🌐' },
+        { label: 'Fleet Allow-List', desc: 'Fleet global allow-list management', url: '{{ url_for("fleet_dashboard.allowlist_page") }}', icon: '✅' },
+        { label: 'Fleet Configuration', desc: 'Fleet propagation settings', url: '{{ url_for("fleet_dashboard.config_page") }}', icon: '⚙️' },
+        {% if current_user.is_authenticated and current_user.role == 'admin' %}
+        { label: 'Admin: Users', desc: 'User management', url: '{{ url_for("admin.users") }}', icon: '👤' },
+        { label: 'Admin: API Keys', desc: 'API key management', url: '{{ url_for("admin.keys") }}', icon: '🔑' },
+        { label: 'Admin: Audit Log', desc: 'View audit trail', url: '{{ url_for("admin.audit") }}', icon: '📜' },
+        { label: 'Admin: Config', desc: 'Configuration profile management', url: '{{ url_for("config_dashboard.config_page") }}', icon: '⚙️' },
+        {% endif %}
+        { label: 'Cycle Theme', desc: 'Switch between dark, light, and nord', action: 'cycleTheme', icon: '🎨' },
+        { label: 'Refresh Stats', desc: 'Reload dashboard data', action: 'refreshStats', icon: '🔄' },
+    ];
+
+    var cmdPaletteSelectedIdx = 0;
+
+    function openCmdPalette() {
+        var overlay = document.getElementById('cmd-palette-overlay');
+        overlay.style.display = 'flex';
+        var input = document.getElementById('cmd-palette-input');
+        input.value = '';
+        filterCmdPalette('');
+        setTimeout(function() { input.focus(); }, 50);
+    }
+
+    function closeCmdPalette(e) {
+        if (e && e.target && e.target.id !== 'cmd-palette-overlay') return;
+        document.getElementById('cmd-palette-overlay').style.display = 'none';
+    }
+
+    function filterCmdPalette(query) {
+        var results = document.getElementById('cmd-palette-results');
+        var q = query.toLowerCase().trim();
+        var filtered = CMD_PALETTE_ITEMS.filter(function(item) {
+            if (!q) return true;
+            return item.label.toLowerCase().indexOf(q) !== -1 ||
+                   item.desc.toLowerCase().indexOf(q) !== -1;
+        });
+
+        /* Check if query looks like an IP address — offer to search it */
+        var ipPattern = /^\d{1,3}(\.\d{1,3}){0,3}$/;
+        if (q && ipPattern.test(q)) {
+            filtered.unshift({
+                label: 'Search IP: ' + q,
+                desc: 'Find events from this source IP',
+                url: '{{ url_for("dashboard.events") }}?source_ip=' + encodeURIComponent(q),
+                icon: '🔎',
+            });
+        }
+
+        cmdPaletteSelectedIdx = 0;
+        var html = '';
+        if (filtered.length === 0) {
+            html = '<div class="cmd-palette-empty">No results found</div>';
+        } else {
+            filtered.forEach(function(item, i) {
+                html += '<div class="cmd-palette-item' + (i === 0 ? ' cmd-palette-item-active' : '') + '" ' +
+                    'data-idx="' + i + '" ' +
+                    (item.url ? 'data-url="' + item.url + '"' : '') +
+                    (item.action ? 'data-action="' + item.action + '"' : '') +
+                    ' onmouseenter="cmdPaletteHover(' + i + ')" onclick="cmdPaletteSelect(' + i + ')">' +
+                    '<span class="cmd-palette-item-icon">' + item.icon + '</span>' +
+                    '<span class="cmd-palette-item-text">' +
+                    '<span class="cmd-palette-item-label">' + item.label + '</span>' +
+                    '<span class="cmd-palette-item-desc">' + item.desc + '</span>' +
+                    '</span></div>';
+            });
+        }
+        results.innerHTML = html;
+    }
+
+    function cmdPaletteHover(idx) {
+        cmdPaletteSelectedIdx = idx;
+        var items = document.querySelectorAll('.cmd-palette-item');
+        items.forEach(function(el, i) {
+            el.classList.toggle('cmd-palette-item-active', i === idx);
+        });
+    }
+
+    function cmdPaletteSelect(idx) {
+        var items = document.querySelectorAll('.cmd-palette-item');
+        if (idx < 0 || idx >= items.length) return;
+        var el = items[idx];
+        var url = el.getAttribute('data-url');
+        var action = el.getAttribute('data-action');
+        document.getElementById('cmd-palette-overlay').style.display = 'none';
+        if (url) {
+            window.location.href = url;
+        } else if (action === 'cycleTheme') {
+            cycleTheme();
+        } else if (action === 'refreshStats') {
+            var statsCards = document.getElementById('stats-cards');
+            if (statsCards) htmx.trigger(statsCards, 'htmx:trigger');
+            else window.location.reload();
+        }
+    }
+
+    /* Keyboard navigation inside palette */
+    document.addEventListener('keydown', function(e) {
+        var overlay = document.getElementById('cmd-palette-overlay');
+        if (overlay.style.display === 'none' || overlay.style.display === '') {
+            /* Open palette with Ctrl+K or Cmd+K */
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                openCmdPalette();
+            }
+            return;
+        }
+        /* Palette is open */
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            overlay.style.display = 'none';
+            return;
+        }
+        var items = document.querySelectorAll('.cmd-palette-item');
+        if (items.length === 0) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            cmdPaletteSelectedIdx = (cmdPaletteSelectedIdx + 1) % items.length;
+            cmdPaletteHover(cmdPaletteSelectedIdx);
+            items[cmdPaletteSelectedIdx].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            cmdPaletteSelectedIdx = (cmdPaletteSelectedIdx - 1 + items.length) % items.length;
+            cmdPaletteHover(cmdPaletteSelectedIdx);
+            items[cmdPaletteSelectedIdx].scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            cmdPaletteSelect(cmdPaletteSelectedIdx);
+        }
+    });
+    /* ── Event Detail Modal ───────────────────────────────────── */
+    function openEventModal(eventId) {
+        var overlay = document.getElementById('event-modal-overlay');
+        var body = document.getElementById('event-modal-body');
+        var title = document.querySelector('.event-modal-title');
+        if (title) title.textContent = 'Event Details';
+        body.innerHTML = '<div class="event-modal-loading">Loading…</div>';
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        htmx.ajax('GET', '/api/v1/events/' + eventId + '/detail-modal', {
+            target: body,
+            swap: 'innerHTML'
+        });
+    }
+
+    function closeEventModal(e) {
+        if (e && e.target && e.target.id !== 'event-modal-overlay') return;
+        var overlay = document.getElementById('event-modal-overlay');
+        overlay.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+
+    function copyLogContext(eventId) {
+        fetch('/api/v1/events/' + eventId + '/context-raw')
+            .then(function(r) { return r.text(); })
+            .then(function(text) {
+                if (!navigator.clipboard) {
+                    fallbackCopy(text);
+                    return;
+                }
+                navigator.clipboard.writeText(text).then(function() {
+                    showToast('Log context copied to clipboard', 'info');
+                }).catch(function() {
+                    fallbackCopy(text);
+                });
+            })
+            .catch(function() {
+                showToast('Failed to copy log context', 'danger');
+            });
+    }
+
+    function fallbackCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+            document.execCommand('copy');
+            showToast('Log context copied to clipboard', 'info');
+        } catch (e) {
+            showToast('Failed to copy log context', 'danger');
+        }
+        document.body.removeChild(ta);
+    }
+
+    function copyIpToClipboard(ip, el) {
+        navigator.clipboard.writeText(ip).then(function() {
+            var orig = el.textContent;
+            el.textContent = 'Copied!';
+            el.style.color = 'var(--success)';
+            setTimeout(function() {
+                el.textContent = orig;
+                el.style.color = '';
+            }, 1200);
+        }).catch(function() {
+            /* fallback: select the text */
+            var range = document.createRange();
+            range.selectNode(el);
+            var sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+        });
+    }
+
+    function openIpIntelModal(ipAddress) {
+        var overlay = document.getElementById('event-modal-overlay');
+        var body = document.getElementById('event-modal-body');
+        var title = document.querySelector('.event-modal-title');
+        if (title) title.textContent = 'IP Intelligence — ' + ipAddress;
+        body.innerHTML = '<div class="event-modal-loading">Loading…</div>';
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        htmx.ajax('GET', '/api/v1/ip/' + encodeURIComponent(ipAddress) + '/intel-modal', {
+            target: body,
+            swap: 'innerHTML'
+        });
+    }
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            var overlay = document.getElementById('event-modal-overlay');
+            if (overlay && overlay.style.display !== 'none') {
+                closeEventModal();
+                e.preventDefault();
+            }
+        }
+    });
+
+    (function() {
+        var saved = localStorage.getItem('vespid_module');
+        var mod = 'security';
+        var detected = false;
+        {% if request.endpoint and request.endpoint.startswith('metrics.') %}
+        mod = 'monitoring'; detected = true;
+        {% endif %}
+        {% if request.endpoint and request.endpoint.startswith('fleet_dashboard.') %}
+        mod = 'security'; detected = true;
+        {% endif %}
+        {% if request.endpoint and request.endpoint.startswith('inventory.') %}
+        mod = 'inventory'; detected = true;
+        {% endif %}
+        if (!detected && saved) mod = saved;
+        switchModule(mod);
+    })();
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') closeSidePanel();
+    });
+
+    /* ── Quick IP lookup modal (Ctrl+Shift+I) ───────────────── */
+    function openQuickIpLookup() {
+        var overlay = document.getElementById('event-modal-overlay');
+        var body = document.getElementById('event-modal-body');
+        var title = document.querySelector('.event-modal-title');
+        if (title) title.textContent = 'Quick IP Lookup';
+        body.innerHTML = '<div style="padding:1rem;">' +
+            '<input type="text" id="quick-ip-input" placeholder="Paste or type IP address…" ' +
+            'style="width:100%;box-sizing:border-box;padding:0.6rem 0.75rem;' +
+            'background:var(--bg-input);border:1px solid var(--border);border-radius:6px;' +
+            'color:var(--text);font-family:monospace;font-size:1.1rem;" ' +
+            'autofocus onkeydown="if(event.key===\'Enter\'){var ip=document.getElementById(\'quick-ip-input\').value.trim();if(ip)openIpIntelModal(ip);}" ' +
+            'oninput="quickIpLookupSearch()">' +
+            '<div class="search-dropdown" id="quick-ip-dropdown" style="display:none;position:relative;margin-top:4px;"></div>' +
+            '<p style="margin-top:0.5rem;color:var(--text-muted);font-size:0.8rem;">' +
+            'Paste an IP and press Enter to see intelligence</p></div>';
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        setTimeout(function() {
+            var inp = document.getElementById('quick-ip-input');
+            if (inp) inp.focus();
+        }, 100);
+    }
+
+    var quickIpSearchTimer;
+    window.quickIpLookupSearch = function() {
+        clearTimeout(quickIpSearchTimer);
+        var inp = document.getElementById('quick-ip-input');
+        var dd = document.getElementById('quick-ip-dropdown');
+        if (!inp || !dd) return;
+        var q = inp.value.trim();
+        if (q.length < 1) { dd.style.display = 'none'; return; }
+        quickIpSearchTimer = setTimeout(function() {
+            fetch('/intel/api/quick-search?q=' + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var results = data.results || [];
+                    if (!results.length) { dd.style.display = 'none'; return; }
+                    var html = '';
+                    results.forEach(function(r) {
+                        var badges = '';
+                        if (r.repeat_offender) badges += '<span class="search-dropdown-badge" style="background:var(--danger);color:#fff;">repeat</span>';
+                        if (r.total_times_blocked > 0) badges += '<span class="search-dropdown-badge" style="background:var(--border);color:var(--text);">' + r.total_times_blocked + ' blocks</span>';
+                        if (r.geo_country) badges += '<span class="search-dropdown-flag">' + r.geo_country + '</span>';
+                        html += '<div class="search-dropdown-item" data-ip="' + r.ip_address + '" onmousedown="document.getElementById(\'quick-ip-input\').value=\'' + r.ip_address + '\';openIpIntelModal(\'' + r.ip_address + '\');">' +
+                            '<span class="search-dropdown-ip">' + r.ip_address + '</span>' +
+                            '<span class="search-dropdown-meta">' + badges + '</span>' +
+                            '</div>';
+                    });
+                    dd.innerHTML = html;
+                    dd.style.display = 'block';
+                });
+        }, 200);
+    };
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') {
+            e.preventDefault();
+            openQuickIpLookup();
+        }
+    });
+    </script>
+    {% if current_user.is_authenticated and not current_user.onboarding_dismissed %}
+    <div id="onboarding-overlay" class="onboarding-overlay">
+        <div class="onboarding-modal" onclick="event.stopPropagation()">
+            <div class="onboarding-header">
+                <span class="onboarding-logo">🛡️</span>
+                <h2>Welcome to Vespid Nest</h2>
+                <p class="onboarding-subtitle">Here are a few things to help you get started.</p>
+            </div>
+            <div class="onboarding-body">
+                <div class="onboarding-section">
+                    <h3>⌨️ Keyboard Shortcuts</h3>
+                    <table class="onboarding-kbd-table">
+                        <tr><td><kbd>Ctrl</kbd> + <kbd>K</kbd></td><td>Command palette (search & navigate)</td></tr>
+                        <tr><td><kbd>/</kbd></td><td>Focus search or jump to events</td></tr>
+                        <tr><td><kbd>Esc</kbd></td><td>Close any panel or modal</td></tr>
+                        <tr><td><kbd>r</kbd></td><td>Refresh dashboard stats</td></tr>
+                        <tr><td><kbd>g</kbd> + <kbd>d</kbd></td><td>Go to Dashboard</td></tr>
+                        <tr><td><kbd>g</kbd> + <kbd>e</kbd></td><td>Go to Events</td></tr>
+                        <tr><td><kbd>g</kbd> + <kbd>b</kbd></td><td>Go to Blocked IPs</td></tr>
+                        <tr><td><kbd>g</kbd> + <kbd>n</kbd></td><td>Go to Nodes</td></tr>
+                        <tr><td><kbd>g</kbd> + <kbd>f</kbd></td><td>Go to Fleet</td></tr>
+                        <tr><td><kbd>g</kbd> + <kbd>i</kbd></td><td>Go to Intel Search</td></tr>
+                        <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd></td><td>Quick IP lookup</td></tr>
+                    </table>
+                </div>
+                <div class="onboarding-section">
+                    <h3>💡 Tips</h3>
+                    <ul>
+                        <li>Use the <strong>hamburger menu</strong> (☰) to access all sections.</li>
+                        <li>The <strong>notification bell</strong> (🔔) alerts you to fleet block activity.</li>
+                        <li>Hover over table rows for quick actions like IP intel lookups.</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="onboarding-footer">
+                <button class="btn btn-primary onboarding-dismiss-btn" onclick="dismissOnboarding()">Got it</button>
+                <label class="onboarding-dismiss-label"><input type="checkbox" id="onboarding-persist" checked> Don't show again</label>
+            </div>
+        </div>
+    </div>
+    <style>
+    .onboarding-overlay {
+        position: fixed; inset: 0; z-index: 9999;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(4px);
+        display: flex; align-items: center; justify-content: center;
+        animation: fadeIn 0.2s ease;
+    }
+    .onboarding-modal {
+        background: var(--bg-card, #1a1d23);
+        border: 1px solid var(--border, #2d3139);
+        border-radius: 12px; padding: 2rem 2.5rem;
+        max-width: 580px; width: 90vw; max-height: 85vh; overflow-y: auto;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        animation: modalSlide 0.25s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes modalSlide { from { opacity: 0; transform: translateY(20px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .onboarding-header { text-align: center; margin-bottom: 1.5rem; }
+    .onboarding-logo { font-size: 2.5rem; display: block; margin-bottom: 0.5rem; }
+    .onboarding-header h2 { margin: 0 0 0.25rem; font-size: 1.35rem; color: var(--text, #e6edf3); }
+    .onboarding-subtitle { margin: 0; font-size: 0.85rem; color: var(--text-muted, #7d8590); }
+    .onboarding-body { margin-bottom: 1.5rem; }
+    .onboarding-section { margin-bottom: 1.25rem; }
+    .onboarding-section h3 { font-size: 0.95rem; margin: 0 0 0.5rem; color: var(--accent, #58a6ff); }
+    .onboarding-section ul { margin: 0; padding-left: 1.2rem; }
+    .onboarding-section li { font-size: 0.82rem; color: var(--text-muted, #7d8590); margin-bottom: 0.25rem; line-height: 1.5; }
+    .onboarding-kbd-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .onboarding-kbd-table td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.05)); color: var(--text-muted, #7d8590); }
+    .onboarding-kbd-table td:first-child { white-space: nowrap; padding-right: 1rem; color: var(--text, #e6edf3); }
+    .onboarding-kbd-table tr:last-child td { border-bottom: none; }
+    .onboarding-footer { display: flex; align-items: center; gap: 1rem; }
+    .onboarding-dismiss-btn { padding: 0.5rem 1.5rem; font-size: 0.9rem; }
+    .onboarding-dismiss-label { font-size: 0.78rem; color: var(--text-muted, #7d8590); cursor: pointer; display: flex; align-items: center; gap: 0.35rem; }
+    </style>
+    <script>
+    function dismissOnboarding() {
+        var overlay = document.getElementById('onboarding-overlay');
+        if (!overlay) return;
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 0.15s ease';
+        setTimeout(function() { overlay.remove(); }, 150);
+        var persist = document.getElementById('onboarding-persist');
+        if (persist && persist.checked) {
+            fetch('{{ url_for("auth.dismiss_onboarding") }}', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content') }
+            });
+        }
+    }
+    </script>
+
+    <!-- Alert badge polling -->
+    <script>
+    (function() {
+        function updateAlertBadge() {
+            fetch('/alerts/api/active/count')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    var count = d.count || 0;
+                    var badge = document.getElementById('alertNavBadge');
+                    if (!badge) return;
+                    if (count > 0) {
+                        badge.textContent = count > 99 ? '99+' : count;
+                        badge.style.display = 'inline-flex';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                })
+                .catch(function() {});
+        }
+        updateAlertBadge();
+        setInterval(updateAlertBadge, 30000);
+    })();
+    </script>
+    {% endif %}
+</body>
+</html>

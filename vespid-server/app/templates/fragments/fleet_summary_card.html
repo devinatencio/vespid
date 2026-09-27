@@ -1,0 +1,13 @@
+<a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="stat-card stat-card-link {% if stats.propagation_paused %}{% endif %}" style="{% if stats.propagation_paused %}border-color: var(--warning);{% endif %}">
+    <div class="stat-label">
+        🌐 Fleet Blocks
+        {% if stats.propagation_paused %}
+        <span class="badge badge-offline" style="margin-left:0.5rem; font-size:0.6rem;">PAUSED</span>
+        {% endif %}
+    </div>
+    <div class="stat-value">{{ stats.active_blocks }}</div>
+    <div style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-muted);">
+        <span>{{ stats.blocks_24h }} propagated (24h)</span>
+        · <span>Threshold: {{ stats.corroboration_threshold }}</span>
+    </div>
+</a>

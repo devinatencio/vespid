@@ -1,0 +1,193 @@
+# CMS / E-Commerce Probing Detection Pack
+# Detects attackers fingerprinting web applications for known CMS platforms,
+# shopping carts, and frameworks.  Multiple probes in quick succession
+# indicate automated reconnaissance (scanner / bot).
+#
+# Works with Apache, NGINX (both via parser "apache") and HAProxy ("haproxy").
+# Each rule has two regex variants — one for Combined Log Format, one for
+# the HAProxy HTTP log format.
+---
+pack_name: cms-probes
+display_name: CMS / E-Commerce Probing Pack
+icon: "🔍"
+description: >
+  Detect automated reconnaissance of CMS platforms, shopping carts, and
+  web frameworks: WooCommerce, Magento, WordPress JSON API, Drupal,
+  Joomla, Laravel, Django, and Shopify.  Low thresholds catch scanners
+  before they find exploitable endpoints.
+prerequisite: >
+  Requires Apache / NGINX access logs with parser "apache" or HAProxy
+  logs with parser "haproxy" configured in log_sources.
+
+rules:
+  # ---------------------------------------------------------------------------
+  # WooCommerce
+  # ---------------------------------------------------------------------------
+  - name: cms_woo_probe
+    event_type: CMS_WOOCOMMERCE_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|addons|product\/|shop\/|account\/).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: cms_woo_probe_haproxy
+    event_type: CMS_WOOCOMMERCE_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|addons|product\/|shop\/|account\/)'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # Magento (Adobe Commerce)
+  # ---------------------------------------------------------------------------
+  - name: cms_magento_probe
+    event_type: CMS_MAGENTO_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+\/(?:rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: cms_magento_probe_haproxy
+    event_type: CMS_MAGENTO_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST)\s+\/(?:rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version)'
+    log_sources: ["haproxy"]
+    max_attempts: 2
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # WordPress JSON API (beyond wp-login / wp-admin in other packs)
+  # ---------------------------------------------------------------------------
+  - name: cms_wp_api_probe
+    event_type: CMS_WORDPRESS_API_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+\/(?:wp-json\/(?:wp\/v2|oembed|jetpack)\/|xmlrpc\.php|wp-comments-post|wp-cron\.php|wp-content\/uploads\/).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 120
+
+  - name: cms_wp_api_probe_haproxy
+    event_type: CMS_WORDPRESS_API_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST)\s+\/(?:wp-json\/(?:wp\/v2|oembed|jetpack)\/|xmlrpc\.php|wp-comments-post|wp-cron\.php|wp-content\/uploads\/)'
+    log_sources: ["haproxy"]
+    max_attempts: 5
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # Drupal
+  # ---------------------------------------------------------------------------
+  - name: cms_drupal_probe
+    event_type: CMS_DRUPAL_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+\/(?:user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|CHANGELOG\.txt|README\.txt|update\.php|autoload\.php).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: cms_drupal_probe_haproxy
+    event_type: CMS_DRUPAL_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST)\s+\/(?:user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|CHANGELOG\.txt|README\.txt|update\.php|autoload\.php)'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # Joomla
+  # ---------------------------------------------------------------------------
+  - name: cms_joomla_probe
+    event_type: CMS_JOOMLA_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+\/(?:administrator\/|components\/|modules\/|plugins\/|templates\/|index\.php\?option=com_|bin\/joomla).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: cms_joomla_probe_haproxy
+    event_type: CMS_JOOMLA_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST)\s+\/(?:administrator\/|components\/|modules\/|plugins\/|templates\/|index\.php\?option=com_|bin\/joomla)'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # Laravel / PHP Framework
+  # ---------------------------------------------------------------------------
+  - name: cms_laravel_probe
+    event_type: CMS_LARAVEL_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+\/(?:_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|storage\/logs\/|config\/app\.php|composer\.json|symfonyRequirements\.php|server\.php).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: cms_laravel_probe_haproxy
+    event_type: CMS_LARAVEL_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST)\s+\/(?:_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|storage\/logs\/|config\/app\.php|composer\.json|symfonyRequirements\.php|server\.php)'
+    log_sources: ["haproxy"]
+    max_attempts: 2
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # Django / Python Framework
+  # ---------------------------------------------------------------------------
+  - name: cms_django_probe
+    event_type: CMS_DJANGO_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+\/(?:admin(?:[\/\s\?\.#&]|$)|api\/(?!v1\/)|graphql(?:[\/\s\?\.#&]|$)|static\/admin\/|media\/|login\/\?next=).*"\s[45]\d{2}\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: cms_django_probe_haproxy
+    event_type: CMS_DJANGO_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+[45]\d{2}\s.*"(?:GET|POST)\s+\/(?:admin(?:[\/\s\?\.#&]|$)|api\/(?!v1\/)|graphql(?:[\/\s\?\.#&]|$)|static\/admin\/|media\/|login\/\?next=)'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # Shopify
+  # ---------------------------------------------------------------------------
+  - name: cms_shopify_probe
+    event_type: CMS_SHOPIFY_PROBE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+\/(?:admin(?:[\/\s\?\.#&]|$)|products\/|collections\/|cart\.js|checkouts\/|account\/login|services\/|api\/(?!v1\/)).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: cms_shopify_probe_haproxy
+    event_type: CMS_SHOPIFY_PROBE
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST)\s+\/(?:admin(?:[\/\s\?\.#&]|$)|products\/|collections\/|cart\.js|checkouts\/|account\/login|services\/|api\/(?!v1\/))'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 120
+
+  # ---------------------------------------------------------------------------
+  # Multi-platform scanner — catches any IP probing multiple CMS/application
+  # paths in a short window, regardless of which specific platforms they try.
+  # The combined regex covers all paths from the per-platform rules above.
+  # A low threshold (3 in 120s) catches multi-platform reconnaissance while
+  # ignoring random one-off probes.
+  # ---------------------------------------------------------------------------
+  - name: cms_multi_probe
+    event_type: CMS_MULTI_SCANNER
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|product\/|shop\/|account\/|rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version|xmlrpc\.php|wp-comments-post|wp-cron\.php|user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|administrator\/|components\/|modules\/|plugins\/|_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|admin(?:[\/\s\?\.#&]|$)|api\/(?!v1\/)|products\/|collections\/|cart\.js|checkouts\/|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: cms_multi_probe_haproxy
+    event_type: CMS_MULTI_SCANNER
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|product\/|shop\/|account\/|rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version|xmlrpc\.php|wp-comments-post|wp-cron\.php|user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|administrator\/|components\/|modules\/|plugins\/|_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|admin(?:[\/\s\?\.#&]|$)|api\/(?!v1\/)|products\/|collections\/|cart\.js|checkouts\/|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml)'
+    log_sources: ["haproxy"]
+    max_attempts: 3
+    window_seconds: 120
+
+  # Kept as-is for backward compatibility and separate attribution
+  - name: cms_generic_scanner
+    event_type: CMS_GENERIC_SCANNER
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml).*"\s\d{3}\s'
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 300
+
+  - name: cms_generic_scanner_haproxy
+    event_type: CMS_GENERIC_SCANNER
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml)'
+    log_sources: ["haproxy"]
+    max_attempts: 5
+    window_seconds: 300

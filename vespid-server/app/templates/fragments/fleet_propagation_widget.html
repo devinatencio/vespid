@@ -1,0 +1,59 @@
+{% if fleet_propagations and fleet_propagations.propagations %}
+<div class="card">
+    <div class="card-title" style="display:flex; align-items:center; justify-content:space-between;">
+        <span>Fleet Propagation</span>
+        <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="btn btn-sm" style="font-size:0.75rem;">View All</a>
+    </div>
+    <table style="width:100%; font-size:0.85rem; border-collapse:collapse;">
+        <thead>
+            <tr style="border-bottom:1px solid var(--border-color, rgba(255,255,255,0.08));">
+                <th style="padding:0.4rem 0.5rem; text-align:left; font-weight:500; color:var(--text-muted);">IP</th>
+                <th style="padding:0.4rem 0.5rem; text-align:left; font-weight:500; color:var(--text-muted);">Detection</th>
+                <th style="padding:0.4rem 0.5rem; text-align:left; font-weight:500; color:var(--text-muted);">Nodes</th>
+                <th style="padding:0.4rem 0.5rem; text-align:left; font-weight:500; color:var(--text-muted);">Status</th>
+                <th style="padding:0.4rem 0.5rem; text-align:right; font-weight:500; color:var(--text-muted);">Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in fleet_propagations.propagations %}
+            <tr style="border-bottom:1px solid var(--border-color, rgba(255,255,255,0.04));">
+                <td style="padding:0.4rem 0.5rem;">
+                    <code class="ip-copy" onclick="copyIpToClipboard('{{ p.source_ip }}', this)" title="Click to copy">{{ p.source_ip }}</code>
+                </td>
+                <td style="padding:0.4rem 0.5rem;">
+                    <span class="badge badge-event-{{ p.event_type|lower|replace('_','-') }}" style="font-size:0.7rem;">{{ p.event_type }}</span>
+                    {% if p.detection_rule %}
+                    <span class="text-muted" style="font-size:0.75rem; margin-left:0.25rem;">{{ p.detection_rule }}</span>
+                    {% endif %}
+                </td>
+                <td style="padding:0.4rem 0.5rem;">
+                    {% set expected = fleet_propagations.total_nodes - 1 %}
+                    {% set confirmed = p.confirmed_nodes %}
+                    {% if expected <= 0 %}
+                    <span class="text-muted" style="font-weight:500;">--</span>
+                    {% else %}
+                    {% set pct = ((confirmed / expected * 100) | round | int) %}
+                    <span style="font-weight:500; {% if confirmed >= expected %}color:var(--success, #22c55e);{% elif confirmed > 0 %}color:var(--warning, #f59e0b);{% else %}color:var(--text-muted);{% endif %}">{{ confirmed }}/{{ expected }}</span>
+                    <span class="text-muted" style="font-size:0.7rem; margin-left:0.25rem;">{% if confirmed >= expected %}&#10003;{% elif confirmed > 0 %}{{ pct }}%{% endif %}</span>
+                    {% endif %}
+                </td>
+                <td style="padding:0.4rem 0.5rem;">
+                    {% if p.status == 'active' %}
+                    <span class="badge badge-active" style="font-size:0.7rem;">active</span>
+                    {% elif p.status == 'pending' %}
+                    <span class="badge badge-offline" style="font-size:0.7rem;">pending</span>
+                    {% elif p.status == 'expired' %}
+                    <span class="badge badge-degraded" style="font-size:0.7rem;">expired</span>
+                    {% else %}
+                    <span class="badge" style="font-size:0.7rem;">{{ p.status }}</span>
+                    {% endif %}
+                </td>
+                <td style="padding:0.4rem 0.5rem; text-align:right;">
+                    <span class="text-muted" style="font-size:0.8rem;" data-ts="{{ p.approved_at }}">{{ p.approved_at }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}

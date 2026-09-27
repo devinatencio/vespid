@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Fleet Allow-List — Vespid Server{% endblock %}
+{% block content %}
+<div class="admin-nav" style="display:flex; gap:0.5rem; margin-bottom:1.5rem;">
+    <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.blocks_page' %}btn{% else %}btn-secondary{% endif %}">Blocks</a>
+    <a href="{{ url_for('fleet_dashboard.allowlist_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.allowlist_page' %}btn{% else %}btn-secondary{% endif %}">Allow-List</a>
+    <a href="{{ url_for('fleet_dashboard.config_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.config_page' %}btn{% else %}btn-secondary{% endif %}">Configuration</a>
+</div>
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem;">
+    <h1 class="page-title" style="margin-bottom:0;">✅ Fleet Allow-List</h1>
+    <div id="pause-toggle">
+        {% include "fragments/fleet_pause_toggle.html" %}
+    </div>
+</div>
+
+<!-- Add allowlist entry form -->
+{% if current_user.is_authenticated and current_user.role == 'admin' %}
+<div class="card">
+    <h2 class="card-title">Add Allow-List Entry</h2>
+    <form class="form-inline"
+          hx-post="{{ url_for('fleet_dashboard.add_allowlist') }}"
+          hx-target="#allowlist-table"
+          hx-swap="innerHTML">
+        <div class="form-group">
+            <label for="entry">Entry (IP/CIDR)</label>
+            <input type="text" id="entry" name="entry" placeholder="10.0.0.0/8 or 192.168.1.1" required>
+        </div>
+        <div class="form-group">
+            <label for="reason">Reason</label>
+            <input type="text" id="reason" name="reason" placeholder="Critical infrastructure">
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn btn-success">Add Entry</button>
+        </div>
+    </form>
+</div>
+{% endif %}
+
+<!-- Allowlist table -->
+<div class="card">
+    <h2 class="card-title">Allow-List Entries ({{ entries|length }})</h2>
+    <div id="allowlist-table">
+        {% include "fragments/fleet_allowlist_table.html" %}
+    </div>
+</div>
+{% endblock %}

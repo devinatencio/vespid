@@ -1,0 +1,830 @@
+{% extends "base.html" %}
+{% block title %}{{ host.hostname }} — Metrics{% endblock %}
+{% block content %}
+<div class="page-container">
+    <div class="content-card">
+        <div class="flex-between mb-4">
+            <div>
+                <h2 style="margin-bottom:0.1rem">🖥️ {{ host.hostname }}</h2>
+                <span class="muted small" style="font-family:monospace">{{ agent_id }}</span>
+            </div>
+            <div style="display:flex;gap:0.5rem;align-items:center">
+                <div class="time-pills">
+                    <button class="tp-btn active" data-range="1h">1h</button>
+                    <button class="tp-btn" data-range="6h">6h</button>
+                    <button class="tp-btn" data-range="24h">24h</button>
+                    <button class="tp-btn" data-range="3d">3d</button>
+                    <button class="tp-btn" data-range="7d">7d</button>
+                </div>
+                <a href="{{ url_for('metrics.overview') }}" class="btn-back">&larr; All Hosts</a>
+            </div>
+        </div>
+
+        <div class="gauge-row" id="gauges">
+            <div class="gauge-card" data-metric="cpu">
+                <div class="bar-gauge" id="bar-cpu">
+                    <div class="bar-fill" id="bar-cpu-fill"></div>
+                    <div class="bar-center"><span id="gauge-cpu">—</span></div>
+                </div>
+                <canvas class="gauge-sparkline" id="spark-cpu" width="100" height="20"></canvas>
+                <div class="gauge-label">CPU <span class="gauge-delta" id="delta-cpu"></span></div>
+                <div class="gauge-fleet" id="fleet-cpu"></div>
+            </div>
+            <div class="gauge-card" data-metric="mem">
+                <div class="bar-gauge" id="bar-mem">
+                    <div class="bar-fill" id="bar-mem-fill"></div>
+                    <div class="bar-center"><span id="gauge-mem">—</span></div>
+                </div>
+                <canvas class="gauge-sparkline" id="spark-mem" width="100" height="20"></canvas>
+                <div class="gauge-label">Memory <span class="gauge-delta" id="delta-mem"></span></div>
+                <div class="gauge-fleet" id="fleet-mem"></div>
+            </div>
+            <div class="gauge-card" data-metric="swap">
+                <div class="bar-gauge" id="bar-swap">
+                    <div class="bar-fill" id="bar-swap-fill"></div>
+                    <div class="bar-center"><span id="gauge-swap">—</span></div>
+                </div>
+                <canvas class="gauge-sparkline" id="spark-swap" width="100" height="20"></canvas>
+                <div class="gauge-label">Swap <span class="gauge-delta" id="delta-swap"></span></div>
+                <div class="gauge-fleet" id="fleet-swap"></div>
+            </div>
+            <div class="gauge-card" data-metric="disk">
+                <div class="bar-gauge" id="bar-disk">
+                    <div class="bar-fill" id="bar-disk-fill"></div>
+                    <div class="bar-center"><span id="gauge-disk">—</span></div>
+                </div>
+                <canvas class="gauge-sparkline" id="spark-disk" width="100" height="20"></canvas>
+                <div class="gauge-label">Disk <span class="gauge-delta" id="delta-disk"></span></div>
+                <div class="gauge-fleet" id="fleet-disk"></div>
+            </div>
+            <div class="gauge-card" data-metric="netRx">
+                <div class="gauge-value" id="gauge-net-rx">—</div>
+                <canvas class="gauge-sparkline" id="spark-netRx" width="100" height="20"></canvas>
+                <div class="gauge-label">Net RX <span class="gauge-delta" id="delta-netRx"></span></div>
+                <div class="gauge-fleet" id="fleet-netRx"></div>
+            </div>
+            <div class="gauge-card" data-metric="netTx">
+                <div class="gauge-value" id="gauge-net-tx">—</div>
+                <canvas class="gauge-sparkline" id="spark-netTx" width="100" height="20"></canvas>
+                <div class="gauge-label">Net TX <span class="gauge-delta" id="delta-netTx"></span></div>
+                <div class="gauge-fleet" id="fleet-netTx"></div>
+            </div>
+        </div>
+
+        <div class="row-panels">
+            <div class="process-panel">
+                <div class="chart-header">Processes</div>
+                <div class="process-grid" id="process-grid">
+                    <span class="text-muted">Loading...</span>
+                </div>
+            </div>
+            <div class="services-panel" id="services-panel">
+                <div class="chart-header">Services</div>
+                <div class="services-grid" id="services-grid">
+                    <span class="text-muted">Loading...</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="chart-grid">
+            <div class="chart-panel">
+                <div class="chart-header">CPU Usage</div>
+                <div class="chart-body"><canvas id="chart-cpu"></canvas></div>
+            </div>
+            <div class="chart-panel">
+                <div class="chart-header">Memory Usage</div>
+                <div class="chart-body"><canvas id="chart-mem"></canvas></div>
+            </div>
+            <div class="chart-panel">
+                <div class="chart-header">Disk Usage</div>
+                <div class="chart-body"><canvas id="chart-disk"></canvas></div>
+            </div>
+            <div class="chart-panel">
+                <div class="chart-header">Network RX</div>
+                <div class="chart-body"><canvas id="chart-net-rx"></canvas></div>
+            </div>
+            <div class="chart-panel">
+                <div class="chart-header">Network TX</div>
+                <div class="chart-body"><canvas id="chart-net-tx"></canvas></div>
+            </div>
+            <div class="chart-panel">
+                <div class="chart-header">Swap Usage</div>
+                <div class="chart-body"><canvas id="chart-swap"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const agentId = '{{ agent_id }}';
+    const step = '60s';
+    let currentRange = '1h';
+
+    function getMetricColors() {
+        const palette = window.getChartPalette();
+        return {
+            cpu: palette[0], mem: palette[3], disk: palette[1],
+            net: palette[2], netTx: palette[11], swap: palette[5]
+        };
+    }
+
+    function formatBytes(bps) {
+        if (bps == null) return '—';
+        const units = ['B/s','KB/s','MB/s','GB/s'];
+        let i = 0; let v = bps;
+        while (v >= 1024 && i < 3) { v /= 1024; i++; }
+        return v.toFixed(1) + ' ' + units[i];
+    }
+
+    function formatMbps(bps) {
+        if (bps == null) return '—';
+        const bps_abs = bps * 8;
+        if (bps_abs >= 1_000_000_000) return (bps_abs / 1_000_000_000).toFixed(2) + ' Gbps';
+        if (bps_abs >= 1_000_000) return (bps_abs / 1_000_000).toFixed(2) + ' Mbps';
+        return (bps_abs / 1_000).toFixed(2) + ' Kbps';
+    }
+
+    const barEls = {
+        cpu: document.getElementById('bar-cpu-fill'),
+        mem: document.getElementById('bar-mem-fill'),
+        swap: document.getElementById('bar-swap-fill'),
+        disk: document.getElementById('bar-disk-fill'),
+    };
+    const valEls = {
+        cpu: document.getElementById('gauge-cpu'),
+        mem: document.getElementById('gauge-mem'),
+        disk: document.getElementById('gauge-disk'),
+        swap: document.getElementById('gauge-swap'),
+        netRx: document.getElementById('gauge-net-rx'),
+        netTx: document.getElementById('gauge-net-tx'),
+    };
+
+    function updateBar(id, value) {
+        if (!barEls[id] || !valEls[id]) return;
+        if (value === null) {
+            valEls[id].textContent = '—';
+            barEls[id].style.height = '0%';
+            return;
+        }
+        const pct = Math.min(value, 100);
+        const sem = getSemanticColors();
+        let color = sem.success;
+        if (pct > 90) color = sem.danger;
+        else if (pct > 75) color = sem.warning;
+        else if (pct > 50) color = sem.warning;
+        barEls[id].style.height = pct + '%';
+        barEls[id].style.background = color;
+        valEls[id].textContent = pct.toFixed(1) + '%';
+    }
+
+    let lastSeries = null;
+
+    function renderAllCharts(s) {
+        if (!s) return;
+        lastSeries = s;
+        const colors = getMetricColors();
+        if (s.cpu_usage) renderChart('chart-cpu', s.cpu_usage, colors.cpu, '%', 100);
+        if (s.memory_used_percent) renderChart('chart-mem', s.memory_used_percent, colors.mem, '%', 100);
+        if (s.disk_used_percent) renderChart('chart-disk', s.disk_used_percent, colors.disk, '%', 100);
+        if (s.network_bytes_recv) renderChart('chart-net-rx', s.network_bytes_recv, colors.net, '', null, null, null, formatMbps);
+        if (s.network_bytes_sent) renderChart('chart-net-tx', s.network_bytes_sent, colors.netTx, '', null, null, null, formatMbps);
+        if (s.swap_used_percent) renderChart('chart-swap', s.swap_used_percent, colors.swap, '%', 100);
+        drawGaugeSparklines(s);
+        updateGaugeDeltas(s);
+    }
+
+    function loadCharts(range) {
+        fetch('/metrics/api/' + agentId + '/range?range=' + range)
+            .then(r => r.json()).then(data => {
+                renderAllCharts(data.series || {});
+            }).catch(() => {});
+    }
+
+    const charts = {};
+
+    const centerValuePlugin = {
+        id: 'centerValue',
+        afterDraw(chart) {
+            const centerData = chart.config.centerData;
+            const ds = centerData
+                ? { data: centerData }
+                : chart.data.datasets[0];
+            if (!ds || !ds.data.length) return;
+            const point = ds.data.at(-1);
+            const v = point && point.y != null ? point.y : point;
+            if (v == null) return;
+            const { ctx, chartArea } = chart;
+            ctx.save();
+            const suffix = chart.config.centerSuffix || '%';
+            const txt = v.toFixed(1) + ' ' + suffix;
+            const cx = (chartArea.left + chartArea.right) / 2;
+            const cy = (chartArea.top + chartArea.bottom) / 2;
+            ctx.font = 'bold 40px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const m = ctx.measureText(txt);
+            const p = 16, bw = Math.max(m.width + p * 2, 100), bh = 56;
+            const bx = cx - bw / 2, by = cy - bh / 2;
+            const theme = window.getChartThemeColors();
+            ctx.fillStyle = window.colorWithAlpha(theme.text, 0.1);
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, bh, 10);
+            ctx.fill();
+            ctx.fillStyle = theme.text;
+            ctx.fillText(txt, cx, cy);
+            ctx.restore();
+        }
+    };
+
+    const dayMarkerPlugin = {
+        id: 'dayMarkers',
+        afterDatasetsDraw(chart) {
+            const ds = chart.data.datasets[0];
+            if (!ds || ds.data.length < 2) return;
+            const xScale = chart.scales.x;
+            if (!xScale) return;
+            const { ctx, chartArea } = chart;
+            ctx.save();
+            const theme = window.getChartThemeColors();
+            ctx.strokeStyle = window.colorWithAlpha(theme.textMuted, 0.4);
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            let prevDay = '';
+            for (const point of ds.data) {
+                const day = new Date(point.x).toDateString();
+                if (prevDay && day !== prevDay) {
+                    const px = xScale.getPixelForValue(point.x);
+                    if (px >= chartArea.left && px <= chartArea.right) {
+                        ctx.beginPath();
+                        ctx.moveTo(px, chartArea.top);
+                        ctx.lineTo(px, chartArea.bottom);
+                        ctx.stroke();
+                    }
+                }
+                prevDay = day;
+            }
+            ctx.restore();
+        }
+    };
+
+    function renderChart(canvasId, data, borderColor, suffix, yMax, centerData, centerSuffix, valueFormatter) {
+        const ctx = document.getElementById(canvasId).getContext('2d');
+        if (charts[canvasId]) charts[canvasId].destroy();
+        const theme = window.getChartThemeColors();
+        const timeUnit = currentRange === '1h' || currentRange === '6h' ? 'minute'
+                       : currentRange === '24h' ? 'hour'
+                       : currentRange === '3d' ? 'hour'
+                       : 'day';
+        const fmt = valueFormatter || (v => v.toFixed(1) + suffix);
+        const chartConfig = {
+            type: 'line',
+            data: {
+                datasets: [{
+                    data: data.map(p => ({ x: p.t * 1000, y: p.v })),
+                    borderColor, backgroundColor: window.colorWithAlpha(borderColor, 0.12), fill: true,
+                    tension: 0.35, pointRadius: 0, borderWidth: 2,
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                animation: { duration: 400 },
+                interaction: { intersect: false, mode: 'nearest', axis: 'x' },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            unit: timeUnit,
+                            displayFormats: {
+                                minute: 'HH:mm',
+                                hour: 'HH:mm',
+                                day: 'MMM d',
+                            },
+                            tooltipFormat: 'MMM d, yyyy HH:mm'
+                        },
+                        grid: { display: false },
+                        ticks: {
+                            maxTicksLimit: currentRange === '7d' ? 10 : currentRange === '3d' ? 8 : 6,
+                            maxRotation: 0
+                        }
+                    },
+                    y: {
+                        beginAtZero: true, max: yMax,
+                        grid: { color: theme.gridLine },
+                        ticks: { color: theme.textMuted, callback: v => fmt(v) }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => fmt(ctx.parsed.y)
+                        }
+                    }
+                }
+            }
+        };
+        if (centerData) {
+            chartConfig.centerData = centerData.map(p => ({ x: p.t * 1000, y: p.v }));
+            chartConfig.centerSuffix = centerSuffix;
+        }
+        const plugins = [];
+        if (yMax) plugins.push(centerValuePlugin);
+        if (currentRange === '3d' || currentRange === '7d') plugins.push(dayMarkerPlugin);
+        if (plugins.length) chartConfig.plugins = plugins;
+        charts[canvasId] = new Chart(ctx, chartConfig);
+    }
+
+    function drawSparkline(canvasId, series, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas || !series || series.length < 2) return;
+        const ctx = canvas.getContext('2d');
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const values = series.map(p => p.v);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const range = max - min || 1;
+        const pad = 1;
+        const drawW = w - pad * 2, drawH = h - pad * 2;
+
+        ctx.beginPath();
+        series.forEach((p, i) => {
+            const x = pad + (i / (series.length - 1)) * drawW;
+            const y = pad + drawH - ((p.v - min) / range) * drawH;
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // subtle fill under the line
+        const last = series[series.length - 1];
+        ctx.lineTo(pad + drawW, pad + drawH);
+        ctx.lineTo(pad, pad + drawH);
+        ctx.closePath();
+        ctx.fillStyle = window.colorWithAlpha(color, 0.15);
+        ctx.fill();
+    }
+
+    const sparkMetricMap = {
+        cpu: 'cpu_usage', mem: 'memory_used_percent', disk: 'disk_used_percent',
+        swap: 'swap_used_percent', netRx: 'network_bytes_recv', netTx: 'network_bytes_sent'
+    };
+    const sparkColorMap = {
+        cpu: 'cpu', mem: 'mem', disk: 'disk', swap: 'swap', netRx: 'net', netTx: 'netTx'
+    };
+
+    function drawGaugeSparklines(s) {
+        const colors = getMetricColors();
+        for (const [metric, seriesKey] of Object.entries(sparkMetricMap)) {
+            const series = s[seriesKey];
+            const color = colors[sparkColorMap[metric]] || colors.cpu;
+            drawSparkline('spark-' + metric, series, color);
+        }
+    }
+
+    function updateGaugeDeltas(s) {
+        const deltas = {
+            cpu: { key: 'cpu_usage', unit: '%' },
+            mem: { key: 'memory_used_percent', unit: '%' },
+            disk: { key: 'disk_used_percent', unit: '%' },
+            swap: { key: 'swap_used_percent', unit: '%' },
+            netRx: { key: 'network_bytes_recv', unit: '' },
+            netTx: { key: 'network_bytes_sent', unit: '' },
+        };
+        for (const [metric, cfg] of Object.entries(deltas)) {
+            const series = s[cfg.key];
+            const el = document.getElementById('delta-' + metric);
+            if (!el || !series || series.length < 3) {
+                if (el) el.textContent = '';
+                continue;
+            }
+            const last = series[series.length - 1].v;
+            const prev = series[series.length - 3].v;
+            if (last == null || prev == null || prev === 0) { el.textContent = ''; continue; }
+            const pctChange = ((last - prev) / prev) * 100;
+            const arrow = pctChange > 0.5 ? '\u25B2' : pctChange < -0.5 ? '\u25BC' : '\u25C6';
+            const cls = pctChange > 0.5 ? 'delta-up' : pctChange < -0.5 ? 'delta-down' : 'delta-flat';
+            const abs = Math.abs(pctChange);
+            el.textContent = arrow + ' ' + (abs < 10 ? abs.toFixed(1) : Math.round(abs)) + '%';
+            el.className = 'gauge-delta ' + cls;
+        }
+    }
+
+    let _fleetSummary = null;
+
+    function updateFleetComparison() {
+        const fleetEls = {
+            cpu: 'fleet-cpu', mem: 'fleet-mem', disk: 'fleet-disk',
+            swap: 'fleet-swap', netRx: 'fleet-netRx', netTx: 'fleet-netTx'
+        };
+        const fleetMap = {
+            cpu: { key: 'avg_cpu_pct', unit: '%' },
+            mem: { key: 'avg_mem_pct', unit: '%' },
+            disk: { key: 'max_disk_pct', unit: '%' },
+        };
+        if (!_fleetSummary) {
+            // hide all fleet lines if no data
+            for (const elId of Object.values(fleetEls)) {
+                const el = document.getElementById(elId);
+                if (el) el.textContent = '';
+            }
+            return;
+        }
+        for (const [metric, info] of Object.entries(fleetMap)) {
+            const el = document.getElementById(fleetEls[metric]);
+            if (!el) continue;
+            const fleetVal = _fleetSummary[info.key];
+            if (fleetVal == null) { el.textContent = ''; continue; }
+            el.textContent = '\u2699 fleet avg: ' + fleetVal.toFixed(1) + info.unit;
+        }
+        // for swap and net, just say "no fleet data" or blank
+        for (const metric of ['swap', 'netRx', 'netTx']) {
+            const el = document.getElementById(fleetEls[metric]);
+            if (el) el.textContent = '';
+        }
+    }
+
+    function loadGauges() {
+        const queries = [
+        { id: 'cpu', q: '100 - (avg by (agent_id) (rate(vespid_monitor_cpu_idle_seconds_total{agent_id="' + agentId + '",cpu!="cpu"}[2m])) * 100)' },
+        { id: 'mem', q: 'vespid_monitor_memory_used_percent{agent_id="' + agentId + '"}' },
+        { id: 'disk', q: 'vespid_monitor_disk_used_percent{agent_id="' + agentId + '",mountpoint="/"}' },
+        { id: 'netRx', q: 'rate(vespid_monitor_network_bytes_recv_total{agent_id="' + agentId + '"}[2m])' },
+        { id: 'netTx', q: 'rate(vespid_monitor_network_bytes_sent_total{agent_id="' + agentId + '"}[2m])' },
+        { id: 'swap', q: '(vespid_monitor_swap_used_bytes{agent_id="' + agentId + '"} / vespid_monitor_swap_total_bytes{agent_id="' + agentId + '"}) * 100' },
+        ];
+        queries.forEach(({ id, q }) => {
+            fetch('/metrics/api/query?q=' + encodeURIComponent(q))
+                .then(r => r.json()).then(data => {
+                    const results = (data.data && data.data.result) || [];
+                    const val = results.length && results[0].value ? parseFloat(results[0].value[1]) : null;
+                    if (id === 'netRx') {
+                        valEls.netRx.textContent = val !== null ? formatBytes(val) : '—';
+                    } else if (id === 'netTx') {
+                        valEls.netTx.textContent = val !== null ? formatBytes(val) : '—';
+                    } else {
+                        updateBar(id, val);
+                    }
+                }).catch(() => {});
+        });
+        // Fetch fleet summary once for comparison
+        if (!_fleetSummary) {
+            fetch('/metrics/api/summary')
+                .then(r => r.json())
+                .then(d => {
+                    _fleetSummary = d.summary || null;
+                    updateFleetComparison();
+                })
+                .catch(() => { _fleetSummary = null; });
+        }
+    }
+
+    function loadServices() {
+        const q = 'vespid_monitor_systemd_unit_active{agent_id="' + agentId + '"}';
+        fetch('/metrics/api/query?q=' + encodeURIComponent(q))
+            .then(r => r.json()).then(data => {
+                const results = (data.data && data.data.result) || [];
+                const grid = document.getElementById('services-grid');
+                if (!results.length) {
+                    grid.innerHTML = '<span class="text-muted">No services monitored</span>';
+                    return;
+                }
+                let failedCount = 0;
+                const rows = results.map(r => {
+                    const unit = r.metric.unit || '?';
+                    const sub = r.metric.sub_state || '';
+                    const val = parseFloat(r.value[1]);
+                    const active = val === 1;
+                    if (!active) failedCount++;
+                    return { unit, sub, active };
+                });
+                const label = failedCount
+                    ? '⚠ ' + failedCount + ' service' + (failedCount > 1 ? 's' : '') + ' down'
+                    : '✓ All ' + rows.length + ' services running';
+                const cls = failedCount ? 'svc-banner-warn' : 'svc-banner-ok';
+                grid.innerHTML = '<div class="svc-banner ' + cls + '" id="svc-toggle">'
+                    + '<span>' + label + '</span>'
+                    + '<span class="svc-chevron">Details ▸</span>'
+                    + '</div>';
+                const sem = getSemanticColors();
+                const rowsHtml = rows.map(r => {
+                    const dotColor = r.active ? sem.success : sem.danger;
+                    const statusText = r.active ? 'running' : 'down';
+                    return '<div class="svc-row">'
+                        + '<span class="svc-dot" style="background:' + dotColor + '"></span>'
+                        + '<span class="svc-row-name">' + r.unit + '</span>'
+                        + '<span class="svc-row-sub">' + (r.sub || '—') + '</span>'
+                        + '<span class="svc-row-status ' + (r.active ? 'svc-ok' : 'svc-down') + '">' + statusText + '</span>'
+                        + '</div>';
+                }).join('');
+                const modal = document.createElement('div');
+                modal.className = 'svc-modal-backdrop';
+                modal.id = 'svc-modal';
+                modal.innerHTML = '<div class="svc-modal">'
+                    + '<div class="svc-modal-header">'
+                    + '<h3>Services Status</h3>'
+                    + '<button class="svc-modal-close" id="svc-modal-close">✕</button>'
+                    + '</div>'
+                    + '<div class="svc-modal-body">' + rowsHtml + '</div>'
+                    + '</div>';
+                document.body.appendChild(modal);
+                const openModal = () => modal.classList.add('svc-modal-open');
+                const closeModal = () => modal.classList.remove('svc-modal-open');
+                document.getElementById('svc-toggle').addEventListener('click', openModal);
+                document.getElementById('svc-modal-close').addEventListener('click', closeModal);
+                modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+                document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+                if (failedCount > 0) openModal();
+            }).catch(() => {
+                document.getElementById('services-grid').innerHTML = '<span class="text-muted">Failed to load services</span>';
+            });
+    }
+
+    function loadProcesses() {
+        const queries = [
+            { id: 'total', q: 'vespid_monitor_process_count_total{agent_id="' + agentId + '"}' },
+            { id: 'running', q: 'vespid_monitor_process_running{agent_id="' + agentId + '"}' },
+            { id: 'zombies', q: 'vespid_monitor_process_zombies_count{agent_id="' + agentId + '"}' },
+        ];
+        Promise.all(queries.map(({ id, q }) =>
+            fetch('/metrics/api/query?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(data => {
+                    const results = (data.data && data.data.result) || [];
+                    return { id, val: results.length && results[0].value ? parseFloat(results[0].value[1]) : null };
+                })
+                .catch(() => ({ id, val: null }))
+        )).then(results => {
+            const byId = {};
+            results.forEach(r => byId[r.id] = r.val);
+            const grid = document.getElementById('process-grid');
+            const total = byId.total != null ? Math.round(byId.total) : '—';
+            const running = byId.running != null ? Math.round(byId.running) : '—';
+            const zombies = byId.zombies != null ? Math.round(byId.zombies) : '—';
+            const hasZombies = byId.zombies > 0;
+            const ratio = total !== '—' && running !== '—' && total > 0
+                ? Math.round((running / total) * 100) : null;
+            grid.innerHTML =
+                '<div class="proc-pill proc-pill-total">' +
+                    '<span class="proc-pill-icon">&#9881;</span>' +
+                    '<span class="proc-pill-num">' + total + '</span>' +
+                    '<span class="proc-pill-label">Total</span>' +
+                '</div>' +
+                '<div class="proc-pill proc-pill-running">' +
+                    '<span class="proc-pill-icon">&#9654;</span>' +
+                    '<span class="proc-pill-num">' + running + '</span>' +
+                    '<span class="proc-pill-label">Running</span>' +
+                    (ratio !== null ? '<span class="proc-pill-bar"><span class="proc-pill-bar-fill" style="width:' + ratio + '%"></span></span>' : '') +
+                '</div>' +
+                '<div class="proc-pill' + (hasZombies ? ' proc-pill-zombies' : ' proc-pill-clean') + '">' +
+                    '<span class="proc-pill-icon">' + (hasZombies ? '&#9760;' : '&#10003;') + '</span>' +
+                    '<span class="proc-pill-num">' + zombies + '</span>' +
+                    '<span class="proc-pill-label">Zombies</span>' +
+                '</div>';
+        });
+    }
+
+    document.querySelectorAll('.tp-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tp-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            currentRange = this.dataset.range;
+            loadCharts(currentRange);
+        });
+    });
+
+    document.body.addEventListener('vespid:themechange', function() {
+        renderAllCharts(lastSeries);
+        loadGauges();
+    });
+
+    loadCharts(currentRange);
+    loadGauges();
+    loadServices();
+    loadProcesses();
+    setInterval(function() { loadGauges(); loadServices(); loadProcesses(); }, 15000);
+})();
+</script>
+
+<style>
+.gauge-row { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.5rem; }
+.gauge-card { text-align: center; min-width: 0; flex: 1; }
+.gauge-label { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: center; gap: 0.35rem; flex-wrap: wrap; }
+.gauge-value {
+    width: 100px; height: 100px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto;
+    font-size: 0.85rem; font-weight: 700; color: var(--text);
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+}
+
+.gauge-sparkline {
+    display: block; margin: 0.15rem auto 0;
+    width: 100px; height: 20px;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--text-muted) 4%, transparent);
+}
+
+.gauge-delta { font-size: 0.62rem; font-weight: 600; white-space: nowrap; }
+.delta-up { color: var(--success); }
+.delta-down { color: var(--danger); }
+.delta-flat { color: var(--text-muted); opacity: 0.6; }
+
+.gauge-fleet { font-size: 0.6rem; color: var(--text-muted); margin-top: 0.15rem; opacity: 0.7; }
+
+.bar-gauge {
+    width: 100px; height: 100px;
+    margin: 0 auto; position: relative;
+    background: rgba(128,128,128,0.12);
+    border-radius: 12px; overflow: hidden;
+}
+.bar-fill {
+    position: absolute; bottom: 0; left: 0; width: 100%;
+    height: 0%; border-radius: 12px;
+    transition: height 1s ease, background 0.5s ease;
+}
+.bar-center {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1;
+    font-size: 1.35rem; font-weight: 700; color: var(--text);
+}
+
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+.chart-panel { border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+.chart-header {
+    font-size: 0.75rem; font-weight: 600; padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--border-color); color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+}
+.chart-body { padding: 0.75rem; height: 160px; position: relative; }
+
+
+
+.btn-back {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    margin-left: 0.5rem; padding: 0.4rem 0.85rem;
+    background: var(--bg-secondary); color: var(--text);
+    border: 1.5px solid var(--border-color); border-radius: 6px;
+    font-size: 0.82rem; font-weight: 600;
+    text-decoration: none; cursor: pointer;
+    transition: all 0.15s;
+}
+.btn-back:hover {
+    background: var(--accent); color: #000; border-color: var(--accent);
+    text-decoration: none;
+}
+
+.text-green { color: #22c55e; }
+.text-yellow { color: #eab308; }
+.text-red { color: #ef4444; }
+.mt-4 { margin-top: 1rem; }
+.mb-4 { margin-bottom: 1rem; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.small { font-size: 0.75rem; }
+.muted { color: var(--text-muted); }
+.btn {
+    padding: 0.3rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px;
+    background: var(--bg-card); color: var(--text); cursor: pointer; text-decoration: none;
+    font-size: 0.8rem; white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); }
+
+.services-panel, .process-panel {
+    border: 1px solid var(--border-color); border-radius: 12px;
+    margin-bottom: 1rem; overflow: hidden;
+}
+.row-panels {
+    display: flex; gap: 1rem; margin-bottom: 1rem;
+}
+.row-panels > .services-panel,
+.row-panels > .process-panel {
+    flex: 1; min-width: 0; margin-bottom: 0;
+}
+@media (max-width: 700px) {
+    .row-panels { flex-direction: column; }
+}
+.services-grid {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 1rem;
+}
+.svc-pill {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.3rem 0.7rem; border-radius: 6px;
+    background: var(--bg-secondary); font-size: 0.85rem;
+}
+.svc-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.svc-name { font-weight: 500; }
+.svc-badge {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    padding: 0.05rem 0.4rem; border-radius: 3px;
+    background: rgba(244, 67, 54, 0.15); color: #f44336;
+    letter-spacing: 0.04em;
+}
+.svc-banner {
+    width: 100%; padding: 0.5rem 0.75rem; border-radius: 6px;
+    font-size: 0.82rem; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none;
+    transition: filter 0.15s;
+}
+.svc-banner:hover { filter: brightness(1.1); }
+.svc-chevron { font-size: 0.78rem; opacity: 0.8; }
+.svc-banner-ok {
+    background: rgba(76, 175, 80, 0.12); color: #4caf50;
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+.svc-banner-warn {
+    background: rgba(244, 67, 54, 0.12); color: #f44336;
+    border: 1px solid rgba(244, 67, 54, 0.3);
+}
+.svc-modal-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); z-index: 1000;
+    align-items: center; justify-content: center;
+    padding: 1rem;
+}
+.svc-modal-backdrop.svc-modal-open { display: flex; }
+.svc-modal {
+    background: var(--bg-card); border: 1px solid var(--border-color);
+    border-radius: 12px; max-width: 520px; width: 100%;
+    max-height: 80vh; display: flex; flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.svc-modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-color);
+}
+.svc-modal-header h3 { margin: 0; font-size: 1.05rem; }
+.svc-modal-close {
+    background: none; border: none; color: var(--text-muted);
+    font-size: 1.2rem; cursor: pointer; padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+}
+.svc-modal-close:hover { background: var(--bg-secondary); color: var(--text); }
+.svc-modal-body {
+    padding: 0.5rem 0.75rem; overflow-y: auto;
+}
+.svc-row {
+    display: grid; grid-template-columns: 12px 1fr 1fr auto;
+    align-items: center; gap: 0.75rem;
+    padding: 0.6rem 0.5rem; border-radius: 6px;
+    font-size: 0.88rem;
+}
+.svc-row + .svc-row { border-top: 1px solid var(--border-color); }
+.svc-row:hover { background: var(--bg-secondary); }
+.svc-row-name { font-weight: 500; }
+.svc-row-sub { color: var(--text-muted); font-size: 0.8rem; }
+.svc-row-status {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    padding: 0.15rem 0.55rem; border-radius: 4px; letter-spacing: 0.04em;
+}
+.svc-ok { background: rgba(76,175,80,0.15); color: #4caf50; }
+.svc-down { background: rgba(244,67,54,0.15); color: #f44336; }
+.process-grid {
+    display: flex; gap: 0.75rem; padding: 1rem;
+}
+.proc-pill {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.25rem;
+    padding: 0.85rem 0.5rem 0.7rem; border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary); min-width: 0;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+.proc-pill:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
+.proc-pill-total { background: color-mix(in srgb, var(--info) 8%, var(--bg-secondary)); border-color: color-mix(in srgb, var(--info) 25%, var(--border-color)); }
+.proc-pill-running { background: color-mix(in srgb, var(--success) 8%, var(--bg-secondary)); border-color: color-mix(in srgb, var(--success) 25%, var(--border-color)); }
+.proc-pill-zombies { background: color-mix(in srgb, var(--danger) 10%, var(--bg-secondary)); border-color: color-mix(in srgb, var(--danger) 30%, var(--border-color)); animation: zombiePulse 2s ease-in-out infinite; }
+.proc-pill-clean { background: color-mix(in srgb, var(--text-muted) 6%, var(--bg-secondary)); border-color: color-mix(in srgb, var(--text-muted) 15%, var(--border-color)); opacity: 0.7; }
+@keyframes zombiePulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 25%, transparent); }
+    50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 0%, transparent); }
+}
+.proc-pill-icon { font-size: 1rem; line-height: 1; opacity: 0.6; }
+.proc-pill-total .proc-pill-icon { color: var(--info); }
+.proc-pill-running .proc-pill-icon { color: var(--success); }
+.proc-pill-zombies .proc-pill-icon { color: var(--danger); }
+.proc-pill-clean .proc-pill-icon { color: var(--text-muted); }
+.proc-pill-num {
+    font-size: 1.4rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em;
+}
+.proc-pill-total .proc-pill-num { color: var(--text); }
+.proc-pill-running .proc-pill-num { color: var(--success); }
+.proc-pill-zombies .proc-pill-num { color: var(--danger); }
+.proc-pill-clean .proc-pill-num { color: var(--text-muted); }
+.proc-pill-label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+.proc-pill-bar { width: 100%; height: 3px; background: color-mix(in srgb, var(--text-muted) 15%, transparent); border-radius: 4px; margin-top: 0.15rem; overflow: hidden; }
+.proc-pill-bar-fill { display: block; height: 100%; background: var(--success); border-radius: 4px; transition: width 1s ease; }
+
+@media (max-width: 900px) {
+    .chart-grid { grid-template-columns: 1fr 1fr; }
+    .gauge-row { flex-wrap: wrap; gap: 1rem; }
+}
+</style>
+
+{% endblock %}

@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block title %}Audit Log — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">📋</div>
+    <div style="flex:1;">
+        <h1 style="margin:0;font-size:1.2rem;">Audit Log</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Immutable record of all system operations
+        </div>
+    </div>
+    <div style="display:flex;gap:1rem;text-align:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ total }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">entries</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ unique_actors }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">actors</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ unique_actions }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">actions</div>
+        </div>
+    </div>
+</div>
+
+<style>
+.audit-sticky-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--card-bg, #1e293b);
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.audit-sticky-bar .quick-search {
+    flex: 1;
+    min-width: 200px;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #334155);
+    background: var(--bg-input, #0f172a);
+    color: var(--text);
+    font-size: 0.9rem;
+}
+.audit-sticky-bar .quick-search:focus {
+    outline: none;
+    border-color: var(--primary-color, #3b82f6);
+}
+</style>
+
+{% set audit_active = 0 %}
+{% if action_type %}{% set audit_active = audit_active + 1 %}{% endif %}
+{% if actor %}{% set audit_active = audit_active + 1 %}{% endif %}
+{% if target %}{% set audit_active = audit_active + 1 %}{% endif %}
+{% if start or end %}{% set audit_active = audit_active + 1 %}{% endif %}
+
+<!-- ════════════════ Sticky bar ════════════════ -->
+<form id="audit-filter-form" method="GET" action="{{ url_for('admin.audit') }}"
+      hx-get="{{ url_for('admin.audit') }}"
+      hx-target="#audit-table-container"
+      hx-swap="outerHTML"
+      hx-trigger="submit"
+      hx-indicator="#audit-filter-indicator">
+    <div class="audit-sticky-bar">
+        <input type="text" class="quick-search" id="audit-quick-search" name="search"
+               placeholder="Search actor, target, details…" value="{{ search }}">
+        <button type="submit" class="btn">Filter</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="toggleAuditFilters()" style="white-space:nowrap;">
+            <span id="audit-filter-toggle-icon">▾</span> Filters{% if audit_active > 0 %} ({{ audit_active }}){% endif %}
+        </button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickDate(1, 'hours')" style="font-size:0.75rem;padding:0.2rem 0.5rem;" title="Last hour">1h</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickDate(6, 'hours')" style="font-size:0.75rem;padding:0.2rem 0.5rem;" title="Last 6 hours">6h</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickDate(24, 'hours')" style="font-size:0.75rem;padding:0.2rem 0.5rem;" title="Last 24 hours">24h</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="setQuickDate(7, 'days')" style="font-size:0.75rem;padding:0.2rem 0.5rem;" title="Last 7 days">7d</button>
+        {% if audit_active > 0 or search %}
+        <a href="{{ url_for('admin.audit') }}" class="btn btn-sm btn-secondary">Clear</a>
+        {% endif %}
+        <span id="audit-filter-indicator" class="htmx-indicator" style="margin-left:auto;">Refreshing…</span>
+    </div>
+
+    <!-- ════════════════ Collapsible detailed filters ════════════════ -->
+    <div id="audit-detailed-filters" style="display:none;">
+        <div class="card">
+            <div class="form-inline">
+                <input type="hidden" name="search" value="{{ search }}">
+                <div class="form-group">
+                    <label for="action_type">Action Type</label>
+                    <select id="action_type" name="action_type">
+                        <option value="">All</option>
+                        <optgroup label="Authentication">
+                            <option value="login" {% if action_type == 'login' %}selected{% endif %}>Login</option>
+                            <option value="logout" {% if action_type == 'logout' %}selected{% endif %}>Logout</option>
+                            <option value="login_failed" {% if action_type == 'login_failed' %}selected{% endif %}>Login Failed</option>
+                            <option value="user_locked_out" {% if action_type == 'user_locked_out' %}selected{% endif %}>User Locked Out</option>
+                            <option value="user_unlocked" {% if action_type == 'user_unlocked' %}selected{% endif %}>User Unlocked</option>
+                        </optgroup>
+                        <optgroup label="User Management">
+                            <option value="role_change" {% if action_type == 'role_change' %}selected{% endif %}>Role Change</option>
+                            <option value="password_change" {% if action_type == 'password_change' %}selected{% endif %}>Password Change</option>
+                            <option value="profile_update" {% if action_type == 'profile_update' %}selected{% endif %}>Profile Update</option>
+                        </optgroup>
+                        <optgroup label="API Keys">
+                            <option value="key_create" {% if action_type == 'key_create' %}selected{% endif %}>Key Create</option>
+                            <option value="key_revoke" {% if action_type == 'key_revoke' %}selected{% endif %}>Key Revoke</option>
+                            <option value="key_delete" {% if action_type == 'key_delete' %}selected{% endif %}>Key Delete</option>
+                        </optgroup>
+                        <optgroup label="Blocking">
+                            <option value="block" {% if action_type == 'block' %}selected{% endif %}>Block</option>
+                            <option value="unblock" {% if action_type == 'unblock' %}selected{% endif %}>Unblock</option>
+                            <option value="webhook_unblock" {% if action_type == 'webhook_unblock' %}selected{% endif %}>Webhook Unblock</option>
+                            <option value="allowlist_sync" {% if action_type == 'allowlist_sync' %}selected{% endif %}>Allowlist Sync</option>
+                            <option value="blocklist_sync" {% if action_type == 'blocklist_sync' %}selected{% endif %}>Blocklist Sync</option>
+                        </optgroup>
+                        <optgroup label="Fleet Blocks">
+                            <option value="fleet_block_propagated" {% if action_type == 'fleet_block_propagated' %}selected{% endif %}>Propagated</option>
+                            <option value="fleet_block_rejected" {% if action_type == 'fleet_block_rejected' %}selected{% endif %}>Rejected</option>
+                            <option value="fleet_block_manual_add" {% if action_type == 'fleet_block_manual_add' %}selected{% endif %}>Manual Add</option>
+                            <option value="fleet_block_manual_remove" {% if action_type == 'fleet_block_manual_remove' %}selected{% endif %}>Manual Remove</option>
+                            <option value="fleet_block_reenabled" {% if action_type == 'fleet_block_reenabled' %}selected{% endif %}>Re-enabled</option>
+                            <option value="fleet_block_expired" {% if action_type == 'fleet_block_expired' %}selected{% endif %}>Expired</option>
+                            <option value="fleet_block_ttl_reset" {% if action_type == 'fleet_block_ttl_reset' %}selected{% endif %}>TTL Reset</option>
+                            <option value="fleet_allowlist_modified" {% if action_type == 'fleet_allowlist_modified' %}selected{% endif %}>Allowlist Modified</option>
+                            <option value="fleet_propagation_toggled" {% if action_type == 'fleet_propagation_toggled' %}selected{% endif %}>Propagation Toggled</option>
+                            <option value="fleet_config_updated" {% if action_type == 'fleet_config_updated' %}selected{% endif %}>Config Updated</option>
+                        </optgroup>
+                        <optgroup label="Intel Database">
+                            <option value="intel_purge" {% if action_type == 'intel_purge' %}selected{% endif %}>Purge</option>
+                            <option value="intel_backfill" {% if action_type == 'intel_backfill' %}selected{% endif %}>Backfill</option>
+                            <option value="intel_ip_delete" {% if action_type == 'intel_ip_delete' %}selected{% endif %}>IP Delete</option>
+                        </optgroup>
+                        <optgroup label="Detection Rules">
+                            <option value="rule_created" {% if action_type == 'rule_created' %}selected{% endif %}>Rule Created</option>
+                            <option value="rule_updated" {% if action_type == 'rule_updated' %}selected{% endif %}>Rule Updated</option>
+                            <option value="rule_deleted" {% if action_type == 'rule_deleted' %}selected{% endif %}>Rule Deleted</option>
+                        </optgroup>
+                        <optgroup label="Templates">
+                            <option value="template_toggled" {% if action_type == 'template_toggled' %}selected{% endif %}>Toggled</option>
+                            <option value="templates_enabled" {% if action_type == 'templates_enabled' %}selected{% endif %}>Enabled</option>
+                            <option value="templates_disabled" {% if action_type == 'templates_disabled' %}selected{% endif %}>Disabled</option>
+                        </optgroup>
+                        <optgroup label="Enrollment">
+                            <option value="enrollment_request" {% if action_type == 'enrollment_request' %}selected{% endif %}>Request</option>
+                            <option value="enrollment_status_change" {% if action_type == 'enrollment_status_change' %}selected{% endif %}>Status Change</option>
+                            <option value="enrollment_credential_issued" {% if action_type == 'enrollment_credential_issued' %}selected{% endif %}>Credential Issued</option>
+                            <option value="enrollment_credential_rotated" {% if action_type == 'enrollment_credential_rotated' %}selected{% endif %}>Credential Rotated</option>
+                            <option value="enrollment_credential_reissued" {% if action_type == 'enrollment_credential_reissued' %}selected{% endif %}>Credential Re-issued</option>
+                            <option value="enrollment_record_deleted" {% if action_type == 'enrollment_record_deleted' %}selected{% endif %}>Record Deleted</option>
+                            <option value="enrollment_settings_change" {% if action_type == 'enrollment_settings_change' %}selected{% endif %}>Settings Change</option>
+                        </optgroup>
+                        <optgroup label="Nodes / Assets">
+                            <option value="node_delete" {% if action_type == 'node_delete' %}selected{% endif %}>Node Delete</option>
+                            <option value="asset_deleted" {% if action_type == 'asset_deleted' %}selected{% endif %}>Asset Deleted</option>
+                        </optgroup>
+                        <optgroup label="Config Profiles">
+                            <option value="config_profile_create" {% if action_type == 'config_profile_create' %}selected{% endif %}>Profile Create</option>
+                            <option value="config_profile_update" {% if action_type == 'config_profile_update' %}selected{% endif %}>Profile Update</option>
+                            <option value="config_profile_delete" {% if action_type == 'config_profile_delete' %}selected{% endif %}>Profile Delete</option>
+                            <option value="config_profile_rollback" {% if action_type == 'config_profile_rollback' %}selected{% endif %}>Profile Rollback</option>
+                        </optgroup>
+                        <optgroup label="Config Assignments">
+                            <option value="config_assignment_create" {% if action_type == 'config_assignment_create' %}selected{% endif %}>Assignment Create</option>
+                            <option value="config_assignment_delete" {% if action_type == 'config_assignment_delete' %}selected{% endif %}>Assignment Delete</option>
+                        </optgroup>
+                        <optgroup label="Config Rollouts">
+                            <option value="config_rollout_create" {% if action_type == 'config_rollout_create' %}selected{% endif %}>Rollout Create</option>
+                            <option value="config_rollout_promote" {% if action_type == 'config_rollout_promote' %}selected{% endif %}>Rollout Promote</option>
+                            <option value="config_rollout_cancel" {% if action_type == 'config_rollout_cancel' %}selected{% endif %}>Rollout Cancel</option>
+                        </optgroup>
+                        <optgroup label="Config Agent">
+                            <option value="config_ack" {% if action_type == 'config_ack' %}selected{% endif %}>Config Acknowledgment</option>
+                        </optgroup>
+                        <optgroup label="Config Groups">
+                            <option value="config_group_create" {% if action_type == 'config_group_create' %}selected{% endif %}>Group Create</option>
+                            <option value="config_group_delete" {% if action_type == 'config_group_delete' %}selected{% endif %}>Group Delete</option>
+                            <option value="config_group_member_add" {% if action_type == 'config_group_member_add' %}selected{% endif %}>Group Member Add</option>
+                            <option value="config_group_member_remove" {% if action_type == 'config_group_member_remove' %}selected{% endif %}>Group Member Remove</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="actor">Actor</label>
+                    <input type="text" id="actor" name="actor" value="{{ actor }}" placeholder="Username">
+                </div>
+                <div class="form-group">
+                    <label for="target">Target</label>
+                    <input type="text" id="target" name="target" value="{{ target }}" placeholder="Target resource">
+                </div>
+                <div class="form-group">
+                    <label for="audit-start">Start Time</label>
+                    <input type="datetime-local" id="audit-start" name="start" value="{{ start }}">
+                </div>
+                <div class="form-group">
+                    <label for="audit-end">End Time</label>
+                    <input type="datetime-local" id="audit-end" name="end" value="{{ end }}">
+                </div>
+                <div class="form-group">
+                    <label for="audit-per_page">Per Page</label>
+                    <select id="audit-per_page" name="per_page">
+                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                        <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
+                    </select>
+                </div>
+                <div class="form-group" style="align-self:flex-end;">
+                    <label>
+                        <input type="checkbox" id="audit-auto-refresh" name="refresh" value="1" {% if refresh == '1' %}checked{% endif %}
+                               onchange="toggleAutoRefresh(this.checked)">
+                        Auto-refresh (30s)
+                    </label>
+                </div>
+                <div class="form-group">
+                    <button type="submit" class="btn">Filter</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Saved filters -->
+        <div class="card" style="padding:0.75rem 1rem;">
+            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                <label for="saved-filter-select" style="font-weight:500;font-size:0.85rem;">Saved Filters:</label>
+                <select id="saved-filter-select" style="padding:0.3rem 0.5rem;border-radius:4px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-color);font-size:0.8rem;min-width:180px;">
+                    <option value="">— Select —</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="loadSavedFilter()" style="font-size:0.75rem;">Load</button>
+                <button type="button" class="btn btn-sm btn-secondary" onclick="saveCurrentFilter()" style="font-size:0.75rem;">💾 Save Current</button>
+                <button type="button" class="btn btn-sm btn-danger" onclick="deleteSavedFilter()" style="font-size:0.75rem;">✕ Delete</button>
+            </div>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">Log Entries</h2>
+    {% include "admin/_audit_table.html" %}
+</div>
+
+<script>
+// ── Detail row toggle ──────────────────────────────────────────────────
+function toggleAuditDetail(row) {
+    var detail = row.nextElementSibling;
+    if (!detail || !detail.classList.contains('audit-detail-row')) return;
+    var arrow = row.querySelector('.has-detail span:last-child, .audit-row span[style*="margin-left"]');
+    if (detail.style.display === 'none' || !detail.style.display) {
+        detail.style.display = '';
+        if (arrow) arrow.textContent = '▼';
+    } else {
+        detail.style.display = 'none';
+        if (arrow) arrow.textContent = '▶';
+    }
+}
+
+// ── Toggle detailed filters ────────────────────────────────────────────
+function toggleAuditFilters() {
+    var panel = document.getElementById('audit-detailed-filters');
+    var icon = document.getElementById('audit-filter-toggle-icon');
+    if (!panel) return;
+    var showing = panel.style.display !== 'none';
+    panel.style.display = showing ? 'none' : 'block';
+    icon.textContent = showing ? '▸' : '▾';
+}
+
+// ── Auto-refresh ───────────────────────────────────────────────────────
+var refreshInterval = null;
+function toggleAutoRefresh(enabled) {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+        refreshInterval = null;
+    }
+    if (enabled) {
+        refreshInterval = setInterval(function() {
+            var form = document.getElementById('audit-filter-form');
+            if (form) form.requestSubmit();
+        }, 30000);
+    }
+}
+
+// ── Quick Date Presets ─────────────────────────────────────────────────
+function setQuickDate(amount, unit) {
+    var startInput = document.getElementById('audit-start');
+    var endInput = document.getElementById('audit-end');
+    if (amount === null) {
+        startInput.value = '';
+        endInput.value = '';
+        document.getElementById('audit-filter-form').requestSubmit();
+        return;
+    }
+    var now = new Date();
+    var start = new Date(now);
+    if (unit === 'hours') {
+        start.setUTCHours(start.getUTCHours() - amount);
+    } else {
+        start.setUTCDate(start.getUTCDate() - amount);
+    }
+    startInput.value = toUTCDt(start);
+    endInput.value = toUTCDt(now);
+    document.getElementById('audit-filter-form').requestSubmit();
+}
+function toUTCDt(date) {
+    var y = date.getUTCFullYear();
+    var m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    var d = String(date.getUTCDate()).padStart(2, '0');
+    var h = String(date.getUTCHours()).padStart(2, '0');
+    var min = String(date.getUTCMinutes()).padStart(2, '0');
+    return y + '-' + m + '-' + d + 'T' + h + ':' + min;
+}
+
+// ── Saved Filters (localStorage) ───────────────────────────────────────
+function getSavedFilters() {
+    try { return JSON.parse(localStorage.getItem('vespid_audit_filters') || '[]'); }
+    catch(e) { return []; }
+}
+function saveFiltersToStorage(filters) {
+    localStorage.setItem('vespid_audit_filters', JSON.stringify(filters));
+}
+function loadSavedFilterList() {
+    var select = document.getElementById('saved-filter-select');
+    var filters = getSavedFilters();
+    select.innerHTML = '<option value="">— Select —</option>';
+    filters.forEach(function(f, i) {
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = f.name || 'Filter ' + (i + 1);
+        select.appendChild(opt);
+    });
+}
+function saveCurrentFilter() {
+    var name = prompt('Name this filter:');
+    if (!name) return;
+    var form = document.getElementById('audit-filter-form');
+    var data = new FormData(form);
+    var filter = { name: name, params: {} };
+    for (var pair of data.entries()) {
+        if (pair[1]) filter.params[pair[0]] = pair[1];
+    }
+    var filters = getSavedFilters();
+    filters.push(filter);
+    saveFiltersToStorage(filters);
+    loadSavedFilterList();
+}
+function loadSavedFilter() {
+    var select = document.getElementById('saved-filter-select');
+    var idx = select.value;
+    if (idx === '') return;
+    var filters = getSavedFilters();
+    var filter = filters[parseInt(idx)];
+    if (!filter) return;
+    var form = document.getElementById('audit-filter-form');
+    for (var key in filter.params) {
+        var input = form.querySelector('[name="' + key + '"]');
+        if (input) input.value = filter.params[key];
+    }
+    form.requestSubmit();
+}
+function deleteSavedFilter() {
+    var select = document.getElementById('saved-filter-select');
+    var idx = select.value;
+    if (idx === '') return;
+    if (!confirm('Delete this saved filter?')) return;
+    var filters = getSavedFilters();
+    filters.splice(parseInt(idx), 1);
+    saveFiltersToStorage(filters);
+    loadSavedFilterList();
+    select.value = '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    var cb = document.getElementById('audit-auto-refresh');
+    if (cb && cb.checked) toggleAutoRefresh(true);
+    loadSavedFilterList();
+    {% if audit_active > 0 or search %}toggleAuditFilters();{% endif %}
+});
+</script>
+{% endblock %}

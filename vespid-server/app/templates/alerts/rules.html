@@ -1,0 +1,536 @@
+{% extends "base.html" %}
+{% block title %}PromQL Rules — Vespid{% endblock %}
+{% block content %}
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">📟</div>
+    <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">PromQL Rules</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Alert evaluation and notification rules
+        </div>
+    </div>
+    <div id="rule-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    {% if current_user.role == 'admin' %}
+    <button class="btn btn-primary" onclick="showRuleModal()" style="white-space:nowrap;">+ New Rule</button>
+    {% endif %}
+</div>
+
+<!-- Filter bar -->
+<div class="filters-bar">
+    <div class="search-wrap">
+        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" id="searchInput" placeholder="Search by name, query, or check…">
+        <button class="search-clear" id="searchClear" onclick="clearSearch()">&times;</button>
+    </div>
+    <div class="filter-group" id="filterGroup">
+        <button class="filter-btn active" data-filter="all">All</button>
+        <button class="filter-btn" data-filter="enabled">Enabled</button>
+        <button class="filter-btn" data-filter="disabled">Disabled</button>
+    </div>
+</div>
+
+<!-- Rules table -->
+<div class="card">
+    <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>Rules</span>
+        <span class="result-count" id="rulesCount"></span>
+    </div>
+    <div id="rulesContainer">
+        <div class="empty-state">
+            <div class="empty-state-icon" style="font-size:1.8rem; margin-bottom:0.5rem;">⏳</div>
+            <div>Loading rules…</div>
+        </div>
+    </div>
+</div>
+
+<!-- Rule Modal -->
+<div id="ruleModalOverlay" class="event-modal-overlay" style="display:none;" onclick="closeRuleModal(event)">
+    <div class="event-modal" onclick="event.stopPropagation()" style="max-width:900px; width:min(900px,94vw);">
+        <div class="event-modal-header">
+            <h3 class="event-modal-title" id="ruleModalTitle">New Alert Rule</h3>
+            <button class="event-modal-close" onclick="closeRuleModal()">&times;</button>
+        </div>
+        <div class="event-modal-body">
+            <form id="ruleForm" onsubmit="saveRule(event)">
+                <input type="hidden" id="ruleId" value="">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Name</label>
+                        <input type="text" id="ruleName" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select id="ruleType" onchange="toggleRuleType()">
+                            <option value="promql">PromQL</option>
+                            <option value="check">Health Check</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="queryGroup">
+                        <label>PromQL Query</label>
+                        <textarea id="ruleQuery" rows="2"></textarea>
+                    </div>
+                    <div class="form-group" id="checkGroup" style="display:none;">
+                        <label>Check Name</label>
+                        <input type="text" id="ruleCheckName">
+                    </div>
+                    <div class="form-group">
+                        <label>Operator</label>
+                        <select id="ruleOperator">
+                            <option value=">">&gt;</option>
+                            <option value="<">&lt;</option>
+                            <option value=">=">&gt;=</option>
+                            <option value="<=">&lt;=</option>
+                            <option value="==">==</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Threshold</label>
+                        <input type="number" step="any" id="ruleThreshold" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Resolve Threshold</label>
+                        <input type="number" step="any" id="ruleResolveThreshold" placeholder="Optional">
+                    </div>
+                    <div class="form-group">
+                        <label>Severity</label>
+                        <select id="ruleSeverity">
+                            <option value="warning">Warning</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>For Duration (s)</label>
+                        <input type="number" id="ruleForDuration" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Cooldown (s)</label>
+                        <input type="number" id="ruleCooldown" placeholder="Optional">
+                    </div>
+                    <div class="form-group">
+                        <label>Interval (s)</label>
+                        <input type="number" id="ruleInterval" value="60" min="1">
+                    </div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label>Tags</label>
+                        <input type="text" id="ruleTags" placeholder="tag1, tag2, tag3">
+                        <span class="form-hint">Comma-separated list displayed as pills on the rule</span>
+                    </div>
+                    <div class="form-group">
+                        <label>Channels</label>
+                        <div id="ruleChannels"></div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-switch" style="position:relative; display:inline-flex; align-items:center; gap:0.5rem; cursor:pointer; width:auto; height:auto; text-transform:none; letter-spacing:0; font-size:0.9rem; font-weight:600; color:var(--text);">
+                        <input type="checkbox" id="ruleEnabled" checked style="opacity:0; width:0; height:0; position:absolute;">
+                        <span class="toggle-slider" style="position:relative; width:40px; height:22px; background:var(--border); border-radius:11px; transition:0.2s; display:inline-block; flex-shrink:0;"></span>
+                        Enabled
+                    </label>
+                </div>
+                <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1.25rem; padding-top:1rem; border-top:1px solid var(--border);">
+                    <button type="submit" class="btn">Save Rule</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeRuleModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+/* ── Filters bar (aligned with alerts_dashboard.html pattern) ── */
+.filters-bar {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+}
+.filter-group {
+    display: flex; gap: 0.15rem; background: var(--bg-secondary);
+    border-radius: 6px; padding: 2px; border: 1px solid var(--border);
+}
+.filter-btn {
+    padding: 0.25rem 0.6rem; border-radius: 4px; border: 1px solid transparent;
+    background: transparent; color: var(--text-muted);
+    font-size: 0.72rem; cursor: pointer; font-weight: 500; line-height: 1.4;
+}
+.filter-btn:hover { color: var(--text); }
+.filter-btn.active { background: var(--accent); color: #000; }
+
+.search-wrap {
+    position: relative; flex: 1; min-width: 180px;
+}
+.search-wrap .search-icon {
+    position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+    width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+}
+.search-wrap input {
+    width: 100%; padding: 0.35rem 1.6rem 0.35rem 1.5rem;
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 0.8rem; outline: none;
+}
+.search-wrap input:focus { border-color: var(--accent); }
+.search-wrap input::placeholder { color: var(--text-muted); }
+.search-clear {
+    position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--text-muted);
+    font-size: 0.9rem; cursor: pointer; padding: 2px 4px; border-radius: 3px;
+    display: none; line-height: 1;
+}
+.search-clear:hover { color: var(--text); }
+
+/* ── Tag pills ──────────────────────────────────────────────── */
+.tag-pill {
+    display: inline-block; padding: 0.1rem 0.4rem; font-size: 0.7rem;
+    background: rgba(59,130,246,0.15); color: #93c5fd; border-radius: 4px;
+    margin: 0.1rem; white-space: nowrap;
+}
+
+/* ── Inline toggle switch in table ──────────────────────────── */
+.toggle-inline {
+    position: relative; display: inline-block; width: 32px; height: 18px;
+    flex-shrink: 0; cursor: pointer; vertical-align: middle;
+}
+.toggle-inline input { opacity: 0; width: 0; height: 0; }
+.toggle-inline .slider {
+    position: absolute; inset: 0; background: var(--border);
+    border-radius: 9999px; transition: 0.2s;
+}
+.toggle-inline .slider::before {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 14px; height: 14px; background: #fff;
+    border-radius: 50%; transition: 0.2s;
+}
+.toggle-inline input:checked + .slider { background: var(--success); }
+.toggle-inline input:checked + .slider::before { transform: translateX(14px); }
+
+/* ── Panel stat pills ────────────────────────────────────────── */
+.rl-stat { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.rl-stat .rl-stat-n { font-weight:700; font-size:0.95rem; line-height:1; }
+.rl-stat .rl-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+
+/* ── Channel checkboxes ─────────────────────────────────────── */
+.channel-cb {
+    display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.25rem;
+    font-size: 0.85rem; cursor: pointer;
+}
+.channel-cb input[type="checkbox"] { width: auto; margin: 0; }
+
+/* ── Action cell ────────────────────────────────────────────── */
+.action-cell { white-space: nowrap; }
+
+/* ── Confirm dialog ─────────────────────────────────────────── */
+.confirm-box {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 0.75rem 1rem;
+    display: flex; align-items: center; gap: 0.75rem;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3); margin-bottom: 0.35rem;
+}
+.confirm-box .confirm-msg { flex: 1; font-size: 0.82rem; color: var(--text); }
+.confirm-box .confirm-actions { display: flex; gap: 0.35rem; }
+
+/* ── Light theme overrides ──────────────────────────────────── */
+body.light-theme .filter-group { background: #f1f5f9; border-color: #e2e8f0; }
+body.light-theme .filter-btn.active { color: #000; }
+body.light-theme .search-wrap input { background: #fff; border-color: #cbd5e1; }
+body.light-theme .tag-pill { background: rgba(59,130,246,0.12); color: #2563eb; }
+body.light-theme .toggle-inline .slider::before { background: #f1f5f9; }
+</style>
+
+<script>
+(function() {
+    var rules = [];
+    var channels = [];
+    var filter = 'all';
+    var searchQuery = '';
+    var ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
+
+    function escapeHtml(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function loadRules() {
+        fetch('/alerts/api/rules')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                rules = d.rules || [];
+                renderRules();
+            })
+            .catch(function() {
+                document.getElementById('rulesContainer').innerHTML = '<div class="flash flash-error">Failed to load rules</div>';
+            });
+    }
+
+    function loadChannels() {
+        fetch('/alerts/api/channels')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                channels = d.channels || [];
+                var container = document.getElementById('ruleChannels');
+                if (!channels.length) {
+                    container.innerHTML = '<span class="text-muted" style="font-size:0.82rem;">No channels configured</span>';
+                    return;
+                }
+                container.innerHTML = channels.map(function(c) {
+                    return '<label class="channel-cb"><input type="checkbox" name="channelIds" value="' + c.id + '"> ' + escapeHtml(c.name) + '</label>';
+                }).join('');
+            });
+    }
+
+    function renderRules() {
+        var container = document.getElementById('rulesContainer');
+
+        var filtered = rules;
+        if (filter === 'enabled') filtered = filtered.filter(function(r) { return r.enabled; });
+        else if (filter === 'disabled') filtered = filtered.filter(function(r) { return !r.enabled; });
+
+        if (searchQuery) {
+            var q = searchQuery.toLowerCase();
+            filtered = filtered.filter(function(r) {
+                return (r.name || '').toLowerCase().indexOf(q) !== -1 ||
+                       (r.query || '').toLowerCase().indexOf(q) !== -1 ||
+                       (r.check_name || '').toLowerCase().indexOf(q) !== -1;
+            });
+        }
+
+        var total = rules.length;
+        var enabled = rules.filter(function(r) { return r.enabled; }).length;
+        var criticalCount = rules.filter(function(r) { return r.severity === 'critical'; }).length;
+        var panelHtml = '';
+        panelHtml += '<div class="rl-stat"><span class="rl-stat-n">' + total + '</span> <span class="rl-stat-l">Total</span></div>';
+        panelHtml += '<div class="rl-stat"><span class="rl-stat-n">' + enabled + '</span> <span class="rl-stat-l">Enabled</span></div>';
+        panelHtml += '<div class="rl-stat"><span class="rl-stat-n">' + criticalCount + '</span> <span class="rl-stat-l">Critical</span></div>';
+        document.getElementById('rule-panel-stats').innerHTML = panelHtml;
+        document.getElementById('rulesCount').textContent = '(' + filtered.length + ' of ' + total + ')';
+        document.getElementById('searchClear').style.display = searchQuery ? '' : 'none';
+
+        if (!filtered.length) {
+            var msg = rules.length ? 'No rules match your filter.' : 'No alert rules configured yet.';
+            if (rules.length === 0 && ADMIN) msg += '<br><button class="btn btn-sm" onclick="showRuleModal()">Create one</button>';
+            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon" style="font-size:1.8rem; margin-bottom:0.5rem;">📋</div><div>' + msg + '</div></div>';
+            return;
+        }
+
+        var html = '<div style="overflow-x:auto;"><table><thead><tr>' +
+            '<th style="width:48px;">On</th><th>Name</th><th>Type</th><th>Target</th>' +
+            '<th>Severity</th><th>Threshold</th><th>Interval</th><th class="action-cell">Actions</th>' +
+            '</tr></thead><tbody>';
+
+        filtered.forEach(function(rule) {
+            var type = rule.query ? 'PromQL' : 'Check';
+            var target = rule.query ? (rule.query.length > 45 ? rule.query.substring(0, 45) + '…' : rule.query) : (rule.check_name || '—');
+            var thresholdStr = rule.operator + ' ' + rule.threshold;
+            if (rule.resolve_threshold !== null && rule.resolve_threshold !== undefined) {
+                thresholdStr += ' <span class="text-muted">→' + rule.resolve_threshold + '</span>';
+            }
+            var tagsHtml = '';
+            var rawTags = rule.tags;
+            if (rawTags) {
+                var tagArr = Array.isArray(rawTags) ? rawTags : (typeof rawTags === 'object' ? Object.keys(rawTags) : []);
+                if (tagArr.length) {
+                    tagsHtml = ' <span style="display:inline-flex; gap:0.15rem; flex-wrap:wrap; margin-left:0.2rem;">' +
+                        tagArr.map(function(t) { return '<span class="tag-pill">' + escapeHtml(String(t)) + '</span>'; }).join('') + '</span>';
+                }
+            }
+
+            html += '<tr>' +
+                '<td><label class="toggle-inline" onclick="event.stopPropagation();toggleRule(' + rule.id + ',' + rule.enabled + ')">' +
+                '<input type="checkbox"' + (rule.enabled ? ' checked' : '') + '><span class="slider"></span></label></td>' +
+                '<td><strong>' + escapeHtml(rule.name) + '</strong>' + tagsHtml + '</td>' +
+                '<td><span class="badge">' + type + '</span></td>' +
+                '<td><code>' + escapeHtml(target) + '</code></td>' +
+                '<td><span class="badge ' + (rule.severity === 'critical' ? 'badge-danger' : 'badge-warning') + '">' + rule.severity + '</span></td>' +
+                '<td style="white-space:nowrap;">' + thresholdStr + '</td>' +
+                '<td>' + rule.interval_secs + 's</td>' +
+                '<td class="action-cell">' +
+                '<button class="btn btn-sm btn-secondary" onclick="editRule(' + rule.id + ')">Edit</button> ' +
+                '<button class="btn btn-sm btn-danger" onclick="deleteRule(' + rule.id + ')">Del</button>' +
+                '</td></tr>';
+        });
+
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+    }
+
+    window.toggleRule = function(id, enabled) {
+        fetch('/alerts/api/rules/' + id, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: !enabled})
+        }).then(function(r) {
+            if (!r.ok) throw new Error();
+            if (window.showToast) showToast('Rule ' + (enabled ? 'disabled' : 'enabled'), 'success');
+            loadRules();
+        }).catch(function() {
+            if (window.showToast) showToast('Failed to toggle rule', 'error');
+        });
+    };
+
+    window.showRuleModal = function() {
+        document.getElementById('ruleForm').reset();
+        document.getElementById('ruleId').value = '';
+        document.getElementById('ruleModalTitle').textContent = 'New Alert Rule';
+        document.getElementById('ruleModalOverlay').style.display = 'flex';
+        document.getElementById('ruleEnabled').checked = true;
+        loadChannels();
+    };
+
+    window.editRule = function(id) {
+        var rule = rules.find(function(r) { return r.id === id; });
+        if (!rule) {
+            fetch('/alerts/api/rules')
+                .then(function(r) { return r.json(); })
+                .then(function(d) {
+                    rule = (d.rules || []).find(function(r) { return r.id === id; });
+                    if (rule) populateRuleForm(rule);
+                });
+            return;
+        }
+        populateRuleForm(rule);
+    };
+
+    function populateRuleForm(rule) {
+        document.getElementById('ruleId').value = rule.id;
+        document.getElementById('ruleName').value = rule.name || '';
+        document.getElementById('ruleType').value = rule.query ? 'promql' : 'check';
+        toggleRuleType();
+        document.getElementById('ruleQuery').value = rule.query || '';
+        document.getElementById('ruleCheckName').value = rule.check_name || '';
+        document.getElementById('ruleOperator').value = rule.operator || '>';
+        document.getElementById('ruleThreshold').value = rule.threshold || '';
+        document.getElementById('ruleResolveThreshold').value = (rule.resolve_threshold !== null && rule.resolve_threshold !== undefined) ? rule.resolve_threshold : '';
+        document.getElementById('ruleSeverity').value = rule.severity || 'warning';
+        document.getElementById('ruleForDuration').value = rule.for_duration || 0;
+        document.getElementById('ruleCooldown').value = rule.cooldown_secs || '';
+        document.getElementById('ruleInterval').value = rule.interval_secs || 60;
+        document.getElementById('ruleEnabled').checked = rule.enabled !== false;
+
+        var tagsVal = '';
+        var rawTags = rule.tags;
+        if (rawTags) {
+            if (Array.isArray(rawTags)) tagsVal = rawTags.join(', ');
+            else if (typeof rawTags === 'object') tagsVal = Object.keys(rawTags).join(', ');
+        }
+        document.getElementById('ruleTags').value = tagsVal;
+
+        document.getElementById('ruleModalTitle').textContent = 'Edit Alert Rule';
+        document.getElementById('ruleModalOverlay').style.display = 'flex';
+        loadChannels();
+
+        setTimeout(function() {
+            var checkboxes = document.querySelectorAll('input[name="channelIds"]');
+            var ids = rule.channel_ids || [];
+            checkboxes.forEach(function(cb) {
+                cb.checked = ids.indexOf(parseInt(cb.value, 10)) !== -1;
+            });
+        }, 100);
+    }
+
+    window.closeRuleModal = function(e) {
+        if (e && e.target !== e.currentTarget) return;
+        document.getElementById('ruleModalOverlay').style.display = 'none';
+    };
+
+    window.toggleRuleType = function() {
+        var type = document.getElementById('ruleType').value;
+        document.getElementById('queryGroup').style.display = type === 'promql' ? 'block' : 'none';
+        document.getElementById('checkGroup').style.display = type === 'check' ? 'block' : 'none';
+    };
+
+    window.saveRule = function(e) {
+        e.preventDefault();
+        var id = document.getElementById('ruleId').value;
+        var type = document.getElementById('ruleType').value;
+
+        var tagsStr = document.getElementById('ruleTags').value.trim();
+        var tags = tagsStr ? tagsStr.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
+
+        var payload = {
+            name: document.getElementById('ruleName').value,
+            operator: document.getElementById('ruleOperator').value,
+            threshold: parseFloat(document.getElementById('ruleThreshold').value),
+            severity: document.getElementById('ruleSeverity').value,
+            for_duration: parseInt(document.getElementById('ruleForDuration').value, 10) || 0,
+            interval_secs: parseInt(document.getElementById('ruleInterval').value, 10) || 60,
+            enabled: document.getElementById('ruleEnabled').checked,
+            tags: tags
+        };
+
+        var resolveThreshold = document.getElementById('ruleResolveThreshold').value;
+        if (resolveThreshold) payload.resolve_threshold = parseFloat(resolveThreshold);
+        var cooldown = document.getElementById('ruleCooldown').value;
+        if (cooldown) payload.cooldown_secs = parseInt(cooldown, 10);
+
+        if (type === 'promql') {
+            payload.query = document.getElementById('ruleQuery').value;
+        } else {
+            payload.check_name = document.getElementById('ruleCheckName').value;
+        }
+
+        var channelCheckboxes = document.querySelectorAll('input[name="channelIds"]:checked');
+        payload.channel_ids = Array.from(channelCheckboxes).map(function(cb) { return parseInt(cb.value, 10); });
+
+        var url = id ? '/alerts/api/rules/' + id : '/alerts/api/rules';
+        var method = id ? 'PUT' : 'POST';
+        fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        }).then(function(r) {
+            if (!r.ok) throw new Error();
+            closeRuleModal();
+            if (window.showToast) showToast(id ? 'Rule updated' : 'Rule created', 'success');
+            loadRules();
+        }).catch(function() {
+            if (window.showToast) showToast('Failed to save rule', 'error');
+        });
+    };
+
+    window.deleteRule = function(id) {
+        if (!confirm('Delete this rule? Firing events will be resolved.')) return;
+        fetch('/alerts/api/rules/' + id, {method: 'DELETE'})
+            .then(function(r) {
+                if (!r.ok) throw new Error();
+                if (window.showToast) showToast('Rule deleted', 'success');
+                loadRules();
+            })
+            .catch(function() {
+                if (window.showToast) showToast('Failed to delete', 'error');
+            });
+    };
+
+    window.clearSearch = function() {
+        document.getElementById('searchInput').value = '';
+        searchQuery = '';
+        renderRules();
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                clearTimeout(window._searchTimer);
+                window._searchTimer = setTimeout(function() {
+                    searchQuery = searchInput.value.trim();
+                    renderRules();
+                }, 200);
+            });
+        }
+
+        var filterGroup = document.getElementById('filterGroup');
+        if (filterGroup) {
+            filterGroup.addEventListener('click', function(e) {
+                var btn = e.target.closest('.filter-btn');
+                if (!btn) return;
+                filterGroup.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+                filter = btn.dataset.filter;
+                renderRules();
+            });
+        }
+    });
+
+    loadRules();
+})();
+</script>
+{% endblock %}

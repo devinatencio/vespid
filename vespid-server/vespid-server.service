@@ -1,0 +1,33 @@
+[Unit]
+Description=Vespid Server Dashboard
+Documentation=https://github.com/your-org/vespid
+After=network.target
+
+[Service]
+Type=simple
+User=vespid
+Group=vespid
+WorkingDirectory=/opt/vespid-server
+EnvironmentFile=-/etc/vespid-server/environment
+
+# The app factory auto-discovers config files in order:
+#   config.yaml > config.yml > config.json
+# To use a specific file, change the path below.
+ExecStart=/opt/vespid-server/.venv/bin/gunicorn \
+    --config /opt/vespid-server/gunicorn.conf.py \
+    "app:create_app('/etc/vespid-server/config.yaml')"
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/vespid-server /var/log/vespid-server /etc/vespid-server/geoip
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

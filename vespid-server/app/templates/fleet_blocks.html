@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Fleet Blocks — Vespid Server{% endblock %}
+{% block content %}
+<div class="admin-nav" style="display:flex; gap:0.5rem; margin-bottom:1.5rem;">
+    <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.blocks_page' %}btn{% else %}btn-secondary{% endif %}">Blocks</a>
+    <a href="{{ url_for('fleet_dashboard.allowlist_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.allowlist_page' %}btn{% else %}btn-secondary{% endif %}">Allow-List</a>
+    <a href="{{ url_for('fleet_dashboard.config_page') }}" class="btn {% if request.endpoint == 'fleet_dashboard.config_page' %}btn{% else %}btn-secondary{% endif %}">Configuration</a>
+</div>
+
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem;">
+    <h1 class="page-title" style="margin-bottom:0;">🌐 Fleet Blocks</h1>
+    <div style="display:flex; gap:0.5rem; align-items:center;">
+        {% if current_user.is_authenticated and current_user.role == 'admin' %}
+        <button class="btn btn-sm btn-success" onclick="openAddBlockModal()">+ Add Block</button>
+        {% endif %}
+        <div id="pause-toggle">
+            {% include "fragments/fleet_pause_toggle.html" %}
+        </div>
+    </div>
+</div>
+
+<!-- Filter controls -->
+<div class="card">
+    <h2 class="card-title">Filters</h2>
+    <form id="fleet-filter-form" class="form-inline"
+          hx-get="{{ url_for('fleet_dashboard.fragment_blocks_table') }}"
+          hx-target="#blocks-table"
+          hx-trigger="submit"
+          hx-indicator="#fleet-filter-indicator">
+        <div class="form-group">
+            <label for="source_ip">Source IP</label>
+            <input type="text" id="source_ip" name="source_ip" placeholder="203.0.113.42" value="{{ filters.source_ip }}">
+        </div>
+        <div class="form-group">
+            <label for="event_type">Event Type</label>
+            <select id="event_type" name="event_type">
+                <option value="">All</option>
+                <option value="SSH_BRUTE" {% if filters.event_type == 'SSH_BRUTE' %}selected{% endif %}>SSH_BRUTE</option>
+                <option value="PORT_SCAN" {% if filters.event_type == 'PORT_SCAN' %}selected{% endif %}>PORT_SCAN</option>
+                <option value="WEB_ATTACK" {% if filters.event_type == 'WEB_ATTACK' %}selected{% endif %}>WEB_ATTACK</option>
+                <option value="DNS_TUNNEL" {% if filters.event_type == 'DNS_TUNNEL' %}selected{% endif %}>DNS_TUNNEL</option>
+                <option value="MALWARE_BEACON" {% if filters.event_type == 'MALWARE_BEACON' %}selected{% endif %}>MALWARE_BEACON</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+                <option value="all" {% if filters.status == 'all' %}selected{% endif %}>All</option>
+                <option value="active" {% if filters.status == 'active' or not filters.status %}selected{% endif %}>Active</option>
+                <option value="expired" {% if filters.status == 'expired' %}selected{% endif %}>Expired</option>
+                <option value="removed" {% if filters.status == 'removed' %}selected{% endif %}>Removed</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="node_id">Node ID</label>
+            <input type="text" id="node_id" name="node_id" placeholder="web01-abc123" value="{{ filters.node_id }}">
+        </div>
+        <div class="form-group">
+            <label for="fleet-search">Search</label>
+            <input type="text" id="fleet-search" name="search" placeholder="IP, node, event type…" value="{{ search }}">
+        </div>
+        <div class="form-group">
+            <label for="fleet-per_page">Per Page</label>
+            <select id="fleet-per_page" name="per_page">
+                <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+            </select>
+        </div>
+        <div class="form-group" style="align-self:flex-end;">
+            <label>
+                <input type="checkbox" id="fleet-auto-refresh" name="refresh" value="1"
+                       onchange="toggleFleetRefresh(this.checked)">
+                Auto-refresh (30s)
+            </label>
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn">Search</button>
+            <span id="fleet-filter-indicator" class="htmx-indicator" style="margin-left:0.5rem;">Refreshing…</span>
+        </div>
+    </form>
+</div>
+
+<!-- Saved filters -->
+<div class="card" style="padding:0.75rem 1rem;">
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <label for="fleet-saved-filter-select" style="font-weight:500;font-size:0.85rem;">Saved Filters:</label>
+        <select id="fleet-saved-filter-select" style="padding:0.3rem 0.5rem;border-radius:4px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-color);font-size:0.8rem;min-width:180px;">
+            <option value="">— Select —</option>
+        </select>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="loadFleetFilter()" style="font-size:0.75rem;">Load</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="saveFleetFilter()" style="font-size:0.75rem;">💾 Save Current</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="deleteFleetFilter()" style="font-size:0.75rem;">✕ Delete</button>
+    </div>
+</div>
+
+<!-- Add Block Modal (admin only) -->
+{% if current_user.is_authenticated and current_user.role == 'admin' %}
+<div id="add-block-modal" class="event-modal-overlay" style="display:none;" onclick="if(event.target===this)closeAddBlockModal()">
+    <div class="event-modal" style="max-width:500px;padding:1.5rem;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h2 style="margin:0;">Add Manual Block</h2>
+            <button class="btn btn-sm btn-secondary" onclick="closeAddBlockModal()" style="font-size:1.2rem;line-height:1;">✕</button>
+        </div>
+        <form method="POST" action="{{ url_for('fleet_dashboard.add_block') }}" class="form-inline" style="flex-direction:column;align-items:stretch;gap:0.75rem;">
+            <div class="form-group" style="margin:0;">
+                <label for="add_source_ip">Source IP</label>
+                <input type="text" id="add_source_ip" name="source_ip" placeholder="203.0.113.42" required style="width:100%;">
+            </div>
+            <div class="form-group" style="margin:0;">
+                <label for="add_reason">Reason</label>
+                <input type="text" id="add_reason" name="reason" placeholder="Manual block reason" required style="width:100%;">
+            </div>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeAddBlockModal()">Cancel</button>
+                <button type="submit" class="btn btn-danger">Add Block</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div id="block-detail"></div>
+
+<!-- Blocks table -->
+<div class="card">
+    <h2 class="card-title">Fleet Blocks ({{ total }})</h2>
+    <div id="blocks-table">
+        {% include "fragments/fleet_blocks_table.html" %}
+    </div>
+</div>
+
+<!-- Activity Feed -->
+<div class="card">
+    <h2 class="card-title">Activity Feed</h2>
+    <div style="max-height:360px; overflow-y:auto;"
+         hx-get="{{ url_for('fleet_dashboard.fragment_activity_feed') }}"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="empty-state">Loading activity feed…</div>
+    </div>
+</div>
+
+<script>
+// ── Add Block Modal ────────────────────────────────────────────────────
+function openAddBlockModal() {
+    document.getElementById('add-block-modal').style.display = 'flex';
+}
+function closeAddBlockModal() {
+    document.getElementById('add-block-modal').style.display = 'none';
+}
+
+// ── Auto-refresh ───────────────────────────────────────────────────────
+var fleetRefreshInterval = null;
+function toggleFleetRefresh(enabled) {
+    if (fleetRefreshInterval) {
+        clearInterval(fleetRefreshInterval);
+        fleetRefreshInterval = null;
+    }
+    if (enabled) {
+        fleetRefreshInterval = setInterval(function() {
+            var form = document.getElementById('fleet-filter-form');
+            if (form) form.requestSubmit();
+        }, 30000);
+    }
+}
+document.addEventListener('DOMContentLoaded', function() {
+    var cb = document.getElementById('fleet-auto-refresh');
+    if (cb && cb.checked) toggleFleetRefresh(true);
+    loadFleetFilterList();
+});
+
+// ── Saved Filters (localStorage) ───────────────────────────────────────
+function getFleetFilters() {
+    try { return JSON.parse(localStorage.getItem('vespid_fleet_filters') || '[]'); }
+    catch(e) { return []; }
+}
+function saveFleetFilters(filters) {
+    localStorage.setItem('vespid_fleet_filters', JSON.stringify(filters));
+}
+function loadFleetFilterList() {
+    var select = document.getElementById('fleet-saved-filter-select');
+    var filters = getFleetFilters();
+    select.innerHTML = '<option value="">— Select —</option>';
+    filters.forEach(function(f, i) {
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = f.name || 'Filter ' + (i + 1);
+        select.appendChild(opt);
+    });
+}
+function saveFleetFilter() {
+    var name = prompt('Name this filter:');
+    if (!name) return;
+    var form = document.getElementById('fleet-filter-form');
+    var data = new FormData(form);
+    var filter = { name: name, params: {} };
+    for (var pair of data.entries()) {
+        if (pair[1]) filter.params[pair[0]] = pair[1];
+    }
+    var filters = getFleetFilters();
+    filters.push(filter);
+    saveFleetFilters(filters);
+    loadFleetFilterList();
+}
+function loadFleetFilter() {
+    var select = document.getElementById('fleet-saved-filter-select');
+    var idx = select.value;
+    if (idx === '') return;
+    var filters = getFleetFilters();
+    var filter = filters[parseInt(idx)];
+    if (!filter) return;
+    var form = document.getElementById('fleet-filter-form');
+    for (var key in filter.params) {
+        var input = form.querySelector('[name="' + key + '"]');
+        if (input) input.value = filter.params[key];
+    }
+    form.requestSubmit();
+}
+function deleteFleetFilter() {
+    var select = document.getElementById('fleet-saved-filter-select');
+    var idx = select.value;
+    if (idx === '') return;
+    if (!confirm('Delete this saved filter?')) return;
+    var filters = getFleetFilters();
+    filters.splice(parseInt(idx), 1);
+    saveFleetFilters(filters);
+    loadFleetFilterList();
+    select.value = '';
+}
+</script>
+{% endblock %}

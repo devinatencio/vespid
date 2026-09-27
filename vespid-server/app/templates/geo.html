@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Geographic Breakdown — Vespid Server{% endblock %}
+{% block content %}
+
+<div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-bottom:1rem;">
+    <h1 class="page-title" style="margin:0;">🌍 Geographic Breakdown</h1>
+    <div style="display:flex; gap:0.35rem;">
+        {% set current_range = range if range else '1d' %}
+        {% for opt in [('1d', '1 Day'), ('3d', '3 Days'), ('5d', '5 Days'), ('all', 'All Time')] %}
+        <a href="{{ url_for('dashboard.geo', range=opt[0]) }}"
+           class="btn btn-sm {% if current_range == opt[0] %}btn-primary{% else %}btn-secondary{% endif %}"
+           style="border-radius:1rem; padding:0.25rem 0.8rem; font-size:0.8rem; text-decoration:none;">
+            {{ opt[1] }}
+        </a>
+        {% endfor %}
+    </div>
+</div>
+
+{% set max_count = countries[0].count if countries else 1 %}
+{% set total_events = countries|sum(attribute='count') if countries else 0 %}
+{% if max_count == 0 %}{% set max_count = 1 %}{% endif %}
+{% set total_events_display = total_events %}
+{% if total_events == 0 %}{% set total_events = 1 %}{% endif %}
+
+<!-- Top stats -->
+<div class="stats-grid" style="margin-bottom:1.5rem;">
+    <div class="stat-card">
+        <div class="stat-label">Countries</div>
+        <div class="stat-value">{{ countries|length }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Events</div>
+        <div class="stat-value">{{ total_events_display }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Top Source</div>
+        <div class="stat-value" style="font-size:1.5rem">{{ countries[0].country|country_name if countries else '—' }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Top Source Events</div>
+        <div class="stat-value">{{ countries[0].count if countries else 0 }}</div>
+    </div>
+</div>
+
+{% if countries %}
+<!-- World Map -->
+<div class="card">
+    <h2 class="card-title">Attack Origins</h2>
+    <div class="worldmap-container" id="world-map"></div>
+</div>
+
+<!-- Donut chart for country distribution -->
+<div class="card">
+    <h2 class="card-title">Country Distribution</h2>
+    <div style="display:flex; gap:2rem; align-items:center; flex-wrap:wrap;">
+        <div style="position:relative; width:280px; height:280px; flex-shrink:0;">
+            <canvas id="geoDonut"></canvas>
+        </div>
+        <div style="flex:1; min-width:200px;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Country</th>
+                        <th>Events</th>
+                        <th style="width:35%">Share</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in countries %}
+                    <tr>
+                        <td><strong>{{ item.country|country_name }}</strong></td>
+                        <td>{{ item.count }}</td>
+                        <td>
+                            <div class="country-bar">
+                                <div class="country-bar-fill" style="width: {{ (item.count / max_count * 100)|round }}%"></div>
+                                <span style="font-size:0.75rem; color:var(--text-muted)">{{ ((item.count / total_events) * 100)|round(1) }}%</span>
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm"
+                               hx-get="{{ url_for('dashboard.geo_filter', country=item.country, range=range) }}"
+                               hx-target="#country-events"
+                               hx-swap="innerHTML">View</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <p style="color:var(--text-muted); text-align:center; padding:2rem;">No geographic data available yet. Events will appear here once nodes start shipping data with geo_data.</p>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2 class="card-title">Filtered Events</h2>
+    <div id="country-events">
+        <p style="color:var(--text-muted)">Click "View" on a country to see its events here.</p>
+    </div>
+</div>
+
+{% if countries %}
+<script src="{{ url_for('static', filename='worldmap.js') }}"></script>
+<script>
+(function() {
+    if (typeof Chart === 'undefined') return;
+
+    var labels = [{% for item in countries %}'{{ item.country|country_name }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    var data = [{% for item in countries %}{{ item.count }}{% if not loop.last %},{% endif %}{% endfor %}];
+    var geoDonutChart = null;
+
+    function renderGeoDonutChart() {
+        var canvas = document.getElementById('geoDonut');
+        if (!canvas) return;
+        if (geoDonutChart) {
+            geoDonutChart.destroy();
+        }
+
+        var theme = window.getChartThemeColors();
+        geoDonutChart = new Chart(canvas, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: window.getChartPalette().slice(0, data.length),
+                    borderColor: theme.gridLine,
+                    borderWidth: 2,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                cutout: '60%',
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        /* Render world map */
+        var countryData = [
+            {% for item in countries %}
+            { code: '{{ item.country }}', count: {{ item.count }} }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
+        renderWorldMap('world-map', countryData);
+
+        renderGeoDonutChart();
+    });
+
+    document.body.addEventListener('vespid:themechange', function() {
+        renderGeoDonutChart();
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vespid-server"
+dynamic = ["version"]
+description = "Centralized security event dashboard and management server for Vespid"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.11"
+dependencies = [
+    "Flask==3.1.1",
+    "Flask-Limiter==3.8.0",
+    "Flask-WTF==1.3.0",
+    "Flask-Login==0.6.3",
+    "flask-openapi3[swagger,redoc,rapidoc,scalar]==4.3.2",
+    "pydantic==2.13.4",
+    "gunicorn==23.0.0",
+    "gevent==24.11.1",
+    "mysql-connector-python==9.1.0",
+    "APScheduler==3.11.0",
+    "redis==5.2.1",
+    "markdown-it-py==4.2.0",
+    "PyYAML==6.0.2",
+    "maxminddb>=2.0.0,<3.0",
+    "requests==2.32.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.4",
+    "hypothesis==6.122.3",
+    "ruff>=0.9.0",
+]
+
+[project.scripts]
+vespid-server-admin = "vespid_server:main"
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
+
+[tool.setuptools]
+py-modules = ["vespid_server"]
+
+[tool.setuptools.packages.find]
+include = ["app", "app.*"]
+
+[tool.setuptools.package-data]
+app = ["templates/**/*", "static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["server_tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = ["rpmbuild", ".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "N", "UP", "B"]
+ignore = ["E501", "N818"]
+
+[tool.ruff.lint.per-file-ignores]
+# Aggregator package: star imports and private re-exports are intentional.
+"app/models/__init__.py" = ["F401", "F403"]
+# flask_openapi3 monkey-patching must run after the helper it wraps is defined.
+"app/__init__.py" = ["E402"]
+# gevent monkey-patching must run before anything else is imported.
+"gunicorn.conf.py" = ["E402", "I001"]

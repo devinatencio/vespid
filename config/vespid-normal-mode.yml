@@ -1,0 +1,153 @@
+# ============================================================================
+# Vespid Agent Configuration — Normal (Standalone) Mode
+# ============================================================================
+# All settings have sensible defaults — you only need to configure SERVER_URL
+# and API_KEY to connect to a Vespid server.
+#
+# For server-managed deployments: copy vespid-fully-managed.yml over
+# this file and set your SERVER_URL and API_KEY.
+# ============================================================================
+
+# --- Server Connection -----------------------------------------------------
+SERVER_URL: "https://your-vespid-server.example.com/api/v1/events"
+# Leave API Key empty to Auto-Enroll
+API_KEY: ""
+upload_enabled: true
+
+# --- Centralized Management ------------------------------------------------
+# "standalone" = all config is local (default)
+# "server-managed" = server pushes a configuration profile that layers on top
+management_mode: "standalone"
+config_conflict_strategy: "server-wins"
+
+# --- Log Sources -----------------------------------------------------------
+log_sources:
+  - path: "/var/log/secure"
+    parser: "secure"
+  - path: "/var/log/auth.log"
+    parser: "secure"
+  - path: "/var/log/messages"
+    parser: "messages"
+  # Uncomment if running Apache/httpd:
+  # - path: "/var/log/httpd/access_log"
+  #   parser: "apache"
+  # - path: "/var/log/httpd/error_log"
+  #   parser: "apache"
+
+# --- Detection Rules -------------------------------------------------------
+brute_force_rules:
+  - name: "ssh_fast_brute"
+    event_type: "SSH_BRUTE"
+    max_attempts: 5
+    window_seconds: 60
+    parser: "secure"
+
+  - name: "ssh_medium_brute"
+    event_type: "SSH_MEDIUM_BRUTE"
+    max_attempts: 4
+    window_seconds: 600
+    parser: "secure"
+
+  - name: "ssh_slow_brute"
+    event_type: "SSH_SLOW_BRUTE"
+    max_attempts: 5
+    window_seconds: 21600
+    parser: "secure"
+
+  - name: "http_auth_brute"
+    event_type: "HTTP_AUTH_BRUTE"
+    max_attempts: 20
+    window_seconds: 600
+    parser: "apache"
+
+  - name: "ssh_negotiate_fail"
+    event_type: "SSH_NEGOTIATE_FAIL"
+    max_attempts: 3
+    window_seconds: 86400
+    parser: "secure_negotiate_fail"
+
+  - name: "ssh_recon_strong"
+    event_type: "SSH_BANNER_GRAB"
+    max_attempts: 3
+    window_seconds: 86400
+    parser: "secure_recon_strong"
+
+  - name: "ssh_recon_weak"
+    event_type: "SSH_RECON_WEAK"
+    max_attempts: 8
+    window_seconds: 86400
+    parser: "secure_recon_weak"
+
+custom_rules: []
+
+# --- Network / Blocking ----------------------------------------------------
+nft_local_block_ttl: 86400
+
+# IPs/CIDRs that can never be blocked. Always include your Vespid control
+# plane (the server address and your nodes' egress range) so legitimate
+# /api/v1/ check-ins, metrics, and rule pulls are never flagged by the
+# scanner / recon detection packs.
+allowlist:
+  - "127.0.0.1/32"
+  - "::1/128"
+  # Example: allow your Vespid server and management network
+  # - "203.0.113.10/32"   # Vespid server
+  # - "10.0.0.0/8"        # management / node network
+
+# Repeat-offender escalation (seconds per tier)
+recidive_tiers:
+  - 86400
+  - 259200
+  - 604800
+  - 2592000
+recidive_decay_seconds: 2592000
+
+# --- Subscription Feeds ----------------------------------------------------
+subscriptions:
+  - name: "firehol_level1"
+    url: "https://iplists.firehol.org/files/firehol_level1.netset"
+    format: "cidr"
+    refresh_seconds: 21600
+    enabled: true
+  # - name: "spamhaus_drop"
+  #   url: "https://www.spamhaus.org/drop/drop.txt"
+  #   format: "cidr"
+  #   refresh_seconds: 43200
+  #   enabled: true
+
+# --- Fleet Blocklist Sharing -----------------------------------------------
+fleet_blocklist_report_enabled: true
+fleet_blocklist_subscribe_enabled: true
+fleet_block_ttl_seconds: 86400
+fleet_local_allow_list: []
+
+# --- Telemetry -------------------------------------------------------------
+flush_interval_seconds: 5
+flush_batch_size: 100
+heartbeat_interval_seconds: 300
+
+# --- Logging ---------------------------------------------------------------
+log_level: "INFO"
+
+# --- Host-Based Detection (Auditd) ----------------------------------------
+# Uncomment to enable Linux process creation monitoring via auditd.
+# Requires auditd with execve rules configured:
+#   auditctl -a always,exit -F arch=b64 -S execve
+#   auditctl -a always,exit -F arch=b32 -S execve
+#
+# auditd:
+#   enabled: true
+#   log_path: "/var/log/audit/audit.log"
+#   mode: "learning"                    # learning → detecting → alerting
+#   learning_duration_hours: 24         # auto-promote to detecting after 24h
+#   process_tree_ttl_seconds: 3600
+#   scorer_half_life_seconds: 1800
+#   scorer_threshold: 100
+#   alert_cooldown_seconds: 900
+#   exclude_uids: []
+#   exclude_exe_prefixes:
+#     - "/usr/lib/dpkg"
+#     - "/usr/bin/apt"
+#     - "/usr/bin/rpm"
+#     - "/usr/bin/dnf"
+#     - "/usr/lib/systemd"

@@ -1,0 +1,272 @@
+<!-- Kill Chain Timeline Panel (HTMX fragment) -->
+<!-- Displays host threat events as a Chart.js scatter chart colored by MITRE ATT&CK tactic -->
+<!-- Hostname filtering is handled by the global dashboard filter via hostname-filter-changed CustomEvent -->
+<!-- Time window is controlled by the global #global-time-window selector -->
+<div class="card" style="margin-bottom:0; flex:1; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
+        <h2 class="card-title" style="margin:0;">Kill Chain Timeline</h2>
+    </div>
+
+    <!-- HTMX data loader: fetches timeline data on load, on demand, and every 60s -->
+    <div id="kc-timeline-data"
+         hx-get="/admin/host-threats/timeline"
+         hx-trigger="load, refresh-killchain, every 60s"
+         hx-vals='js:{"hostname": (window._kcHostnameFilter || ""), "hours": document.getElementById("global-time-window").value}'
+         hx-swap="none"
+         hx-on::after-request="handleKillChainResponse(event)">
+    </div>
+
+    <!-- Chart Canvas -->
+    <div style="position:relative; width:100%; height:320px;">
+        <canvas id="kc-timeline-chart"></canvas>
+    </div>
+
+    <!-- Legend -->
+    <div id="kc-legend" style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem; margin-top:0.75rem; font-size:0.75rem; color:var(--text-muted);">
+    </div>
+</div>
+
+<script>
+(function() {
+    /* ── Panel-local hostname state (updated via global filter event) ── */
+    window._kcHostnameFilter = window._kcHostnameFilter || '';
+
+    /* ── TACTIC_MAP: ATT&CK tactic tag → display name ── */
+    var TACTIC_MAP = {
+        'attack.initial_access':       { label: 'Initial Access' },
+        'attack.execution':            { label: 'Execution' },
+        'attack.persistence':          { label: 'Persistence' },
+        'attack.privilege_escalation': { label: 'Privilege Escalation' },
+        'attack.defense_evasion':      { label: 'Defense Evasion' },
+        'attack.credential_access':    { label: 'Credential Access' },
+        'attack.lateral_movement':     { label: 'Lateral Movement' },
+        'attack.command_and_control':  { label: 'Command and Control' },
+        'attack.exfiltration':         { label: 'Exfiltration' }
+    };
+    var UNKNOWN_TACTIC = { label: 'Unknown' };
+    var TACTIC_KEYS = Object.keys(TACTIC_MAP);
+
+    /* Map a tactic label to a theme palette color (Unknown uses muted text) */
+    function getTacticColor(label, palette, theme) {
+        if (label === UNKNOWN_TACTIC.label) return theme.textMuted;
+        for (var i = 0; i < TACTIC_KEYS.length; i++) {
+            if (TACTIC_MAP[TACTIC_KEYS[i]].label === label) {
+                return palette[i % palette.length];
+            }
+        }
+        return theme.textMuted;
+    }
+
+    /* Ordered tactic labels for Y-axis (bottom to top matches kill chain progression) */
+    var TACTIC_ORDER = [
+        'Initial Access',
+        'Execution',
+        'Persistence',
+        'Privilege Escalation',
+        'Defense Evasion',
+        'Credential Access',
+        'Lateral Movement',
+        'Command and Control',
+        'Exfiltration',
+        'Unknown'
+    ];
+
+    var kcChart = null;
+    var lastData = null;
+
+    /* ── Initialize Chart ─────────────────────────────────────── */
+    function initChart() {
+        var ctx = document.getElementById('kc-timeline-chart');
+        if (!ctx) return;
+
+        var theme = window.getChartThemeColors();
+
+        kcChart = new Chart(ctx, {
+            type: 'scatter',
+            data: { datasets: [] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'nearest',
+                    intersect: true
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            tooltipFormat: 'yyyy-MM-dd HH:mm:ss',
+                            displayFormats: {
+                                minute: 'HH:mm',
+                                hour: 'HH:mm',
+                                day: 'MMM d'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Time',
+                            color: theme.text,
+                            font: { size: 11 }
+                        },
+                        ticks: {
+                            color: theme.textMuted
+                        },
+                        grid: {
+                            color: theme.gridLine
+                        }
+                    },
+                    y: {
+                        type: 'category',
+                        labels: TACTIC_ORDER,
+                        title: {
+                            display: true,
+                            text: 'ATT&CK Tactic',
+                            color: theme.text,
+                            font: { size: 11 }
+                        },
+                        ticks: {
+                            color: theme.textMuted
+                        },
+                        grid: {
+                            color: theme.gridLine
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                var point = context.raw;
+                                var parts = [context.dataset.label];
+                                if (point.rule_name) parts.push('Rule: ' + point.rule_name);
+                                if (point.hostname) parts.push('Host: ' + point.hostname);
+                                if (point.exe) parts.push('Exe: ' + point.exe);
+                                return parts;
+                            }
+                        }
+                    },
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        renderLegend();
+    }
+
+    /* ── Render custom legend ─────────────────────────────────── */
+    function renderLegend() {
+        var container = document.getElementById('kc-legend');
+        if (!container) return;
+        var theme = window.getChartThemeColors();
+        var palette = window.getChartPalette();
+        var html = '';
+        TACTIC_ORDER.forEach(function(label) {
+            var color = getTacticColor(label, palette, theme);
+            html += '<span style="display:inline-flex; align-items:center; gap:0.3rem;">' +
+                    '<span style="width:10px; height:10px; border-radius:50%; background:' + color + '; display:inline-block;"></span>' +
+                    label + '</span>';
+        });
+        container.innerHTML = html;
+    }
+
+    /* ── Handle HTMX response with timeline data ──────────────── */
+    window.handleKillChainResponse = function(event) {
+        var xhr = event.detail.xhr;
+        if (!xhr || xhr.status !== 200) return;
+
+        try {
+            var data = JSON.parse(xhr.responseText);
+            updateChart(data);
+        } catch (e) {
+            console.error('Kill Chain Timeline: failed to parse response', e);
+        }
+    };
+
+    /* ── Update chart with new data ───────────────────────────── */
+    function updateChart(data) {
+        lastData = data;
+        if (!kcChart) return;
+
+        var theme = window.getChartThemeColors();
+        var palette = window.getChartPalette();
+        var datasets = [];
+
+        if (data && data.datasets) {
+            data.datasets.forEach(function(ds) {
+                /* Backend format:
+                   { "label": "Execution", "backgroundColor": "<color>", "borderColor": "<color>",
+                     "data": [{"x": "2024-...", "y": 1, "meta": {"hostname":..., "rule_name":..., "exe":...}}],
+                     "pointRadius": 5 }
+                */
+                var color = ds.backgroundColor || ds.borderColor || getTacticColor(ds.label || 'Unknown', palette, theme);
+                var points = (ds.data || []).map(function(pt) {
+                    /* Convert numeric y to tactic label using the tactics array */
+                    var yLabel = (data.tactics && data.tactics[pt.y] != null) ? data.tactics[pt.y] : 'Unknown';
+                    return {
+                        x: pt.x,
+                        y: yLabel,
+                        rule_name: pt.meta ? pt.meta.rule_name : '',
+                        hostname: pt.meta ? pt.meta.hostname : '',
+                        exe: pt.meta ? pt.meta.exe : ''
+                    };
+                });
+                datasets.push({
+                    label: ds.label || 'Unknown',
+                    data: points,
+                    backgroundColor: color,
+                    borderColor: color,
+                    pointRadius: 6,
+                    pointHoverRadius: 9,
+                    pointStyle: 'circle'
+                });
+            });
+        }
+
+        kcChart.data.datasets = datasets;
+        kcChart.update('none');
+    }
+
+    /* ── Manual reload (triggered by global time window change) ── */
+    window.loadKillChainData = function() {
+        var hostname = window._kcHostnameFilter || '';
+        var hours = document.getElementById('global-time-window').value;
+        var el = document.getElementById('kc-timeline-data');
+        if (el) {
+            /* Update hx-vals dynamically and trigger HTMX request */
+            el.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, hours: hours }));
+            htmx.trigger(el, 'refresh-killchain');
+        }
+    };
+
+    /* ── Listen for global hostname filter changes ────────────── */
+    document.addEventListener('hostname-filter-changed', function(e) {
+        var hostname = e.detail.hostname || '';
+        window._kcHostnameFilter = hostname;
+        var hours = document.getElementById('global-time-window').value;
+        var el = document.getElementById('kc-timeline-data');
+        if (el) {
+            el.setAttribute('hx-vals', JSON.stringify({ hostname: hostname, hours: hours }));
+            htmx.trigger(el, 'refresh-killchain');
+        }
+    });
+
+    /* ── Re-render when the theme changes ─────────────────────── */
+    document.body.addEventListener('vespid:themechange', function() {
+        if (kcChart) {
+            kcChart.destroy();
+            kcChart = null;
+        }
+        initChart();
+        if (lastData) updateChart(lastData);
+    });
+
+    /* ── Init on DOM ready ────────────────────────────────────── */
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initChart);
+    } else {
+        initChart();
+    }
+})();
+</script>

@@ -1,0 +1,85 @@
+# NGINX Attack Detection Pack
+# Detects web application attacks via NGINX/Apache Combined Log Format access logs.
+---
+pack_name: nginx-attacks
+display_name: NGINX Attack Detection Pack
+icon: "🌐"
+description: >
+  Detect web application attacks via NGINX access logs: auth brute force,
+  bot/scanner detection, SQL injection, XSS, shellshock, request smuggling,
+  and sensitive file probing.
+prerequisite: >
+  Requires NGINX access log in Combined Log Format configured in
+  log_sources with parser "apache". The parser handles both Apache
+  and NGINX combined format identically.
+
+rules:
+  - name: nginx_http_auth_failure
+    event_type: NGINX_AUTH_BRUTE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s401\s'
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 300
+
+  - name: nginx_botsearch_404
+    event_type: NGINX_BOTSEARCH
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST|HEAD)\s+/(?:wp-login|wp-admin|administrator|admin|phpmyadmin|pma|myadmin|mysql|dbadmin|\.env|\.git|cgi-bin).*"\s(?:404|403)\s'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: nginx_bad_request_flood
+    event_type: NGINX_BAD_REQUEST_FLOOD
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s400\s'
+    log_sources: ["apache"]
+    max_attempts: 10
+    window_seconds: 60
+
+  - name: nginx_forbidden_scan
+    event_type: NGINX_FORBIDDEN_SCAN
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s403\s'
+    log_sources: ["apache"]
+    max_attempts: 10
+    window_seconds: 120
+
+  - name: nginx_script_injection
+    event_type: NGINX_SCRIPT_INJECTION
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+.*(?:<script|javascript:|%3Cscript|onload=|onerror=)'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: nginx_sql_injection
+    event_type: NGINX_SQL_INJECTION
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+.*(?:UNION\s+SELECT|OR\s+1=1|AND\s+1=1|%27|%22\s*OR\s*|SELECT\s+.*FROM|DROP\s+TABLE|INSERT\s+INTO)'
+    log_sources: ["apache"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: nginx_shellshock
+    event_type: NGINX_SHELLSHOCK
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s.*\(\)\s*\{'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: nginx_scanner_ua
+    event_type: NGINX_SCANNER_UA
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"\s\d{3}\s\d+\s"[^"]*"\s"(?:nikto|sqlmap|nmap|dirbuster|gobuster|wfuzz|nuclei|httpx|zgrab|masscan)'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: nginx_request_smuggling
+    event_type: NGINX_REQUEST_SMUGGLING
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST)\s+.*(?:Transfer-Encoding|Content-Length).*(?:chunked|%0d%0a)'
+    log_sources: ["apache"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: nginx_sensitive_file_probe
+    event_type: NGINX_SENSITIVE_FILE
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"GET\s+/(?:server-status|server-info|nginx_status|status|info\.php|phpinfo|test\.php|debug|console|elmah\.axd)'
+    log_sources: ["apache"]
+    max_attempts: 3
+    window_seconds: 120

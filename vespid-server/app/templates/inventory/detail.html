@@ -1,0 +1,822 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.display_name }} — Inventory{% endblock %}
+{% block content %}
+<div class="page-container">
+    <div class="content-card">
+        <div class="mb-2">
+            <a href="{{ url_for('inventory.overview') }}" class="btn btn-sm btn-secondary" style="text-decoration:none;">&larr; Inventory</a>
+        </div>
+        <div class="hero-banner">
+            <div class="hero-banner-top">
+                <h2 class="hero-title">{{ asset.display_name }}</h2>
+                <div class="hero-badges">
+                    <span class="badge {% if asset.status == 'active' %}badge-healthy{% elif asset.status == 'stale' %}badge-warning{% else %}badge-danger{% endif %}">{{ asset.status }}</span>
+                    <span class="badge badge-info">{{ asset.asset_type | capitalize }}</span>
+                    <span class="badge badge-info">{{ asset.created_by_source | capitalize }}</span>
+                </div>
+                <div class="hero-actions">
+                    <button class="btn btn-sm btn-secondary" title="View asset as JSON" onclick="showAssetJSON('{{ asset.asset_id }}', '{{ asset.display_name | replace("'", "\\'") }}')">🧬 JSON</button>
+                    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                    <form method="POST" action="{{ url_for('inventory.delete', asset_id=asset.asset_id) }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-danger" title="Delete this asset" onclick="return confirm('Delete asset &quot;{{ asset.display_name }}&quot;? This will remove all aliases, relationships, and unlink agents. This cannot be undone.')">🗑️ Delete</button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="hero-labels" id="heroLabels">
+                {% if labels_dict %}
+                {% for k, v in (labels_dict|dictsort(false)) %}
+                <span class="inv-label" data-key="{{ k }}" style="{{ label_color(k) }}">
+                    <span class="inv-label-key">{{ k }}</span>
+                    <span class="inv-label-val">{{ v }}</span>
+                    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                    <button class="inv-label-del" onclick="deleteLabel('{{ asset.asset_id }}', '{{ k }}')" title="Remove &quot;{{ k }}&quot;">&times;</button>
+                    {% endif %}
+                </span>
+                {% endfor %}
+                {% endif %}
+                {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                <button class="inv-label-add-btn" onclick="showAddLabel('{{ asset.asset_id }}')" title="Add label">+ Add</button>
+                {% endif %}
+            </div>
+            <div id="heroLabelForm" class="inv-label-form" style="display:none;">
+                <div class="inv-label-form-inner">
+                    <input type="text" id="invLabelKey" class="inv-label-input" placeholder="Key" maxlength="64" autocomplete="off">
+                    <input type="text" id="invLabelVal" class="inv-label-input" placeholder="Value" maxlength="255" autocomplete="off">
+                    <button class="btn btn-sm btn-primary" onclick="saveLabel('{{ asset.asset_id }}')">Save</button>
+                    <button class="btn btn-sm btn-secondary" onclick="hideAddLabel()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="detail-sections">
+            <div class="detail-card">
+                <h3 class="detail-section-title">Identity</h3>
+                <div class="identity-grid">
+                    <table class="detail-table">
+                        <tr><td class="dt-label">Asset ID</td><td class="dt-value"><code>{{ asset.asset_id }}</code></td></tr>
+                        <tr><td class="dt-label">Display Name</td><td class="dt-value">{{ asset.display_name }}</td></tr>
+                        <tr><td class="dt-label">Asset Type</td><td class="dt-value">{{ asset.asset_type }}</td></tr>
+                        <tr><td class="dt-label">Source</td><td class="dt-value">{{ asset.created_by_source }}</td></tr>
+                        <tr><td class="dt-label">Status</td><td class="dt-value">
+                            <span class="badge {% if asset.status == 'active' %}badge-healthy{% elif asset.status == 'stale' %}badge-warning{% else %}badge-danger{% endif %}">{{ asset.status }}</span>
+                        </td></tr>
+                        {% if asset.parent_id %}
+                        <tr><td class="dt-label">Parent</td><td class="dt-value"><a href="{{ url_for('inventory.detail', asset_id=asset.parent_id) }}">{{ asset.parent_id[:8] }}…</a></td></tr>
+                        {% endif %}
+                    </table>
+                    <table class="detail-table">
+                        <tr><td class="dt-label">First Seen</td><td class="dt-value" data-ts="{{ asset.first_seen_at }}">{{ asset.first_seen_at }}</td></tr>
+                        <tr><td class="dt-label">Last Seen</td><td class="dt-value" data-ts="{{ asset.last_seen_at or '' }}">{{ asset.last_seen_at or '—' }}</td></tr>
+                        {% if asset.ip_address %}
+                        <tr><td class="dt-label">IP Address</td><td class="dt-value"><code>{{ asset.ip_address }}</code></td></tr>
+                        {% endif %}
+                    </table>
+                </div>
+            </div>
+
+        {% if agents %}
+        <div class="detail-card">
+            <h3 class="detail-section-title">Linked Agents ({{ agents|length }})</h3>
+            <table class="detail-table">
+                <thead>
+                    <tr><th>Type</th><th>Agent ID</th><th>Version</th><th>Status</th><th>Mode</th><th>Last Seen</th></tr>
+                </thead>
+                <tbody>
+                    {% for a in agents %}
+                    <tr>
+                        <td><span class="badge badge-agent badge-{{ 'info' if a.agent_type == 'monitor' else 'success' }}">{{ {'monitor': '📊', 'security': '🛡️'}.get(a.agent_type, '📌') }} {{ a.agent_type | capitalize }}</span></td>
+                        <td class="dt-value" style="font-size:0.72rem;word-break:break-all;"><code>{{ a.agent_id }}</code></td>
+                        <td style="font-size:0.8rem; white-space:nowrap;">{{ a.agent_version or '—' }}</td>
+                        <td>
+                            <span class="badge {% if a.config_status == 'ok' or a.config_status == 'active' %}badge-healthy{% elif a.config_status == 'unknown' %}badge-warning{% else %}badge-danger{% endif %}">{{ a.config_status }}</span>
+                        </td>
+                        <td><span class="badge {% if a.management_mode == 'managed' %}badge-healthy{% elif a.management_mode == 'monitor' %}badge-info{% else %}badge-warning{% endif %}">{{ a.management_mode | default('—') }}</span></td>
+                        <td class="dt-value" data-ts="{{ a.last_check_in or '' }}">{{ a.last_check_in or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if meta %}
+        <div class="detail-card">
+            <h3 class="detail-section-title">Metadata <span class="section-count">{{ meta | length }}</span></h3>
+            <div class="meta-grid">
+                {% set cpu_model_v = meta.get('cpu_model') %}
+                {% set cpu_count_v = meta.get('cpu_count') %}
+                {% if cpu_model_v or cpu_count_v %}
+                <div class="meta-card">
+                    <div class="meta-key">cpu</div>
+                    <div class="meta-value">{% if cpu_count_v and cpu_model_v %}{{ cpu_count_v }}x {{ cpu_model_v }}{% elif cpu_count_v %}{{ cpu_count_v }} cores{% else %}{{ cpu_model_v }}{% endif %}</div>
+                </div>
+                {% endif %}
+                {% if meta.get('virt_type') %}
+                <div class="meta-card">
+                    <div class="meta-key">virt type</div>
+                    <div class="meta-value">{{ meta.get('virt_type') }}</div>
+                </div>
+                {% endif %}
+                {% if meta.get('fleet_enabled') is not none %}
+                <div class="meta-card">
+                    <div class="meta-key">fleet</div>
+                    <span class="badge {% if meta.get('fleet_enabled') %}badge-healthy{% else %}badge-warning{% endif %}">{{ 'Enabled' if meta.get('fleet_enabled') else 'Disabled' }}</span>
+                </div>
+                {% endif %}
+                {% for key, value in (meta|dictsort(false)) %}
+                {% if key in ('cpu_model', 'cpu_count', 'virt_type', 'agent_version', 'fleet_enabled') %}
+                {% elif key == 'interfaces' and value is iterable and value is not string %}
+                <div class="meta-card meta-card-iface">
+                    <div class="meta-key">interfaces</div>
+                    {% for iface in value %}
+                    <div class="iface-row">
+                        <div class="iface-head">
+                            <span><code class="iface-name">{{ iface.get('name', '?') }}</code></span>
+                            <span class="iface-mac">{{ iface.get('mac', '—') }}</span>
+                        </div>
+                        <div class="iface-addrs">
+                            <div class="iface-addr-group">
+                                <span class="iface-addr-key">IPv4</span>
+                                <span class="iface-addr-vals">{% for ip in (iface.get('ipv4') or []) %}<span class="iface-ip">{{ ip }}</span>{% else %}<span class="iface-na">—</span>{% endfor %}</span>
+                            </div>
+                            <div class="iface-addr-group">
+                                <span class="iface-addr-key">IPv6</span>
+                                <span class="iface-addr-vals">{% for ip in (iface.get('ipv6') or []) %}<span class="iface-ip">{{ ip }}</span>{% else %}<span class="iface-na">—</span>{% endfor %}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% elif value is mapping %}
+                <div class="meta-card meta-card-dict">
+                    <div class="meta-key">{{ key }}</div>
+                    <div class="meta-dict-grid">
+                        {% for dk, dv in (value | dictsort(false)) %}
+                        <div class="meta-dict-entry">
+                            <span class="meta-dict-key">{{ dk }}</span>
+                            <span class="meta-dict-val">{% if dv is mapping %}{{ dv | tojson }}{% elif dv is sequence and dv is not string %}{{ dv | join(', ') }}{% else %}{{ dv }}{% endif %}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                {% elif value is sequence and value is not string %}
+                <div class="meta-card">
+                    <div class="meta-key">{{ key }}</div>
+                    <div class="meta-list">
+                        {% for item in value %}
+                        <div class="meta-list-item">{{ item | string if item is mapping else item }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% else %}
+                <div class="meta-card">
+                    <div class="meta-key">{{ key }}</div>
+                    <div class="meta-value">{{ value }}</div>
+                </div>
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+
+
+        <div class="detail-card">
+            <h3 class="detail-section-title">Aliases ({{ aliases|length }})</h3>
+                {% if aliases %}
+                <table class="detail-table">
+                    <thead>
+                        <tr><th>Type</th><th>Value</th><th>Source</th><th>Confidence</th><th>Last Confirmed</th></tr>
+                    </thead>
+                    <tbody>
+                    {% for a in aliases %}
+                        <tr>
+                            <td><code>{{ a.alias_type }}</code></td>
+                            <td class="dt-value"><code>{{ a.alias_value }}</code></td>
+                            <td>{{ a.source | capitalize }}</td>
+                            <td>
+                                <span class="badge {% if a.confidence >= 95 %}badge-healthy{% elif a.confidence >= 70 %}badge-warning{% else %}badge-danger{% endif %}">{{ a.confidence }}%</span>
+                            </td>
+                            <td class="dt-value" data-ts="{{ a.last_confirmed_at or '' }}">{{ a.last_confirmed_at or '—' }}</td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="muted">No aliases for this asset.</p>
+                {% endif %}
+            </div>
+
+        {% if relationships %}
+        <div class="detail-card">
+            <h3 class="detail-section-title">Relationships ({{ relationships|length }})</h3>
+            <table class="detail-table">
+                <thead>
+                    <tr><th>Source</th><th>Type</th><th>Target</th></tr>
+                </thead>
+                <tbody>
+                {% for r in relationships %}
+                <tr>
+                    <td>
+                        {% if r.source_asset_id == asset.asset_id %}
+                        <strong>{{ asset.display_name }}</strong>
+                        {% else %}
+                        <a href="{{ url_for('inventory.detail', asset_id=r.source_asset_id) }}">{{ r.source_asset_id[:8] }}…</a>
+                        {% endif %}
+                    </td>
+                    <td><code>{{ r.relationship }}</code></td>
+                    <td>
+                        {% if r.target_asset_id == asset.asset_id %}
+                        <strong>{{ asset.display_name }}</strong>
+                        {% else %}
+                        <a href="{{ url_for('inventory.detail', asset_id=r.target_asset_id) }}">{{ r.target_asset_id[:8] }}…</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if children %}
+        <div class="detail-card">
+            <h3 class="detail-section-title">Children ({{ children|length }})</h3>
+            <table class="detail-table">
+                <thead>
+                    <tr><th>Asset</th><th>Type</th><th>Status</th><th>Last Seen</th></tr>
+                </thead>
+                <tbody>
+                {% for c in children %}
+                <tr>
+                    <td><a href="{{ url_for('inventory.detail', asset_id=c.asset_id) }}">{{ c.display_name or c.asset_id[:8] }}</a></td>
+                    <td>{{ c.asset_type | capitalize }}</td>
+                    <td>
+                        <span class="badge {% if c.status == 'active' %}badge-healthy{% elif c.status == 'stale' %}badge-warning{% else %}badge-danger{% endif %}">{{ c.status }}</span>
+                    </td>
+                    <td data-ts="{{ c.last_seen_at or '' }}">{{ c.last_seen_at or '—' }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.identity-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1.5rem;
+    align-items: start;
+}
+@media (max-width: 700px) {
+    .identity-grid { grid-template-columns: 1fr; }
+}
+.detail-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.detail-card {
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+}
+.detail-section-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+.detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8rem;
+}
+.detail-table th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.detail-table td {
+    padding: 0.45rem 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
+}
+.detail-table tr:last-child td {
+    border-bottom: none;
+}
+.dt-label {
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+    width: 120px;
+}
+.dt-value {
+    color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+}
+.meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.6rem;
+}
+.meta-card {
+    position: relative;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: linear-gradient(135deg, var(--bg-card) 0%, color-mix(in srgb, var(--bg-card) 95%, var(--accent)) 100%);
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+}
+.meta-card::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(to bottom, var(--accent), color-mix(in srgb, var(--accent) 40%, transparent));
+    border-radius: 0 2px 2px 0;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+.meta-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 50%, var(--border-color));
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    transform: translateY(-1px);
+}
+.meta-card:hover::before {
+    opacity: 1;
+}
+.meta-key {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+    opacity: 0.8;
+}
+.meta-value {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.4;
+}
+.meta-json {
+    font-size: 0.72rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    white-space: pre-wrap;
+    color: var(--text-muted);
+    margin: 0;
+}
+.meta-card-iface {
+    grid-column: 1 / -1;
+}
+.meta-card-dict {
+    grid-column: 1 / -1;
+    padding: 0.6rem 1rem 0.5rem;
+}
+.meta-dict-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem 2.5rem;
+    margin-top: 0.1rem;
+}
+.meta-dict-entry {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+.meta-dict-key {
+    font-size: 0.55rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+.meta-dict-val {
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--text);
+}
+.meta-card-iface > .meta-key {
+    margin-bottom: 0.4rem;
+    font-size: 0.62rem;
+}
+.meta-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+.meta-list-item {
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.72rem;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+}
+.iface-row {
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.iface-row:last-child { border-bottom: none; padding-bottom: 0; }
+.iface-row:first-child { padding-top: 0; }
+.iface-head {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+.iface-name {
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--text);
+}
+.iface-mac {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    opacity: 0.7;
+}
+.iface-addrs {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+.iface-addr-group {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+.iface-addr-key {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
+    min-width: 2.5rem;
+    flex-shrink: 0;
+}
+.iface-addr-vals {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+.iface-ip {
+    display: inline-block; padding: 0 7px; margin: 1px 0;
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 12%, transparent);
+    font-size: 0.72rem; color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    white-space: nowrap;
+}
+.iface-na { color: var(--text-muted); opacity: 0.35; font-size: 0.7rem; }
+.section-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.2rem;
+    height: 1.2rem;
+    padding: 0 0.3rem;
+    border-radius: 100px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+    vertical-align: middle;
+}
+
+.badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 100px; font-weight: 600; }
+.badge-agent { text-transform: none; letter-spacing: normal; }
+
+.inv-section-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 0.75rem;
+}
+.inv-section-head .detail-section-title { margin-bottom: 0; }
+.inv-label-add-btn {
+  font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  padding: 0.3rem 0.75rem; border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text-muted);
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.inv-label-add-btn:hover {
+  border-color: var(--accent); color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.inv-labels {
+  display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center;
+  min-height: 2rem;
+}
+
+.hero-labels {
+  display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center;
+  margin-top: 0.7rem;
+}
+.inv-labels-empty {
+  font-size: 0.75rem; color: var(--text-muted); opacity: 0.5;
+}
+.inv-label {
+  display: inline-flex; align-items: stretch; gap: 0;
+  padding: 0; border-radius: 100px;
+  font-size: 0.88rem;
+  border: 1px solid color-mix(in srgb, var(--lbg) 40%, transparent);
+  background: color-mix(in srgb, var(--lbg) 12%, transparent);
+  color: var(--lbg);
+  transition: transform 0.1s, box-shadow 0.1s;
+  animation: labelIn 0.2s ease-out;
+  overflow: hidden;
+}
+@keyframes labelIn {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.inv-label:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.inv-label-removing {
+  animation: labelOut 0.15s ease-in forwards;
+}
+@keyframes labelOut {
+  to { transform: scale(0.8); opacity: 0; }
+}
+.inv-label-key {
+  font-weight: 600;
+  background: color-mix(in srgb, var(--lbg) 28%, transparent);
+  padding: 0.25rem 0.55rem 0.25rem 0.7rem;
+  display: flex; align-items: center;
+}
+.inv-label-val {
+  font-weight: 400;
+  opacity: 0.9;
+  padding: 0.25rem 0.6rem 0.25rem 0.55rem;
+  display: flex; align-items: center;
+}
+.inv-label-del {
+  background: none; border: none; cursor: pointer;
+  font-size: 0.85rem; padding: 0 0.45rem 0 0; line-height: 1;
+  opacity: 0.3; transition: opacity 0.1s, transform 0.1s;
+  color: inherit;
+  margin-left: -0.2rem;
+  display: flex; align-items: center;
+}
+.inv-label-del:hover {
+  opacity: 1; transform: scale(1.2);
+}
+
+.inv-label-form {
+  margin-top: 0.5rem;
+  animation: slideDown 0.15s ease-out;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.inv-label-form-inner {
+  display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;
+}
+.inv-label-input {
+  padding: 0.5rem 0.75rem; border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-input); color: var(--text);
+  font-size: 0.875rem; font-family: inherit;
+  outline: none; transition: border-color 0.15s;
+}
+.inv-label-input:focus {
+  border-color: var(--accent);
+}
+.inv-label-input::placeholder {
+  color: var(--text-muted); opacity: 0.5;
+}
+
+
+.json-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+  animation: fadeIn 0.15s ease-out;
+}
+.json-modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  width: 90%; max-width: 800px; max-height: 85vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  animation: modalSlide 0.2s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalSlide { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.json-modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.85rem 1.1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.json-modal-header h3 { font-size: 0.9rem; margin: 0; }
+.json-modal-close {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 1.2rem; cursor: pointer; padding: 0 4px;
+  transition: color 0.1s;
+}
+.json-modal-close:hover { color: var(--text); }
+.json-modal-body {
+  flex: 1; overflow: auto; padding: 0.75rem 1rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.72rem; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all;
+  color: var(--text);
+}
+.json-key { color: var(--json-key, #e879f9); }
+.json-string { color: var(--json-string, #22c55e); }
+.json-number { color: var(--json-number, #f59e0b); }
+.json-bool { color: var(--json-bool, #60a5fa); }
+.json-null { color: var(--json-null, #6b7280); font-style: italic; }
+.json-bracket { color: var(--text-muted); }
+.json-collapse { cursor: pointer; user-select: none; }
+.json-collapse:hover { opacity: 0.7; }
+</style>
+
+<script>
+function showAddLabel(assetId) {
+  var form = document.getElementById('heroLabelForm');
+  form.style.display = 'block';
+  document.getElementById('invLabelKey').focus();
+}
+
+function hideAddLabel() {
+  document.getElementById('heroLabelForm').style.display = 'none';
+  document.getElementById('invLabelKey').value = '';
+  document.getElementById('invLabelVal').value = '';
+}
+
+function saveLabel(assetId) {
+  var key = document.getElementById('invLabelKey').value.trim();
+  var val = document.getElementById('invLabelVal').value.trim();
+  if (!key || !val) return;
+
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳';
+
+  var body = {};
+  body[key] = val;
+
+  fetch('/inventory/' + assetId + '/labels', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+    },
+    body: JSON.stringify(body),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.status === 'ok') location.reload();
+    else { btn.disabled = false; btn.textContent = 'Save'; alert(d.error || 'Failed'); }
+  })
+  .catch(function() { btn.disabled = false; btn.textContent = 'Save'; });
+}
+
+function deleteLabel(assetId, key) {
+  var el = document.querySelector('.inv-label[data-key="' + key.replace(/"/g, '\\"') + '"]');
+  if (el) el.classList.add('inv-label-removing');
+
+  fetch('/inventory/' + assetId + '/labels/' + encodeURIComponent(key), {
+    method: 'DELETE',
+    headers: {
+      'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+    },
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.status === 'ok') {
+      setTimeout(function() { location.reload(); }, 180);
+    } else {
+      if (el) el.classList.remove('inv-label-removing');
+    }
+  })
+  .catch(function() {
+    if (el) el.classList.remove('inv-label-removing');
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var valField = document.getElementById('invLabelVal');
+  if (valField) {
+    valField.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); document.querySelector('[onclick*="saveLabel"]').click(); }
+    });
+  }
+  var keyField = document.getElementById('invLabelKey');
+  if (keyField) {
+    keyField.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); document.getElementById('invLabelVal').focus(); }
+    });
+  }
+});
+</script>
+
+<div id="jsonModal" class="json-modal-overlay" style="display:none;" onclick="closeJSONModal(event)">
+  <div class="json-modal" onclick="event.stopPropagation()">
+    <div class="json-modal-header">
+      <h3>🧬 Asset JSON</h3>
+      <div>
+        <button class="btn btn-sm btn-secondary" onclick="copyJSON()">📋 Copy</button>
+        <button class="json-modal-close" onclick="closeJSONModal()">&times;</button>
+      </div>
+    </div>
+    <div class="json-modal-body" id="jsonBody">
+      <div style="text-align:center;padding:2rem;color:var(--text-muted);">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<script>
+var _jsonData = null;
+
+function showAssetJSON(assetId, displayName) {
+  var modal = document.getElementById('jsonModal');
+  modal.style.display = 'flex';
+  document.getElementById('jsonBody').textContent = 'Loading…';
+
+  fetch('/inventory/api/query?q=' + encodeURIComponent(displayName) + '&metadata=true&limit=1&aliases=true')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var asset = d.assets && d.assets[0];
+      if (!asset) {
+        document.getElementById('jsonBody').textContent = 'Asset not found';
+        return;
+      }
+      _jsonData = asset;
+      document.getElementById('jsonBody').innerHTML = syntaxHighlight(JSON.stringify(asset, null, 2));
+    })
+    .catch(function() {
+      document.getElementById('jsonBody').textContent = 'Failed to load asset data';
+    });
+}
+
+function closeJSONModal(e) {
+  if (e && e.target !== e.currentTarget) return;
+  document.getElementById('jsonModal').style.display = 'none';
+}
+
+function copyJSON() {
+  if (!_jsonData) return;
+  navigator.clipboard.writeText(JSON.stringify(_jsonData, null, 2)).then(function() {
+    var btn = document.querySelector('#jsonModal .json-modal-header .btn');
+    var orig = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 2000);
+  });
+}
+
+function syntaxHighlight(json) {
+  json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  json = json.replace(
+    /("(?:[^"\\]|\\.)*")\s*:/g,
+    '<span class="json-key">$1</span>:'
+  );
+  json = json.replace(
+    /:(\s*)("(?:[^"\\]|\\.)*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)/g,
+    function(m, space, val) {
+      var cls;
+      if (val[0] === '"') cls = 'json-string';
+      else if (val === 'true' || val === 'false') cls = 'json-bool';
+      else if (val === 'null') cls = 'json-null';
+      else cls = 'json-number';
+      return ':<span class="' + cls + '">' + space + val + '</span>';
+    }
+  );
+  return json.replace(/([{}[\]])/g, '<span class="json-bracket">$1</span>');
+}
+</script>
+{% endblock %}

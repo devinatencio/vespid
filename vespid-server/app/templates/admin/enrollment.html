@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}Enrollment Management — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+{% set mode = settings.get('enrollment_mode', 'restricted') %}
+{% set mode_color = {'open': 'var(--success)', 'manual_approval': 'var(--warning)', 'restricted': 'var(--danger)'} %}
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">📝</div>
+    <div style="flex:1;min-width:160px;">
+        <h1 style="margin:0;font-size:1.2rem;">Enrollment Management</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Agent registration and credential provisioning
+        </div>
+    </div>
+    <div style="display:flex;gap:1.5rem;text-align:center;align-items:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;{% if pending %}color:var(--warning);{% endif %}">{{ pending|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">pending</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ approved|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">approved</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ records|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">total</div>
+        </div>
+        <div style="padding:0 0.5rem;">
+            <span style="display:inline-block;padding:0.25rem 0.75rem;border-radius:999px;font-size:0.78rem;font-weight:600;background:{{ mode_color.get(mode, 'var(--text-muted)') }};color:#fff;">{{ mode|replace('_', ' ')|title }}</span>
+        </div>
+    </div>
+</div>
+
+{% if host_filter %}
+<div class="card">
+    <p>
+        Filtered by host:
+        <code>{{ host_filter }}</code>
+        <a class="btn btn-sm" style="margin-left:0.5rem;" href="{{ url_for('admin.enrollment') }}">Clear filter</a>
+    </p>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2 class="card-title">Enrollment Settings</h2>
+    <form method="POST" action="{{ url_for('admin.enrollment_settings') }}" class="form-inline">
+        <div class="form-group">
+            <label for="enrollment_enabled">Enrollment</label>
+            <select id="enrollment_enabled" name="enrollment_enabled">
+                <option value="true" {% if settings.get('enrollment_enabled') == 'true' %}selected{% endif %}>Enabled</option>
+                <option value="false" {% if settings.get('enrollment_enabled') != 'true' %}selected{% endif %}>Disabled</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="enrollment_mode">Mode</label>
+            <select id="enrollment_mode" name="enrollment_mode">
+                <option value="open" {% if settings.get('enrollment_mode') == 'open' %}selected{% endif %}>Open</option>
+                <option value="manual_approval" {% if settings.get('enrollment_mode') == 'manual_approval' %}selected{% endif %}>Manual Approval</option>
+                <option value="restricted" {% if settings.get('enrollment_mode') == 'restricted' %}selected{% endif %}>Restricted</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="allow_unrestricted_api_keys">Unrestricted API keys</label>
+            <select id="allow_unrestricted_api_keys" name="allow_unrestricted_api_keys" title="When off, every API key must be bound to a specific node.">
+                <option value="true" {% if settings.get('allow_unrestricted_api_keys', 'true') == 'true' %}selected{% endif %}>Allowed (any-node keys permitted)</option>
+                <option value="false" {% if settings.get('allow_unrestricted_api_keys', 'true') == 'false' %}selected{% endif %}>Forbidden (every key bound to a node)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn">Save Settings</button>
+        </div>
+    </form>
+</div>
+
+{# ── Flatten all records into one list ── #}
+{% set records = pending + approved + rejected + revoked %}
+{% set count_map = {'pending': pending|length, 'approved': approved|length, 'rejected': rejected|length, 'revoked': revoked|length} %}
+{% set total = records|length %}
+
+<div style="display:flex; align-items:center; gap:0.75rem; margin-bottom:0.75rem; flex-wrap:wrap;">
+    <input type="search" id="enrollSearch" placeholder="Search hostname, node ID, or source…" style="flex:1; padding:0.5rem 0.75rem; border:1px solid var(--border); border-radius:6px; font-size:0.85rem; background:var(--bg-input);" oninput="filterEnrollments()">
+    <span style="font-size:0.85rem; color:var(--text-muted); white-space:nowrap;">{{ total }} record{% if total != 1 %}s{% endif %}</span>
+    <div style="display:flex; gap:0.3rem; flex-wrap:wrap;">
+        {% for s, label in [('pending','Pending'), ('approved','Approved'), ('rejected','Rejected'), ('revoked','Revoked')] %}
+        {% set c = count_map.get(s, 0) %}
+        <label class="badge" style="cursor:pointer;{% if s == 'pending' %}background:var(--accent-warn); color:#fff;{% elif s == 'approved' %}background:var(--success); color:#fff;{% elif s == 'rejected' %}background:var(--danger); color:#fff;{% else %}background:var(--surface-2);{% endif %}">
+            <input type="checkbox" class="status-filter" value="{{ s }}" checked onchange="filterEnrollments()" style="display:none;">
+            {{ label }} ({{ c }})
+        </label>
+        {% endfor %}
+    </div>
+</div>
+
+{% if records %}
+<div style="overflow-x:auto;">
+<table id="enrollTable">
+    <thead>
+        <tr>
+            <th style="width:50px;">ID</th>
+            <th>Host</th>
+            <th>Source</th>
+            <th>Host ID</th>
+            <th>Requested</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in records %}
+        {% set status = r.status %}
+        {% set badge_class = 'badge-warning' if status == 'pending' else ('badge-active' if status == 'approved' else ('badge-revoked' if status in ('rejected','revoked') else '')) %}
+        <tr class="enroll-row" data-status="{{ status }}" data-host="{{ (r.hostname or '')|lower }}" data-node="{{ (r.node_id or '')|lower }}" data-source="{{ (r.source or '')|lower }}" onclick="showEnrollDetails({{ r.id }})" style="cursor:pointer;">
+            <td><code>{{ r.id }}</code></td>
+            <td>
+                <strong>{{ r.hostname or r.node_id[:12] }}</strong>
+                <code style="font-size:0.7rem; color:var(--text-muted); margin-left:0.3rem;">{{ r.node_id[:12] }}…</code>
+            </td>
+            <td><span class="badge" style="background:var(--surface-2); font-size:0.75rem;">{{ r.source or 'agent' }}</span></td>
+            <td>{% if r.host_id %}<code style="font-size:0.7rem;" title="{{ r.host_id }}">{{ r.host_id[:8] }}…</code>{% if host_filter != r.host_id %}<a style="font-size:0.65rem; margin-left:0.3rem;" href="{{ url_for('admin.enrollment', host=r.host_id) }}" onclick="event.stopPropagation();">view host</a>{% endif %}{% else %}—{% endif %}</td>
+            <td><span class="ts-rel" data-ts="{{ r.requested_at }}">{{ r.requested_at }}</span></td>
+            <td><span class="badge {{ badge_class }}">{{ status }}</span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<div class="card"><p>No enrollment requests.</p></div>
+{% endif %}
+
+{# ── Detail modal ── #}
+<div id="enrollModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;" onclick="if(event.target===this)hideEnrollDetails()">
+    <div style="background:var(--bg-card); border-radius:8px; max-width:500px; width:90%; max-height:80vh; overflow-y:auto; padding:1.5rem; box-shadow:0 8px 32px rgba(0,0,0,0.3); position:relative;">
+        <button style="position:absolute; top:0.75rem; right:0.75rem; background:none; border:none; font-size:1.2rem; cursor:pointer; color:var(--text-muted);" onclick="hideEnrollDetails()">&times;</button>
+        <div id="enrollModalContent"></div>
+    </div>
+</div>
+
+<script>
+function filterEnrollments() {
+    var q = document.getElementById('enrollSearch').value.toLowerCase();
+    var checked = {};
+    document.querySelectorAll('.status-filter:checked').forEach(function(c) { checked[c.value] = true; });
+    document.querySelectorAll('.enroll-row').forEach(function(r) {
+        var matchStatus = checked[r.dataset.status];
+        var matchText = !q || r.dataset.host.includes(q) || r.dataset.node.includes(q) || r.dataset.source.includes(q);
+        r.style.display = (matchStatus && matchText) ? '' : 'none';
+    });
+}
+
+function showEnrollDetails(recordId) {
+    var all = {{ records|tojson }};
+    var r = all.find(function(x) { return x.id === recordId; });
+    if (!r) return;
+
+    var profiles = {{ profiles|default([])|tojson }};
+
+    var statusLabels = {pending: 'Pending', approved: 'Approved', rejected: 'Rejected', revoked: 'Revoked'};
+    var badgeClass = r.status === 'pending' ? 'badge-warning' : (r.status === 'approved' ? 'badge-active' : 'badge-revoked');
+    var html = '';
+    html += '<h3 style="margin-top:0;">' + (r.hostname || 'Unknown') + '</h3>';
+    html += '<table style="width:100%; font-size:0.85rem;">';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted); width:120px;">Record ID</td><td style="padding:0.3rem 0.5rem;"><code>' + r.id + '</code></td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Node</td><td style="padding:0.3rem 0.5rem;"><code>' + r.node_id + '</code></td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Hostname</td><td style="padding:0.3rem 0.5rem;">' + (r.hostname || '—') + '</td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Source</td><td style="padding:0.3rem 0.5rem;"><span class="badge" style="background:var(--surface-2);">' + (r.source || 'agent') + '</span></td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Status</td><td style="padding:0.3rem 0.5rem;"><span class="badge ' + badgeClass + '">' + (statusLabels[r.status] || r.status) + '</span></td></tr>';
+    if (r.host_id) html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Host ID</td><td style="padding:0.3rem 0.5rem;"><code style="font-size:0.7rem;">' + r.host_id + '</code></td></tr>';
+    if (r.asset_id) html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Asset ID</td><td style="padding:0.3rem 0.5rem;"><code style="font-size:0.7rem;">' + r.asset_id + '</code></td></tr>';
+    html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Requested</td><td style="padding:0.3rem 0.5rem;">' + r.requested_at + '</td></tr>';
+    if (r.decided_at) html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Decided At</td><td style="padding:0.3rem 0.5rem;">' + r.decided_at + '</td></tr>';
+    if (r.decided_by) html += '<tr><td style="padding:0.3rem 0.5rem; color:var(--text-muted);">Decided By</td><td style="padding:0.3rem 0.5rem;">' + r.decided_by + '</td></tr>';
+    html += '</table>';
+    html += '<div style="margin-top:1rem; padding-top:0.75rem; border-top:1px solid var(--border); display:flex; gap:0.5rem; flex-wrap:wrap;">';
+    if (r.status === 'pending') {
+        html += '<form method="POST" action="/admin/enrollment/' + r.id + '/approve" style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center;">';
+        html += '<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">';
+        if (profiles.length) {
+            html += '<select name="profile_id" style="font-size:0.8rem; padding:0.3rem 0.5rem; border:1px solid var(--border); border-radius:6px; background:var(--bg-input); color:var(--text);">';
+            html += '<option value="">— No policy —</option>';
+            for (var i = 0; i < profiles.length; i++) {
+                html += '<option value="' + profiles[i].id + '">' + profiles[i].name + '</option>';
+            }
+            html += '</select>';
+        }
+        html += '<button type="submit" class="btn btn-sm" style="padding:0.3rem 0.75rem; font-size:0.8rem;" onclick="return confirm(\'Approve this enrollment request?\')">Approve</button>';
+        html += '</form>';
+        html += '<form method="POST" action="/admin/enrollment/' + r.id + '/reject" style="display:inline;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-sm btn-danger" style="padding:0.3rem 0.75rem; font-size:0.8rem;" onclick="return confirm(\'Reject this enrollment request?\')">Reject</button></form>';
+    }
+    if (r.status === 'approved') {
+        html += '<form method="POST" action="/admin/enrollment/' + r.id + '/revoke" style="display:inline;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-sm btn-danger" style="padding:0.3rem 0.75rem; font-size:0.8rem;" onclick="return confirm(\'Revoke this enrollment?\')">Revoke</button></form>';
+        html += '<form method="POST" action="/admin/enrollment/' + r.id + '/rotate" style="display:inline;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-sm" style="padding:0.3rem 0.75rem; font-size:0.8rem;" onclick="return confirm(\'Rotate credentials for this enrollment?\')">Rotate</button></form>';
+    }
+    if (r.status === 'rejected' || r.status === 'revoked') {
+        html += '<form method="POST" action="/admin/enrollment/' + r.id + '/reissue" style="display:inline;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-sm" style="padding:0.3rem 0.75rem; font-size:0.8rem;" onclick="return confirm(\'Re-issue credentials for this node?\')">Re-issue</button></form>';
+        html += '<form method="POST" action="/admin/enrollment/' + r.id + '/delete" style="display:inline;"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button type="submit" class="btn btn-sm btn-danger" style="padding:0.3rem 0.75rem; font-size:0.8rem;" onclick="return confirm(\'Permanently delete this enrollment record?\')">Delete</button></form>';
+    }
+    if (r.host_id) {
+        html += '<form method="GET" action="/admin/enrollment" style="display:inline;"><input type="hidden" name="host" value="' + r.host_id + '"><button type="submit" class="btn btn-sm" style="padding:0.3rem 0.75rem; font-size:0.8rem;">View Host</button></form>';
+    }
+    html += '</div>';
+    document.getElementById('enrollModalContent').innerHTML = html;
+    document.getElementById('enrollModal').style.display = 'flex';
+}
+
+function hideEnrollDetails() {
+    document.getElementById('enrollModal').style.display = 'none';
+}
+</script>
+{% endblock %}

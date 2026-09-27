@@ -1,0 +1,25 @@
+#!/bin/bash
+set -e
+
+STATE_DIR=/var/lib/vespid
+CREDENTIALS_FILE="${STATE_DIR}/credentials.json"
+
+systemctl daemon-reload
+
+if [ "$1" = "purge" ]; then
+    rm -rf /opt/vespid/.venv
+    rm -rf /var/log/vespid
+    rm -rf /etc/vespid
+
+    # Remove state directory but preserve credentials.json so a reinstall
+    # doesn't force re-enrollment.  Only delete it if explicitly purging.
+    if [ -f "$CREDENTIALS_FILE" ]; then
+        echo "Note: preserving $CREDENTIALS_FILE (delete manually if no longer needed)"
+    fi
+    # Remove everything in state dir except credentials.json
+    find "$STATE_DIR" -mindepth 1 ! -name credentials.json -exec rm -rf {} + 2>/dev/null || true
+    # Remove the directory only if it's now empty
+    rmdir "$STATE_DIR" 2>/dev/null || true
+fi
+
+exit 0

@@ -1,0 +1,80 @@
+{% set spark = stats.sparkline_24h or [0]*24 %}
+{% set spark_max = spark|max if spark|max > 0 else 1 %}
+{% set spark_blocked = stats.sparkline_blocked_24h or [0]*24 %}
+{% set spark_blocked_max = spark_blocked|max if spark_blocked|max > 0 else 1 %}
+{% set spark_sources = stats.sparkline_sources_24h or [0]*24 %}
+{% set spark_sources_max = spark_sources|max if spark_sources|max > 0 else 1 %}
+{% set spark_nodes = stats.sparkline_nodes_24h or [0]*24 %}
+{% set spark_nodes_max = spark_nodes|max if spark_nodes|max > 0 else 1 %}
+{% if fleet_stats %}
+{% set spark_fleet = fleet_stats.sparkline_fleet_24h or [0]*24 %}
+{% set spark_fleet_max = spark_fleet|max if spark_fleet|max > 0 else 1 %}
+{% endif %}
+<div id="stats-cards"
+     hx-get="{{ url_for('dashboard.index') }}"
+     hx-trigger="every 30s"
+     hx-swap="outerHTML"
+     hx-indicator="#stats-refresh-indicator">
+    <div class="stats-grid">
+        <a href="{{ url_for('dashboard.events', start_time=since_24h) }}" class="stat-card stat-card-link">
+            <div class="stat-label">🔔 Events (24h)</div>
+            <div class="stat-value">{{ stats.total_events_24h }}</div>
+            <div class="stat-sparkline" title="Hourly event volume (24h)">
+                {% for val in spark %}
+                <div class="stat-sparkline-bar" style="height:{{ (val / spark_max * 100)|round }}%"></div>
+                {% endfor %}
+            </div>
+        </a>
+        <div class="stat-card">
+            <div class="stat-label">🖥️ Active Nodes</div>
+            <div class="stat-value">{{ stats.active_nodes }}</div>
+            <div class="stat-sparkline" title="Hourly distinct nodes reporting (24h)">
+                {% for val in spark_nodes %}
+                <div class="stat-sparkline-bar" style="height:{{ (val / spark_nodes_max * 100)|round }}%"></div>
+                {% endfor %}
+            </div>
+        </div>
+        <a href="{{ url_for('dashboard.blocked_ips') }}" class="stat-card stat-card-link">
+            <div class="stat-label">🚫 Blocked IPs (24h)</div>
+            <div class="stat-value">{{ stats.blocked_ips }}</div>
+            <div class="stat-sparkline stat-sparkline-danger" title="Hourly blocks (24h)">
+                {% for val in spark_blocked %}
+                <div class="stat-sparkline-bar" style="height:{{ (val / spark_blocked_max * 100)|round }}%"></div>
+                {% endfor %}
+            </div>
+        </a>
+        <a href="{{ url_for('dashboard.events', start_time=since_24h) }}" class="stat-card stat-card-link">
+            <div class="stat-label">🌐 Distinct Sources (24h)</div>
+            <div class="stat-value">{{ stats.distinct_source_ips }}</div>
+            <div class="stat-sparkline" title="Hourly distinct sources (24h)">
+                {% for val in spark_sources %}
+                <div class="stat-sparkline-bar" style="height:{{ (val / spark_sources_max * 100)|round }}%"></div>
+                {% endfor %}
+            </div>
+        </a>
+        {% if fleet_stats %}
+        <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="stat-card stat-card-link" style="{% if fleet_stats.propagation_paused %}border-color: var(--warning);{% endif %}">
+            <div class="stat-label">
+                🌐 Fleet Blocks
+                {% if fleet_stats.propagation_paused %}
+                <span class="badge badge-offline" style="margin-left:0.5rem; font-size:0.6rem;">PAUSED</span>
+                {% endif %}
+            </div>
+            <div class="stat-value">{{ fleet_stats.active_blocks }}</div>
+            <div class="stat-sparkline stat-sparkline-danger" title="Hourly fleet blocks (24h)">
+                {% for val in spark_fleet %}
+                <div class="stat-sparkline-bar" style="height:{{ (val / spark_fleet_max * 100)|round }}%"></div>
+                {% endfor %}
+            </div>
+            <div style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-muted);">
+                <span>{{ fleet_stats.blocks_24h }} propagated (24h)</span>
+                · <span>Threshold: {{ fleet_stats.corroboration_threshold }}</span>
+            </div>
+        </a>
+        {% endif %}
+    </div>
+    <div class="last-updated" id="stats-refresh-indicator">
+        Updated <span data-ts="{{ now }}">just now</span>
+        <span class="htmx-indicator">⟳ refreshing…</span>
+    </div>
+</div>

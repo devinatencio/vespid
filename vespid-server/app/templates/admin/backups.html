@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}DB Backups — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">💾</div>
+    <div style="flex:1;">
+        <h1 style="margin:0;font-size:1.2rem;">DB Backups</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Database snapshot management and scheduling
+        </div>
+    </div>
+    <div style="display:flex;gap:1rem;text-align:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;color:{% if enabled in ('true', '1', 'yes', True) %}var(--success){% else %}var(--warning){% endif %};">{{ 'On' if enabled in ('true', '1', 'yes', True) else 'Off' }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">auto</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ backup_files|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">files</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ total_size_display }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">total</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ interval_hours }}h</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">interval</div>
+        </div>
+    </div>
+</div>
+
+<!-- Schedule Settings -->
+<div class="card" style="margin-bottom:1.5rem;">
+    <h2 class="card-title">Backup Schedule</h2>
+    <form method="POST" action="{{ url_for('admin.update_backup_settings') }}">
+        <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:end; margin-bottom:1rem;">
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="backup_enabled">Automatic Backups</label>
+                <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer; margin-top:0.25rem;">
+                    <input type="checkbox" id="backup_enabled" name="backup_enabled"
+                           {% if enabled in ('true', '1', 'yes', True) %}checked{% endif %}
+                           style="width:16px; height:16px;">
+                    <span style="font-size:0.85rem;">Enabled</span>
+                </label>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="backup_directory">Backup Directory</label>
+                <input type="text" id="backup_directory" name="backup_directory"
+                       value="{{ backup_dir }}" placeholder="/var/lib/vespid-server/backups"
+                       style="padding:0.4rem 0.5rem; border:1px solid var(--border); border-radius:6px; font-size:0.85rem; background:var(--bg-input); color:var(--text); width:280px;">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="backup_interval_hours">Interval (hours)</label>
+                <input type="number" id="backup_interval_hours" name="backup_interval_hours"
+                       value="{{ interval_hours }}" min="1" max="168"
+                       style="width:80px; padding:0.4rem 0.5rem; border:1px solid var(--border); border-radius:6px; font-size:0.85rem; background:var(--bg-input); color:var(--text);">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="backup_retention_days">Retention (days)</label>
+                <input type="number" id="backup_retention_days" name="backup_retention_days"
+                       value="{{ retention_days }}" min="1" max="365"
+                       style="width:80px; padding:0.4rem 0.5rem; border:1px solid var(--border); border-radius:6px; font-size:0.85rem; background:var(--bg-input); color:var(--text);">
+            </div>
+            <button type="submit" class="btn" style="padding:0.4rem 1rem; font-size:0.85rem;">Save Settings</button>
+        </div>
+    </form>
+    <div style="display:flex; gap:1.5rem; font-size:0.8rem; color:var(--text-muted); border-top:1px solid var(--border); padding-top:0.75rem;">
+        <span>Status: <strong style="color:{% if enabled in ('true', '1', 'yes', True) %}var(--success){% else %}var(--warning){% endif %};">{{ 'Enabled' if enabled in ('true', '1', 'yes', True) else 'Disabled' }}</strong></span>
+        <span>Interval: <strong style="color:var(--text-heading);">{{ interval_hours }}h</strong></span>
+        <span>Retention: <strong style="color:var(--text-heading);">{{ retention_days }}d</strong></span>
+        {% if last_run %}
+        <span>Last backup: <strong style="color:var(--text-heading);" data-ts="{{ last_run }}">{{ last_run }}</strong></span>
+        {% endif %}
+        {% if next_run %}
+        <span>Next backup: <strong style="color:var(--text-heading);">{{ next_run }}</strong></span>
+        {% endif %}
+        <span>Directory: <code style="font-size:0.75rem;">{{ backup_dir }}</code></span>
+    </div>
+</div>
+
+<!-- Manual Backup + File List -->
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+        <h2 class="card-title" style="margin:0;">Backup Files</h2>
+        <form method="POST" action="{{ url_for('admin.trigger_backup') }}" style="margin:0;">
+            <button type="submit" class="btn" style="padding:0.4rem 1rem; font-size:0.85rem;">▶ Backup Now</button>
+        </form>
+    </div>
+
+    {% if backup_files %}
+    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">
+        {{ backup_files|length }} backup{{ 's' if backup_files|length != 1 else '' }} — {{ total_size_display }} total
+    </p>
+    <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+            <thead>
+                <tr style="border-bottom:2px solid var(--border);">
+                    <th style="text-align:left; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Filename</th>
+                    <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Size</th>
+                    <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Date</th>
+                    <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bk in backup_files %}
+                <tr style="border-bottom:1px solid var(--border);">
+                    <td style="padding:0.5rem 0.75rem;">
+                        <code style="font-size:0.8rem;">{{ bk.filename }}</code>
+                    </td>
+                    <td style="padding:0.5rem 0.75rem; text-align:right; font-variant-numeric:tabular-nums;">
+                        {{ bk.size_display }}
+                    </td>
+                    <td style="padding:0.5rem 0.75rem; text-align:right; font-variant-numeric:tabular-nums;">
+                        <span data-ts="{{ bk.ts }}">{{ bk.ts }}</span>
+                    </td>
+                    <td style="padding:0.5rem 0.75rem; text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn btn-sm btn-secondary"
+                                onclick="window.location='{{ url_for('admin.download_backup', filename=bk.filename) }}'">Download</button>
+                        <form method="POST" action="{{ url_for('admin.delete_backup', filename=bk.filename) }}"
+                              onsubmit="return confirm('Delete {{ bk.filename }}?');" style="display:inline-block;">
+                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align:center; padding:2rem 1rem; color:var(--text-muted);">
+        <p style="font-size:1rem; margin-bottom:0.5rem;">No backups yet</p>
+        <p style="font-size:0.85rem;">Click <strong>Backup Now</strong> to create your first backup, or enable automatic backups above.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

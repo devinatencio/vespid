@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Server Logs — Vespid Server{% endblock %}
+{% block content %}
+<style>
+    .log-tabs { display: flex; gap: 0; margin-bottom: 1rem; border-bottom: 2px solid var(--border); }
+    .log-tab {
+        padding: 0.5rem 1.2rem; cursor: pointer; border: none; background: none;
+        color: var(--fg-muted); font-size: 0.875rem; border-bottom: 2px solid transparent;
+        margin-bottom: -2px; transition: color 0.15s, border-color 0.15s;
+    }
+    .log-tab:hover { color: var(--fg); }
+    .log-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .log-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
+    .log-toolbar-left { display: flex; align-items: center; gap: 0.5rem; }
+    .log-lines-select { padding: 0.25rem 0.5rem; background: var(--bg-raised); color: var(--fg); border: 1px solid var(--border); border-radius: 4px; font-size: 0.8rem; }
+    .log-panel { display: none; }
+    .log-panel.active { display: block; }
+    .log-viewer {
+        background: #0d1117; color: #c9d1d9; font: 0.8rem/1.55 "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+        padding: 0.75rem 1rem; border-radius: 6px; max-height: 70vh; overflow: auto;
+        white-space: pre-wrap; word-break: break-all; tab-size: 4;
+        border: 1px solid var(--border);
+    }
+    .log-line-num { color: #6e7681; user-select: none; margin-right: 1rem; display: inline-block; min-width: 3.5rem; text-align: right; }
+    .log-warn  { color: #d2991d; }
+    .log-error { color: #f85149; font-weight: bold; }
+    .log-info  { color: #c9d1d9; }
+    .log-empty { padding: 2rem; text-align: center; color: var(--fg-muted); }
+    .log-file-info { color: var(--fg-muted); font-size: 0.75rem; }
+</style>
+
+{% include "admin/_admin_nav.html" %}
+
+<h1 class="page-title">Server Logs</h1>
+
+<div class="log-toolbar">
+    <div class="log-toolbar-left">
+        <div class="log-tabs">
+            <button class="log-tab active" data-log="vespid-server.log">App Log</button>
+            <button class="log-tab" data-log="access.log">Access</button>
+            <button class="log-tab" data-log="error.log">Error</button>
+            <button class="log-tab" data-log="vespid-reaper.log">Reaper</button>
+        </div>
+    </div>
+    <form method="GET" action="{{ url_for('admin.logs') }}" style="display:flex; align-items:center; gap:0.4rem;">
+        <label for="lines-select" class="log-file-info">Lines:</label>
+        <select id="lines-select" name="lines" class="log-lines-select" onchange="this.form.submit()">
+            <option value="100" {% if lines == 100 %}selected{% endif %}>100</option>
+            <option value="200" {% if lines == 200 %}selected{% endif %}>200</option>
+            <option value="500" {% if lines == 500 %}selected{% endif %}>500</option>
+            <option value="1000" {% if lines == 1000 %}selected{% endif %}>1000</option>
+        </select>
+        <noscript><button type="submit" class="btn btn-sm">Go</button></noscript>
+    </form>
+</div>
+
+{% for log_name, log_data in log_files.items() %}
+<div class="log-panel {% if loop.first %}active{% endif %}" data-panel="{{ log_name }}">
+    {% if log_data.lines %}
+    <div class="log-file-info" style="margin-bottom:0.5rem;">
+        Showing last {{ log_data.lines|length }} of {{ log_data.total }} lines &mdash; {{ log_name }}
+    </div>
+    <div class="log-viewer" id="log-{{ log_name|replace('.', '-') }}">
+        {% for line in log_data.lines %}
+        <span class="log-line-num">{{ log_data.total - log_data.lines|length + loop.index }}</span><span class="{% if 'ERROR' in line or 'CRITICAL' in line or 'Traceback' in line %}log-error{% elif 'WARNING' in line or 'WARN' in line %}log-warn{% else %}log-info{% endif %}">{{ line.rstrip('\n') }}</span>
+        {% endfor %}
+    </div>
+    {% elif log_data.get('missing') %}
+    <div class="log-empty">Log file not found: {{ log_name }}</div>
+    {% else %}
+    <div class="log-empty">This log file is empty.</div>
+    {% endif %}
+</div>
+{% endfor %}
+
+<script>
+(function() {
+    var tabs = document.querySelectorAll('.log-tab');
+    var panels = document.querySelectorAll('.log-panel');
+    tabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            var logName = tab.getAttribute('data-log');
+            tabs.forEach(function(t) { t.classList.remove('active'); });
+            tab.classList.add('active');
+            panels.forEach(function(p) { p.classList.remove('active'); });
+            var panel = document.querySelector('[data-panel="' + logName + '"]');
+            if (panel) {
+                panel.classList.add('active');
+                // Scroll to bottom after making panel visible
+                var viewer = panel.querySelector('.log-viewer');
+                if (viewer) viewer.scrollTop = viewer.scrollHeight;
+            }
+        });
+    });
+
+    // Auto-scroll active panel to bottom on page load
+    var activePanel = document.querySelector('.log-panel.active');
+    if (activePanel) {
+        var viewer = activePanel.querySelector('.log-viewer');
+        if (viewer) viewer.scrollTop = viewer.scrollHeight;
+    }
+})();
+</script>
+{% endblock %}

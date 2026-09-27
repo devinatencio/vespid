@@ -1,0 +1,72 @@
+#!/bin/bash
+set -e
+
+INSTALL_DIR=/opt/vespid
+CONFIG_DIR=/etc/vespid
+STATE_DIR=/var/lib/vespid
+LOG_DIR=/var/log/vespid
+
+# Set up Python virtual environment and install dependencies
+if [ ! -d "$INSTALL_DIR/.venv" ]; then
+    python3 -m venv "$INSTALL_DIR/.venv"
+fi
+"$INSTALL_DIR/.venv/bin/pip" install --quiet --upgrade pip
+"$INSTALL_DIR/.venv/bin/pip" install --quiet \
+    'typer>=0.9' 'rich>=13.0' 'pyyaml>=6.0' 'requests>=2.28' 'httpx>=0.24' \
+    'inotify-simple>=1.3' 2>/dev/null || true
+
+# Optional: install geoip2 if MaxMind DB is present
+if [ -f /var/lib/GeoIP/GeoLite2-Country.mmdb ]; then
+    "$INSTALL_DIR/.venv/bin/pip" install --quiet geoip2 2>/dev/null || true
+fi
+
+# Create runtime directories (in case they were removed)
+install -d -m 0750 "$STATE_DIR"
+install -d -m 0750 "$LOG_DIR"
+
+# Restore credentials/state from backup if they were lost during reinstall
+BACKUP_DIR=/var/lib/vespid-backup
+if [ -d "$BACKUP_DIR" ] && ls "$BACKUP_DIR"/*.json >/dev/null 2>&1; then
+    if [ ! -f "$STATE_DIR/credentials.json" ]; then
+        cp -a "$BACKUP_DIR"/*.json "$STATE_DIR/" 2>/dev/null || true
+        echo "Restored state files from backup."
+    fi
+    rm -rf "$BACKUP_DIR"
+elif [ -f "$STATE_DIR/credentials.json" ]; then
+    echo "Existing credentials.json found — preserving enrollment state."
+fi
+
+# Reload systemd and enable the service
+systemctl daemon-reload
+systemctl enable vespid.service || true
+
+# Apply the rsyslog drop-in that excludes vespid's own lines from the syslog
+# mirrors (only relevant when rsyslog is installed and running).
+systemctl try-restart rsyslog 2>/dev/null || true
+
+echo ""
+echo "=== Vespid installed ==="
+echo ""
+echo "Configuration:"
+echo "  Active config:  $CONFIG_DIR/vespid.yaml (standalone, full reference)"
+echo "  Server-managed: $CONFIG_DIR/vespid-managed.yaml.example"
+echo ""
+echo "To switch to server-managed mode:"
+echo "  sudo cp $CONFIG_DIR/vespid-managed.yaml.example $CONFIG_DIR/vespid.yaml"
+echo "  sudo vi $CONFIG_DIR/vespid.yaml   # set SERVER_URL and API_KEY"
+echo ""
+echo "To enable auditd host-based detection:"
+echo "  1. Install auditd rules:"
+echo "     sudo cp $CONFIG_DIR/auditd-execve.rules /etc/audit/rules.d/vespid-execve.rules"
+echo "     sudo augenrules --load"
+echo "  2. Uncomment the 'auditd:' section in $CONFIG_DIR/vespid.yaml"
+echo "  3. Restart the service: sudo systemctl restart vespid"
+echo ""
+echo "Commands:"
+echo "  Edit config:    sudo vi $CONFIG_DIR/vespid.yaml"
+echo "  Validate:       sudo vespid --check-config"
+echo "  Start service:  sudo systemctl start vespid"
+echo "  View logs:      journalctl -u vespid -f"
+echo ""
+
+exit 0

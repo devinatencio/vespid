@@ -1,0 +1,39 @@
+[Unit]
+Description=Vespid Agent
+Documentation=https://github.com/vespid/hivemonitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/vespid-agent --config /etc/vespid-agent/agent.yaml --log-file /var/log/vespid-agent/agent.log
+Restart=always
+RestartSec=5
+WatchdogSec=60
+
+User=vespid-agent
+Group=vespid-agent
+
+# systemd creates and owns these (mode 0750) on every start, so the agent can
+# always write its state and logs even under ProtectSystem=strict.
+StateDirectory=vespid-agent
+StateDirectoryMode=0750
+LogsDirectory=vespid-agent
+LogsDirectoryMode=0750
+
+AmbientCapabilities=CAP_DAC_READ_SEARCH
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=false
+ProtectKernelTunables=true
+ProtectClock=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

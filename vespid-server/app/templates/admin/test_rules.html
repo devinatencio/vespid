@@ -1,0 +1,1153 @@
+{% extends "base.html" %}
+{% block title %}Test Rules — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">🧪</div>
+    <div>
+        <h1 style="margin:0;font-size:1.2rem;">Test Rules</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Simulate detection rules against log data
+        </div>
+    </div>
+</div>
+
+<form id="test-rules-form" enctype="multipart/form-data">
+    <!-- ═══════════════════════════════════════════════════════════════
+         Pack / Rule Selection
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <h2 class="card-title" style="margin:0;">Select Packs &amp; Rules</h2>
+            <span id="total-rule-count" class="badge badge-info" style="font-size:0.8rem;">0 rules selected</span>
+        </div>
+
+        {% if not packs and not standalone_rules %}
+        <!-- Empty state -->
+        <div id="empty-state" style="text-align:center; padding:2rem 1rem; color:var(--text-muted);">
+            <p style="font-size:1.1rem; margin-bottom:0.5rem;">📦 No rule packs or standalone rules are available.</p>
+            <p style="font-size:0.85rem;">Install rule packs to get started with simulation testing.</p>
+        </div>
+        {% else %}
+
+        <!-- Pack Cards -->
+        {% if packs %}
+        <div style="margin-bottom:1.25rem;">
+            <h3 style="font-size:0.85rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.75rem;">Rule Packs</h3>
+            <div class="pack-list">
+                {% for pack in packs %}
+                <label class="pack-row pack-selectable" id="pack-card-{{ pack.pack_name }}">
+                    <input type="checkbox" name="selected_packs" value="{{ pack.pack_name }}"
+                           data-rule-count="{{ pack.rule_count }}"
+                           class="pack-checkbox"
+                           onchange="updateSelection()">
+                    <div style="flex:1; min-width:0;">
+                        <div class="pack-row-top">
+                            <span style="font-size:1.1em;">{{ pack.icon }}</span>
+                            <span class="pack-name">{{ pack.display_name }}</span>
+                            <span class="badge badge-info" style="font-size:0.65rem; flex-shrink:0;">{{ pack.rule_count }} rule{{ 's' if pack.rule_count != 1 else '' }}</span>
+                            <button type="button" class="pack-toggle-desc" onclick="event.stopPropagation(); this.closest('.pack-selectable').classList.toggle('expanded');" title="Show description">▶</button>
+                        </div>
+                        <div class="pack-row-desc" style="display:none;">{{ pack.description }}</div>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Individual Brute Force Rules -->
+        {% if standalone_rules %}
+        <div>
+            <h3 style="font-size:0.85rem; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.75rem;">Individual Brute Force Rules</h3>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:0.5rem;">
+                {% for rule in standalone_rules %}
+                <label style="display:flex; gap:0.6rem; align-items:center; background:var(--bg-input); border:1px solid var(--border); border-radius:6px; padding:0.6rem 0.85rem; cursor:pointer; transition:border-color 0.15s;">
+                    <input type="checkbox" name="selected_rules" value="{{ rule.id }}"
+                           class="rule-checkbox"
+                           checked
+                           onchange="updateSelection()"
+                           style="width:15px; height:15px; flex-shrink:0;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="display:flex; align-items:center; gap:0.5rem;">
+                            <strong style="font-size:0.85rem;">{{ rule.name }}</strong>
+                            <span class="badge badge-info" style="font-size:0.6rem;">{{ rule.event_type }}</span>
+                        </div>
+                        <span style="font-size:0.75rem; color:var(--text-muted);">{{ rule.max_attempts }} hits / {{ rule.window_seconds }}s · parser: {{ rule.parser }}</span>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% endif %}
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         Log Input
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="card" style="margin-bottom:1.5rem;">
+        <h2 class="card-title">Log Input</h2>
+
+        <!-- File Upload -->
+        <div class="form-group">
+            <label for="log-file-input">Upload Log File</label>
+            <div id="file-upload-area" style="border:2px dashed var(--border); border-radius:var(--radius); padding:1.25rem; text-align:center; cursor:pointer; transition:border-color 0.15s, background 0.15s;"
+                 onclick="document.getElementById('log-file-input').click()">
+                <input type="file" id="log-file-input" name="log_file"
+                       accept=".log,.txt"
+                       onchange="handleFileSelect(this)"
+                       style="display:none;">
+                <div id="file-upload-prompt">
+                    <p style="color:var(--text-muted); margin-bottom:0.25rem;">📁 Click to select a file or drag and drop</p>
+                    <p style="font-size:0.75rem; color:var(--text-muted);">Accepted: .log, .txt, or extensionless files (max 10 MB)</p>
+                </div>
+                <div id="file-upload-info" style="display:none;">
+                    <p style="margin-bottom:0.25rem;">
+                        <strong id="file-name" style="color:var(--text-heading);"></strong>
+                    </p>
+                    <p style="font-size:0.8rem; color:var(--text-muted);">
+                        <span id="file-size"></span>
+                        <button type="button" onclick="clearFileUpload(event)" class="btn btn-sm btn-secondary" style="margin-left:0.75rem;">✕ Remove</button>
+                    </p>
+                </div>
+            </div>
+            <p id="file-error" style="display:none; color:var(--danger); font-size:0.8rem; margin-top:0.4rem;"></p>
+        </div>
+
+        <!-- Text Area Alternative -->
+        <div class="form-group" style="margin-top:1rem;">
+            <label for="log-text-input">Or Paste Log Content</label>
+            <textarea id="log-text-input" name="log_text"
+                      rows="6"
+                      placeholder="Paste log lines here..."
+                      oninput="handleTextInput()"
+                      style="width:100%; padding:0.6rem 0.75rem; border:1px solid var(--border); border-radius:6px; font-size:0.85rem; font-family:'JetBrains Mono', monospace; background:var(--bg-input); color:var(--text); resize:vertical;"></textarea>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         Parser Override
+         ═══════════════════════════════════════════════════════════════ -->
+    <div class="card" style="margin-bottom:1.5rem;">
+        <h2 class="card-title">Parser Configuration</h2>
+        <div class="form-group" style="max-width:300px;">
+            <label for="parser-override">Log Format Parser</label>
+            <select id="parser-override" name="parser_override" style="width:100%; padding:0.5rem 0.75rem; border:1px solid var(--border); border-radius:6px; font-size:0.875rem; background:var(--bg-input); color:var(--text);">
+                <option value="auto" selected>Auto-detect</option>
+                <option value="secure">secure (syslog/auth)</option>
+                <option value="apache">apache (access log)</option>
+                <option value="haproxy">haproxy (HTTP/TCP log)</option>
+                <option value="messages">messages (syslog)</option>
+            </select>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">Auto-detect samples the first 10 lines to determine the format.</p>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════
+         Run Button
+         ═══════════════════════════════════════════════════════════════ -->
+    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem;">
+        <button type="button" id="run-btn" class="btn" disabled
+                onclick="startSimulation()"
+                style="padding:0.6rem 1.5rem; font-size:0.95rem;">
+            ▶ Run Simulation
+        </button>
+        <span id="run-disabled-msg" style="font-size:0.8rem; color:var(--text-muted);">
+            Select at least one pack or rule and provide log input to run.
+        </span>
+    </div>
+</form>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Progress Area
+     ═══════════════════════════════════════════════════════════════ -->
+<div id="progress-area" style="display:none;">
+    <div class="card" style="margin-bottom:1.5rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+            <h2 class="card-title" style="margin:0;">Simulation Progress</h2>
+            <button type="button" id="cancel-btn" class="btn btn-secondary" onclick="cancelSimulation()" style="padding:0.4rem 1rem; font-size:0.8rem;">
+                ✕ Cancel
+            </button>
+        </div>
+        <div style="margin-bottom:0.5rem;">
+            <div style="background:var(--border); border-radius:4px; height:20px; overflow:hidden;">
+                <div id="progress-bar" style="background:var(--accent); height:100%; width:0%; transition:width 0.3s ease; border-radius:4px;"></div>
+            </div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span id="progress-pct" style="font-size:0.85rem; font-weight:600; color:var(--text-heading);">0%</span>
+            <span id="progress-lines" style="font-size:0.85rem; color:var(--text-muted);">0 / 0</span>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Results Area
+     ═══════════════════════════════════════════════════════════════ -->
+<div id="results-area" style="display:none;">
+    <!-- Cancelled Indicator -->
+    <div id="cancelled-indicator" style="display:none; margin-bottom:1rem;">
+        <div class="card" style="border-left:4px solid var(--warning); background:rgba(245,158,11,0.05);">
+            <p style="margin:0; font-size:0.9rem; color:var(--warning); font-weight:600;">
+                ⚠ Simulation Cancelled
+            </p>
+            <p id="cancelled-detail" style="margin:0.25rem 0 0 0; font-size:0.8rem; color:var(--text-muted);">
+                Partial results shown below.
+            </p>
+        </div>
+    </div>
+
+    <!-- Summary Section -->
+    <div class="card" style="margin-bottom:1.5rem;">
+        <h2 class="card-title">Results Summary</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:0.75rem;">
+            <div class="stat-tile" style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+                    <span style="font-size:1.1rem;">🧪</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">Rules Tested</span>
+                </div>
+                <p id="summary-total-rules" style="font-size:1.6rem; font-weight:700; margin:0; color:var(--text-heading); font-variant-numeric:tabular-nums;">—</p>
+            </div>
+            <div class="stat-tile" style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+                    <span style="font-size:1.1rem;">📄</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">Total Lines</span>
+                </div>
+                <p id="summary-total-lines" style="font-size:1.6rem; font-weight:700; margin:0; color:var(--text-heading); font-variant-numeric:tabular-nums;">—</p>
+            </div>
+            <div class="stat-tile" style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+                    <span style="font-size:1.1rem;">🎯</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">Matches</span>
+                </div>
+                <p id="summary-matches" style="font-size:1.6rem; font-weight:700; margin:0; color:var(--accent); font-variant-numeric:tabular-nums;">—</p>
+            </div>
+            <div class="stat-tile" style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+                    <span style="font-size:1.1rem;">🚫</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">Detections</span>
+                </div>
+                <p id="summary-detections" style="font-size:1.6rem; font-weight:700; margin:0; color:var(--danger); font-variant-numeric:tabular-nums;">—</p>
+            </div>
+            <div class="stat-tile" style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+                    <span style="font-size:1.1rem;">🔒</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">IPs Blocked</span>
+                </div>
+                <p id="summary-blocked-ips" style="font-size:1.6rem; font-weight:700; margin:0; color:var(--danger); font-variant-numeric:tabular-nums;">—</p>
+            </div>
+            <div class="stat-tile" style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+                    <span style="font-size:1.1rem;">🌐</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">Unique IPs</span>
+                </div>
+                <p id="summary-unique-ips" style="font-size:1.6rem; font-weight:700; margin:0; color:var(--text-heading); font-variant-numeric:tabular-nums;">—</p>
+            </div>
+            <div class="stat-tile" style="background:var(--bg-input); border:1px solid var(--border); border-radius:8px; padding:1rem;">
+                <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.4rem;">
+                    <span style="font-size:1.1rem;">⏱️</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted); font-weight:500;">Elapsed</span>
+                </div>
+                <p id="summary-elapsed" style="font-size:1.6rem; font-weight:700; margin:0; color:var(--text-heading); font-variant-numeric:tabular-nums;">—</p>
+            </div>
+        </div>
+        <div id="summary-parser-info" style="margin-top:0.75rem; font-size:0.8rem; color:var(--text-muted);"></div>
+    </div>
+
+    <!-- No Detection Message -->
+    <div id="no-detection-msg" style="display:none; margin-bottom:1.5rem;">
+        <div class="card" style="text-align:center; padding:2rem;">
+            <p style="font-size:1.1rem; margin-bottom:0.5rem; color:var(--text-heading);">✅ No rules fired</p>
+            <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
+                No detections were triggered during the simulation. Verify that the selected packs contain rules matching the uploaded log format.
+            </p>
+        </div>
+    </div>
+
+    <!-- Would-Be Blocks Summary -->
+    <div id="blocks-section" style="display:none; margin-bottom:1.5rem;">
+        <div class="card" style="border-left:4px solid var(--danger);">
+            <h2 class="card-title" style="color:var(--danger);">🚫 IPs That Would Be Blocked</h2>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:0.75rem;">
+                These IPs triggered detection thresholds and would be blocked in production.
+            </p>
+            <div id="blocks-list" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:0.5rem;"></div>
+        </div>
+    </div>
+
+    <!-- Detection Timeline -->
+    <div id="detection-timeline-section" style="display:none; margin-bottom:1.5rem;">
+        <div class="card">
+            <h2 class="card-title">Detection Timeline</h2>
+            <div id="detection-timeline-list"></div>
+            <!-- Pagination -->
+            <div id="timeline-pagination" style="display:none; margin-top:1rem; display:flex; justify-content:center; align-items:center; gap:0.5rem;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-Rule Breakdown -->
+    <div id="per-rule-section" style="display:none; margin-bottom:1.5rem;">
+        <div class="card">
+            <h2 class="card-title">Per-Rule Breakdown</h2>
+            <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                    <thead>
+                        <tr style="border-bottom:2px solid var(--border);">
+                            <th style="text-align:left; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Rule Name</th>
+                            <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Trigger Count</th>
+                            <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Distinct IPs</th>
+                        </tr>
+                    </thead>
+                    <tbody id="per-rule-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-IP Breakdown -->
+    <div id="per-ip-section" style="display:none; margin-bottom:1.5rem;">
+        <div class="card">
+            <h2 class="card-title">Per-IP Breakdown</h2>
+            <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                    <thead>
+                        <tr style="border-bottom:2px solid var(--border);">
+                            <th style="text-align:left; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Source IP</th>
+                            <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Match Count</th>
+                            <th style="text-align:left; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Rules Fired</th>
+                        </tr>
+                    </thead>
+                    <tbody id="per-ip-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-Rule Match Summary -->
+    <div id="per-rule-matches-section" style="display:none; margin-bottom:1.5rem;">
+        <div class="card">
+            <h2 class="card-title">Rules with At Least One Match</h2>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin:0 0 0.75rem 0;">
+                Rules that matched at least one log line, even if the attempt threshold was not reached.
+            </p>
+            <div style="overflow-x:auto;">
+                <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+                    <thead>
+                        <tr style="border-bottom:2px solid var(--border);">
+                            <th style="text-align:left; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Rule Name</th>
+                            <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Matches</th>
+                            <th style="text-align:right; padding:0.5rem 0.75rem; color:var(--text-muted); font-weight:600;">Distinct IPs</th>
+                        </tr>
+                    </thead>
+                    <tbody id="per-rule-matches-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detected Format Display -->
+    <div id="detected-format-section" style="display:none; margin-bottom:1.5rem;">
+        <div class="card">
+            <p style="font-size:0.85rem; color:var(--text-muted); margin:0;">
+                <strong>Detected Format:</strong> <span id="detected-format-value"></span>
+            </p>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ── State ────────────────────────────────────────────────── */
+var _hasFile = false;
+var _hasText = false;
+var _selectedRuleCount = 0;
+
+/* ── Selection Tracking ───────────────────────────────────── */
+function updateSelection() {
+    var packCheckboxes = document.querySelectorAll('.pack-checkbox');
+    var ruleCheckboxes = document.querySelectorAll('.rule-checkbox');
+    var totalRules = 0;
+
+    packCheckboxes.forEach(function(cb) {
+        var row = cb.closest('.pack-row');
+        if (cb.checked) {
+            totalRules += parseInt(cb.dataset.ruleCount) || 0;
+            if (row) {
+                row.style.borderColor = 'var(--accent)';
+                row.style.boxShadow = '0 0 0 1px var(--accent)';
+            }
+        } else {
+            if (row) {
+                row.style.borderColor = 'var(--border)';
+                row.style.boxShadow = 'none';
+            }
+        }
+    });
+
+    ruleCheckboxes.forEach(function(cb) {
+        var label = cb.closest('label');
+        if (cb.checked) {
+            totalRules += 1;
+            if (label) label.style.borderColor = 'var(--accent)';
+        } else {
+            if (label) label.style.borderColor = 'var(--border)';
+        }
+    });
+
+    _selectedRuleCount = totalRules;
+
+    var countEl = document.getElementById('total-rule-count');
+    if (countEl) {
+        countEl.textContent = totalRules + ' rule' + (totalRules !== 1 ? 's' : '') + ' selected';
+    }
+
+    updateRunButton();
+}
+
+/* ── File Upload Handling ─────────────────────────────────── */
+var MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+var ALLOWED_EXTENSIONS = ['.log', '.txt'];
+
+function validateFileExtension(filename) {
+    if (!filename) return false;
+    var dotIndex = filename.lastIndexOf('.');
+    // No extension (no dot, or dot is first char like .htaccess)
+    if (dotIndex <= 0) return true;
+    var ext = filename.substring(dotIndex).toLowerCase();
+    return ALLOWED_EXTENSIONS.indexOf(ext) !== -1;
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' bytes';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function handleFileSelect(input) {
+    var fileError = document.getElementById('file-error');
+    fileError.style.display = 'none';
+
+    if (!input.files || !input.files[0]) {
+        clearFileState();
+        return;
+    }
+
+    var file = input.files[0];
+
+    // Validate extension
+    if (!validateFileExtension(file.name)) {
+        fileError.textContent = 'Invalid file extension. Accepted: .log, .txt, or files with no extension.';
+        fileError.style.display = 'block';
+        input.value = '';
+        clearFileState();
+        return;
+    }
+
+    // Validate size
+    if (file.size > MAX_FILE_SIZE) {
+        fileError.textContent = 'File exceeds maximum size of 10 MB.';
+        fileError.style.display = 'block';
+        input.value = '';
+        clearFileState();
+        return;
+    }
+
+    // Validate non-empty
+    if (file.size === 0) {
+        fileError.textContent = 'File is empty. Please upload a file with at least one line.';
+        fileError.style.display = 'block';
+        input.value = '';
+        clearFileState();
+        return;
+    }
+
+    // Show file info
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-size').textContent = formatFileSize(file.size);
+    document.getElementById('file-upload-prompt').style.display = 'none';
+    document.getElementById('file-upload-info').style.display = 'block';
+    document.getElementById('file-upload-area').style.borderColor = 'var(--success)';
+
+    _hasFile = true;
+
+    // Clear text area (mutual exclusivity)
+    var textArea = document.getElementById('log-text-input');
+    if (textArea.value.trim()) {
+        textArea.value = '';
+        _hasText = false;
+    }
+
+    updateRunButton();
+}
+
+function clearFileUpload(event) {
+    if (event) event.stopPropagation();
+    var input = document.getElementById('log-file-input');
+    input.value = '';
+    clearFileState();
+    updateRunButton();
+}
+
+function clearFileState() {
+    document.getElementById('file-upload-prompt').style.display = 'block';
+    document.getElementById('file-upload-info').style.display = 'none';
+    document.getElementById('file-upload-area').style.borderColor = 'var(--border)';
+    _hasFile = false;
+}
+
+/* ── Text Area Handling ───────────────────────────────────── */
+function handleTextInput() {
+    var textArea = document.getElementById('log-text-input');
+    var hasContent = textArea.value.trim().length > 0;
+
+    if (hasContent && _hasFile) {
+        // Clear file upload (mutual exclusivity — most recent input wins)
+        clearFileUpload(null);
+    }
+
+    _hasText = hasContent;
+    updateRunButton();
+}
+
+/* ── Run Button State ─────────────────────────────────────── */
+function updateRunButton() {
+    var btn = document.getElementById('run-btn');
+    var msg = document.getElementById('run-disabled-msg');
+    var hasInput = _hasFile || _hasText;
+    var hasRules = _selectedRuleCount > 0;
+
+    if (hasRules && hasInput) {
+        btn.disabled = false;
+        msg.style.display = 'none';
+    } else {
+        btn.disabled = true;
+        msg.style.display = 'inline';
+        if (!hasRules && !hasInput) {
+            msg.textContent = 'Select at least one pack or rule and provide log input to run.';
+        } else if (!hasRules) {
+            msg.textContent = 'Select at least one pack or rule to run.';
+        } else {
+            msg.textContent = 'Provide a log file or paste log content to run.';
+        }
+    }
+}
+
+/* ── Simulation State ──────────────────────────────────────── */
+var _currentSimId = null;
+var _streamController = null;
+var _timelinePage = 1;
+var _timelineData = [];
+var _isAuditdMode = false;
+var _TIMELINE_PAGE_SIZE = 50;
+
+/* ── Start Simulation (single streaming POST) ─────────────── */
+function startSimulation() {
+    var form = document.getElementById('test-rules-form');
+    var formData = new FormData(form);
+
+    var btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Starting...';
+
+    // Hide previous results
+    document.getElementById('results-area').style.display = 'none';
+    document.getElementById('progress-area').style.display = 'none';
+    document.getElementById('progress-bar').style.width = '0%';
+    document.getElementById('progress-pct').textContent = '0%';
+    document.getElementById('progress-lines').textContent = '0 / 0';
+
+    _streamController = null;
+    _currentSimId = null;
+
+    fetch('{{ url_for("test_rules.run_simulation") }}', {
+        method: 'POST',
+        body: formData,
+    })
+    .then(function(response) {
+        // Validation failures (4xx) come back as application/json with
+        // an "error" field — surface those to the user.
+        if (!response.ok) {
+            return response.json().then(function(body) {
+                throw new Error(body.error || ('HTTP ' + response.status));
+            });
+        }
+        if (!response.body || typeof response.body.getReader !== 'function') {
+            throw new Error('Streaming not supported in this browser.');
+        }
+
+        // 200 with text/event-stream — same connection, same worker, no
+        // cross-worker race. Drain the stream below.
+        _streamController = null;  // AbortController lives inside the closure
+        return readSimulationStream(response);
+    })
+    .catch(function(err) {
+        alert('Request failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = '▶ Run Simulation';
+        document.getElementById('progress-area').style.display = 'none';
+        document.getElementById('cancel-btn').disabled = true;
+        _currentSimId = null;
+    });
+}
+
+/* ── Read SSE stream from a streaming fetch response ──────── */
+function readSimulationStream(response) {
+    var btn = document.getElementById('run-btn');
+    var decoder = new TextDecoder('utf-8');
+    var buffer = '';
+    var terminal = false;
+    var terminalEvent = null;
+    var terminalData = null;
+
+    // Allow the user to cancel by aborting this fetch.
+    var controller = { aborted: false };
+    _streamController = {
+        abort: function() {
+            controller.aborted = true;
+            try { reader.cancel(); } catch (e) { /* already closed */ }
+        }
+    };
+
+    var reader = response.body.getReader();
+    var totalLines = 0;
+
+    function handleEvent(eventName, data) {
+        if (eventName === 'started') {
+            totalLines = data.total_lines || 0;
+            _currentSimId = data.simulation_id || null;
+            document.getElementById('progress-area').style.display = 'block';
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-pct').textContent = '0%';
+            document.getElementById('progress-lines').textContent = '0 / ' + totalLines;
+            document.getElementById('cancel-btn').disabled = false;
+            btn.textContent = '🔄 Running...';
+        } else if (eventName === 'progress') {
+            var pct = Math.round(data.pct || 0);
+            document.getElementById('progress-bar').style.width = pct + '%';
+            document.getElementById('progress-pct').textContent = pct + '%';
+            document.getElementById('progress-lines').textContent =
+                data.current + ' / ' + data.total;
+        } else if (
+            eventName === 'result' ||
+            eventName === 'cancelled' ||
+            eventName === 'error'
+        ) {
+            terminal = true;
+            terminalEvent = eventName;
+            terminalData = data;
+        }
+    }
+
+    function finishTerminal() {
+        document.getElementById('cancel-btn').disabled = true;
+        if (terminalEvent === 'result') {
+            simulationFinished(terminalData || {}, false);
+        } else if (terminalEvent === 'cancelled') {
+            simulationFinished(terminalData || {cancelled: true}, true);
+        } else if (terminalEvent === 'error') {
+            alert('Simulation error: ' + ((terminalData && terminalData.error) || 'Unknown error'));
+            simulationFinished({}, false);
+        } else {
+            // Stream ended without a terminal event — usually a network
+            // drop. Reset UI so the user can retry.
+            btn.disabled = false;
+            btn.textContent = '▶ Run Simulation';
+            document.getElementById('progress-area').style.display = 'none';
+        }
+        _currentSimId = null;
+    }
+
+    function pump() {
+        return reader.read().then(function(result) {
+            if (controller.aborted) return null;
+            if (result.done) return null;
+
+            buffer += decoder.decode(result.value, { stream: true });
+
+            // Split into complete SSE frames; keep the last (possibly
+            // incomplete) frame in the buffer for the next chunk.
+            var parts = buffer.split('\n\n');
+            buffer = parts.pop();
+
+            for (var i = 0; i < parts.length; i++) {
+                var raw = parts[i];
+                if (!raw) continue;
+
+                // Skip SSE comments (keepalives start with ':')
+                if (raw.charAt(0) === ':') continue;
+
+                var eventName = 'message';
+                var dataLines = [];
+                var lines = raw.split('\n');
+                for (var j = 0; j < lines.length; j++) {
+                    var line = lines[j];
+                    if (line.indexOf('event: ') === 0) {
+                        eventName = line.substring(7).trim();
+                    } else if (line.indexOf('data: ') === 0) {
+                        dataLines.push(line.substring(6));
+                    } else if (line.indexOf('data:') === 0) {
+                        // Server sent a line with no space after the colon
+                        dataLines.push(line.substring(5));
+                    }
+                }
+                if (dataLines.length === 0) continue;
+
+                var payload;
+                try {
+                    payload = JSON.parse(dataLines.join('\n'));
+                } catch (e) {
+                    console.error('Failed to parse SSE data:', dataLines, e);
+                    continue;
+                }
+                handleEvent(eventName, payload);
+                if (terminal) return null;  // stop pumping after the terminal event
+            }
+            return pump();
+        });
+    }
+
+    return pump().then(function() {
+        if (controller.aborted) {
+            // User cancelled via abort. We may or may not have received
+            // a 'cancelled' event from the server before the connection
+            // closed. If we did, finishTerminal already ran; otherwise
+            // reset the UI.
+            if (!terminal) {
+                document.getElementById('cancel-btn').disabled = true;
+                btn.disabled = false;
+                btn.textContent = '▶ Run Simulation';
+                document.getElementById('progress-area').style.display = 'none';
+                _currentSimId = null;
+            }
+            return;
+        }
+        if (terminal) {
+            finishTerminal();
+        } else {
+            // Stream ended without a terminal event — network drop.
+            alert('Connection to the server was lost. Please try again.');
+            btn.disabled = false;
+            btn.textContent = '▶ Run Simulation';
+            document.getElementById('progress-area').style.display = 'none';
+            document.getElementById('cancel-btn').disabled = true;
+            _currentSimId = null;
+        }
+    });
+}
+
+function simulationFinished(data, cancelled) {
+    // Hide progress, restore run button
+    document.getElementById('progress-area').style.display = 'none';
+    document.getElementById('cancel-btn').disabled = true;
+    var btn = document.getElementById('run-btn');
+    btn.disabled = false;
+    btn.textContent = '▶ Run Simulation';
+    _currentSimId = null;
+    renderResults(data, cancelled || false);
+}
+
+/* ── Cancel Simulation ────────────────────────────────────── */
+function cancelSimulation() {
+    var cancelBtn = document.getElementById('cancel-btn');
+    cancelBtn.disabled = true;
+    cancelBtn.textContent = 'Cancelling...';
+
+    // Preferred path: ask the server to cancel via the same worker so
+    // the client gets a 'cancelled' SSE event with partial results.
+    // If the cancel POST lands on a different worker it returns 404 —
+    // fall back to aborting the streaming fetch.
+    if (_currentSimId) {
+        fetch('/admin/test-rules/cancel/' + _currentSimId, {
+            method: 'POST',
+        })
+        .then(function(r) {
+            if (r.status === 404 && _streamController) {
+                _streamController.abort();
+            } else if (!r.ok) {
+                if (_streamController) _streamController.abort();
+            }
+        })
+        .catch(function() {
+            // Network error: best-effort fall back to abort.
+            if (_streamController) _streamController.abort();
+        });
+    } else if (_streamController) {
+        _streamController.abort();
+    }
+}
+
+/* ── Render Results ───────────────────────────────────────── */
+function renderResults(data, wasCancelled) {
+    var resultsArea = document.getElementById('results-area');
+    resultsArea.style.display = 'block';
+
+    // Cancelled indicator
+    var cancelledIndicator = document.getElementById('cancelled-indicator');
+    if (wasCancelled || data.cancelled) {
+        cancelledIndicator.style.display = 'block';
+        var linesProcessed = data.lines_processed || 0;
+        var totalLines = data.total_lines || 0;
+        document.getElementById('cancelled-detail').textContent =
+            'Processed ' + linesProcessed + ' of ' + totalLines + ' lines before cancellation. Partial results shown below.';
+    } else {
+        cancelledIndicator.style.display = 'none';
+    }
+
+    // Summary section
+    var totalLines = data.total_lines || data.lines_processed || 0;
+    var linesProcessed = data.lines_processed || totalLines;
+    document.getElementById('summary-total-lines').textContent = linesProcessed;
+    document.getElementById('summary-matches').textContent = data.total_matches || 0;
+    document.getElementById('summary-detections').textContent = data.total_detections || 0;
+    document.getElementById('summary-total-rules').textContent = data.total_rules || 0;
+    document.getElementById('summary-unique-ips').textContent = data.unique_ips || 0;
+
+    // Compute blocked IPs (unique IPs from detections)
+    var blockedIPs = {};
+    var isAuditd = (data.detected_parser === 'auditd');
+    _isAuditdMode = isAuditd;
+    if (data.detections && data.detections.length > 0) {
+        for (var i = 0; i < data.detections.length; i++) {
+            var det = data.detections[i];
+            if (!blockedIPs[det.source_ip]) {
+                blockedIPs[det.source_ip] = [];
+            }
+            if (blockedIPs[det.source_ip].indexOf(det.rule_name) === -1) {
+                blockedIPs[det.source_ip].push(det.rule_name);
+            }
+        }
+    }
+    var blockedIPCount = Object.keys(blockedIPs).length;
+
+    // For auditd: repurpose the IPs Blocked / Unique IPs pills
+    if (isAuditd) {
+        document.getElementById('summary-blocked-ips').textContent = data.total_detections || 0;
+        document.getElementById('summary-unique-ips').textContent = '—';
+        // Update labels for auditd context
+        var blockedLabel = document.getElementById('summary-blocked-ips').previousElementSibling;
+        if (blockedLabel) {
+            blockedLabel.querySelector('span:last-child').textContent = 'Rules Fired';
+            blockedLabel.querySelector('span:first-child').textContent = '⚡';
+        }
+        var ipsLabel = document.getElementById('summary-unique-ips').previousElementSibling;
+        if (ipsLabel) {
+            ipsLabel.querySelector('span:last-child').textContent = 'Host Events';
+            ipsLabel.querySelector('span:first-child').textContent = '🐧';
+        }
+        document.getElementById('summary-unique-ips').textContent = data.total_matches || 0;
+    } else {
+        document.getElementById('summary-blocked-ips').textContent = blockedIPCount;
+        document.getElementById('summary-unique-ips').textContent = data.unique_ips || 0;
+    }
+
+    // Render blocks section
+    var blocksSection = document.getElementById('blocks-section');
+    if (blockedIPCount > 0 && !isAuditd) {
+        blocksSection.style.display = 'block';
+        var blocksList = document.getElementById('blocks-list');
+        var blocksHtml = '';
+        var sortedBlockedIPs = Object.keys(blockedIPs).sort(function(a, b) {
+            return blockedIPs[b].length - blockedIPs[a].length;
+        });
+        for (var i = 0; i < sortedBlockedIPs.length; i++) {
+            var ip = sortedBlockedIPs[i];
+            var rules = blockedIPs[ip];
+            blocksHtml += '<div style="background:rgba(239,68,68,0.05); border:1px solid rgba(239,68,68,0.2); border-radius:6px; padding:0.6rem 0.85rem;">';
+            blocksHtml += '<div style="display:flex; align-items:center; gap:0.5rem;">';
+            blocksHtml += '<span style="font-size:1rem;">🚫</span>';
+            blocksHtml += '<code style="font-size:0.9rem; font-weight:600; color:var(--text-heading);">' + escapeHtml(ip) + '</code>';
+            blocksHtml += '<span class="badge" style="background:var(--danger); color:#fff; font-size:0.65rem; padding:0.15rem 0.4rem; border-radius:3px;">' + rules.length + ' block' + (rules.length !== 1 ? 's' : '') + '</span>';
+            blocksHtml += '</div>';
+            blocksHtml += '<div style="font-size:0.75rem; color:var(--text-muted); margin-top:0.3rem;">Rules: ' + rules.map(function(r) { return escapeHtml(r); }).join(', ') + '</div>';
+            blocksHtml += '</div>';
+        }
+        blocksList.innerHTML = blocksHtml;
+    } else {
+        blocksSection.style.display = 'none';
+    }
+    document.getElementById('summary-elapsed').textContent =
+        (data.elapsed_seconds !== undefined ? data.elapsed_seconds + 's' : '—');
+
+    // Parser info
+    var parserInfo = document.getElementById('summary-parser-info');
+    if (data.detected_parser) {
+        parserInfo.textContent = 'Parser: ' + data.detected_parser;
+        if (data.skipped_lines !== undefined && data.skipped_lines > 0) {
+            parserInfo.textContent += ' · ' + data.skipped_lines + ' lines skipped (unparseable)';
+        }
+    } else {
+        parserInfo.textContent = '';
+    }
+
+    // Detected format display
+    if (data.detected_parser) {
+        document.getElementById('detected-format-section').style.display = 'block';
+        document.getElementById('detected-format-value').textContent = data.detected_parser;
+    } else {
+        document.getElementById('detected-format-section').style.display = 'none';
+    }
+
+    // No detection message vs detection details
+    var totalDetections = data.total_detections || 0;
+    if (totalDetections === 0) {
+        document.getElementById('no-detection-msg').style.display = 'block';
+        document.getElementById('blocks-section').style.display = 'none';
+        document.getElementById('detection-timeline-section').style.display = 'none';
+        document.getElementById('per-rule-section').style.display = 'none';
+        document.getElementById('per-ip-section').style.display = 'none';
+    } else {
+        document.getElementById('no-detection-msg').style.display = 'none';
+
+        // Detection Timeline
+        if (data.detections && data.detections.length > 0) {
+            _timelineData = data.detections;
+            _timelinePage = 1;
+            document.getElementById('detection-timeline-section').style.display = 'block';
+            renderTimelinePage();
+        } else {
+            // Detections exist but detailed data not in this response
+            document.getElementById('detection-timeline-section').style.display = 'block';
+            document.getElementById('detection-timeline-list').innerHTML =
+                '<p style="color:var(--text-muted); font-size:0.85rem; text-align:center; padding:1rem;">' +
+                totalDetections + ' detection(s) triggered. Detailed timeline available in full results view.</p>';
+            document.getElementById('timeline-pagination').style.display = 'none';
+        }
+
+        // Per-Rule Breakdown
+        if (data.per_rule_breakdown && data.per_rule_breakdown.length > 0) {
+            document.getElementById('per-rule-section').style.display = 'block';
+            renderPerRuleBreakdown(data.per_rule_breakdown);
+        } else {
+            document.getElementById('per-rule-section').style.display = 'none';
+        }
+
+        // Per-IP Breakdown (hide for auditd — no IPs in host detections)
+        if (!isAuditd && data.per_ip_breakdown && data.per_ip_breakdown.length > 0) {
+            document.getElementById('per-ip-section').style.display = 'block';
+            renderPerIPBreakdown(data.per_ip_breakdown);
+        } else {
+            document.getElementById('per-ip-section').style.display = 'none';
+        }
+    }
+
+    // Per-Rule Match Summary (shown regardless of detection count)
+    if (data.per_rule_matches && data.per_rule_matches.length > 0) {
+        document.getElementById('per-rule-matches-section').style.display = 'block';
+        renderPerRuleMatches(data.per_rule_matches);
+    } else {
+        document.getElementById('per-rule-matches-section').style.display = 'none';
+    }
+}
+
+/* ── Detection Timeline Rendering with Pagination ─────────── */
+function renderTimelinePage() {
+    var list = document.getElementById('detection-timeline-list');
+    var totalItems = _timelineData.length;
+    var totalPages = Math.ceil(totalItems / _TIMELINE_PAGE_SIZE);
+    var start = (_timelinePage - 1) * _TIMELINE_PAGE_SIZE;
+    var end = Math.min(start + _TIMELINE_PAGE_SIZE, totalItems);
+    var pageItems = _timelineData.slice(start, end);
+
+    var html = '';
+    for (var i = 0; i < pageItems.length; i++) {
+        var det = pageItems[i];
+        var idx = start + i + 1;
+        var detId = 'det-detail-' + idx;
+        var hasMatchedLines = det.matched_lines && det.matched_lines.length > 0;
+        html += '<div style="display:flex; gap:0.75rem; align-items:flex-start; padding:0.6rem 0; border-bottom:1px solid var(--border);">';
+        html += '<span style="font-size:0.75rem; color:var(--text-muted); min-width:2rem; text-align:right;">#' + idx + '</span>';
+        html += '<div style="flex:1;">';
+        html += '<div style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center;">';
+        html += '<strong style="font-size:0.85rem; color:var(--text-heading);">' + escapeHtml(det.rule_name || '') + '</strong>';
+        html += '<span class="badge badge-info" style="font-size:0.65rem;">' + escapeHtml(det.event_type || '') + '</span>';
+        if (hasMatchedLines) {
+            html += '<button type="button" onclick="toggleDetDetail(\'' + detId + '\')" style="font-size:0.7rem; padding:0.1rem 0.4rem; border:1px solid var(--border); border-radius:3px; background:var(--bg-secondary); color:var(--text-muted); cursor:pointer;">▶ Show matched data (' + det.matched_lines.length + ' lines)</button>';
+        }
+        html += '</div>';
+        html += '<div style="font-size:0.8rem; color:var(--text-muted); margin-top:0.2rem;">';
+        if (_isAuditdMode) {
+            html += 'Host detection';
+            html += ' · Matched at line ' + (det.triggered_at_line || '?');
+        } else {
+            html += 'IP: <code>' + escapeHtml(det.source_ip || '') + '</code>';
+            html += ' · Attempts: ' + (det.attempt_count || 0);
+            html += ' · Window: ' + (det.window_seconds || 0) + 's';
+        }
+        html += '</div>';
+        // Expandable matched lines section
+        if (hasMatchedLines) {
+            html += '<div id="' + detId + '" style="display:none; margin-top:0.4rem; padding:0.5rem; background:var(--bg-secondary); border-radius:4px; border:1px solid var(--border);">';
+            html += '<div style="font-size:0.75rem; font-weight:600; color:var(--text-heading); margin-bottom:0.3rem;">Contributing log lines:</div>';
+            for (var j = 0; j < det.matched_lines.length; j++) {
+                var ml = det.matched_lines[j];
+                html += '<div style="font-size:0.75rem; margin-bottom:0.25rem; padding:0.2rem 0; border-bottom:1px solid var(--border);">';
+                html += '<span style="color:var(--text-muted);">L' + ml.line_number + '</span>';
+                if (ml.category) {
+                    html += ' <span class="badge" style="font-size:0.6rem; background:var(--accent-subtle); color:var(--accent);">' + escapeHtml(ml.category) + '</span>';
+                }
+                // Format auditd flattened fields nicely (split on \x1e separator)
+                var rawLine = ml.raw_line || '';
+                if (rawLine.indexOf('\x1e') !== -1) {
+                    var fields = rawLine.split('\x1e');
+                    html += '<div style="font-family:monospace; font-size:0.7rem; color:var(--text); margin-top:0.2rem; display:grid; grid-template-columns:auto 1fr; gap:0.15rem 0.75rem; padding:0.3rem 0.5rem; background:rgba(0,0,0,0.05); border-radius:4px;">';
+                    for (var k = 0; k < fields.length; k++) {
+                        var eqIdx = fields[k].indexOf('=');
+                        if (eqIdx > 0) {
+                            var fieldName = fields[k].substring(0, eqIdx);
+                            var fieldVal = fields[k].substring(eqIdx + 1);
+                            html += '<span style="color:var(--accent); font-weight:600; white-space:nowrap;">' + escapeHtml(fieldName) + '</span>';
+                            html += '<span style="word-break:break-all;">' + escapeHtml(fieldVal || '(empty)') + '</span>';
+                        } else {
+                            html += '<span style="grid-column:1/-1;">' + escapeHtml(fields[k]) + '</span>';
+                        }
+                    }
+                    html += '</div>';
+                } else {
+                    html += '<div style="font-family:monospace; font-size:0.7rem; color:var(--text); word-break:break-all; margin-top:0.1rem;">' + escapeHtml(rawLine) + '</div>';
+                }
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+    }
+    list.innerHTML = html;
+
+    // Pagination controls (show when > 200 detections per requirement 4.7)
+    var paginationEl = document.getElementById('timeline-pagination');
+    if (totalItems > 200) {
+        paginationEl.style.display = 'flex';
+        var paginationHtml = '';
+        paginationHtml += '<button type="button" class="btn btn-sm btn-secondary" onclick="timelineGoToPage(1)" ' + (_timelinePage <= 1 ? 'disabled' : '') + '>«</button>';
+        paginationHtml += '<button type="button" class="btn btn-sm btn-secondary" onclick="timelineGoToPage(' + (_timelinePage - 1) + ')" ' + (_timelinePage <= 1 ? 'disabled' : '') + '>‹</button>';
+        paginationHtml += '<span style="font-size:0.8rem; color:var(--text-muted); padding:0 0.5rem;">Page ' + _timelinePage + ' of ' + totalPages + '</span>';
+        paginationHtml += '<button type="button" class="btn btn-sm btn-secondary" onclick="timelineGoToPage(' + (_timelinePage + 1) + ')" ' + (_timelinePage >= totalPages ? 'disabled' : '') + '>›</button>';
+        paginationHtml += '<button type="button" class="btn btn-sm btn-secondary" onclick="timelineGoToPage(' + totalPages + ')" ' + (_timelinePage >= totalPages ? 'disabled' : '') + '>»</button>';
+        paginationEl.innerHTML = paginationHtml;
+    } else {
+        paginationEl.style.display = 'none';
+    }
+}
+
+function toggleDetDetail(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var btn = el.parentElement.querySelector('button[onclick*="toggleDetDetail"]');
+    if (el.style.display === 'none') {
+        el.style.display = 'block';
+        if (btn) btn.textContent = btn.textContent.replace('▶', '▼').replace('Show', 'Hide');
+    } else {
+        el.style.display = 'none';
+        if (btn) btn.textContent = btn.textContent.replace('▼', '▶').replace('Hide', 'Show');
+    }
+}
+
+function timelineGoToPage(page) {
+    var totalPages = Math.ceil(_timelineData.length / _TIMELINE_PAGE_SIZE);
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+    _timelinePage = page;
+    renderTimelinePage();
+    // Scroll to timeline section
+    document.getElementById('detection-timeline-section').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+
+/* ── Per-Rule Breakdown Rendering ─────────────────────────── */
+function renderPerRuleBreakdown(breakdown) {
+    var tbody = document.getElementById('per-rule-tbody');
+    var html = '';
+    for (var i = 0; i < breakdown.length; i++) {
+        var row = breakdown[i];
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += '<td style="padding:0.5rem 0.75rem;">' + escapeHtml(row.rule_name || '') + '</td>';
+        html += '<td style="padding:0.5rem 0.75rem; text-align:right; font-weight:600;">' + (row.trigger_count || 0) + '</td>';
+        html += '<td style="padding:0.5rem 0.75rem; text-align:right;">' + (row.distinct_ips || 0) + '</td>';
+        html += '</tr>';
+    }
+    tbody.innerHTML = html;
+}
+
+/* ── Per-Rule Match Summary Rendering ──────────────────────── */
+function renderPerRuleMatches(matches) {
+    var tbody = document.getElementById('per-rule-matches-tbody');
+    var html = '';
+    for (var i = 0; i < matches.length; i++) {
+        var row = matches[i];
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += '<td style="padding:0.5rem 0.75rem;">' + escapeHtml(row.rule_name || '') + '</td>';
+        html += '<td style="padding:0.5rem 0.75rem; text-align:right; font-weight:600;">' + (row.match_count || 0) + '</td>';
+        html += '<td style="padding:0.5rem 0.75rem; text-align:right;">' + (row.distinct_ips || 0) + '</td>';
+        html += '</tr>';
+    }
+    tbody.innerHTML = html;
+}
+
+/* ── Per-IP Breakdown Rendering ───────────────────────────── */
+function renderPerIPBreakdown(breakdown) {
+    var tbody = document.getElementById('per-ip-tbody');
+    var html = '';
+    for (var i = 0; i < breakdown.length; i++) {
+        var row = breakdown[i];
+        var rulesFired = '';
+        if (Array.isArray(row.rules_fired)) {
+            rulesFired = row.rules_fired.map(function(r) { return escapeHtml(r); }).join(', ');
+        } else if (row.rules_fired) {
+            rulesFired = escapeHtml(String(row.rules_fired));
+        }
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += '<td style="padding:0.5rem 0.75rem;"><code>' + escapeHtml(row.source_ip || '') + '</code></td>';
+        html += '<td style="padding:0.5rem 0.75rem; text-align:right; font-weight:600;">' + (row.match_count || 0) + '</td>';
+        html += '<td style="padding:0.5rem 0.75rem; font-size:0.8rem;">' + rulesFired + '</td>';
+        html += '</tr>';
+    }
+    tbody.innerHTML = html;
+}
+
+/* ── HTML Escaping Utility ────────────────────────────────── */
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
+/* ── Drag and Drop Support ────────────────────────────────── */
+(function() {
+    var dropArea = document.getElementById('file-upload-area');
+    if (!dropArea) return;
+
+    ['dragenter', 'dragover'].forEach(function(evt) {
+        dropArea.addEventListener(evt, function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropArea.style.borderColor = 'var(--accent)';
+            dropArea.style.background = 'rgba(59,130,246,0.05)';
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(function(evt) {
+        dropArea.addEventListener(evt, function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropArea.style.borderColor = _hasFile ? 'var(--success)' : 'var(--border)';
+            dropArea.style.background = 'transparent';
+        });
+    });
+
+    dropArea.addEventListener('drop', function(e) {
+        var files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            var input = document.getElementById('log-file-input');
+            input.files = files;
+            handleFileSelect(input);
+        }
+    });
+})();
+
+/* ── Initialize state on page load ────────────────────────── */
+updateSelection();
+</script>
+{% endblock %}

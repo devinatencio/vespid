@@ -1,0 +1,88 @@
+<div class="card" style="border-top:3px solid var(--accent);">
+
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.25rem;">
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+            <h3 style="margin:0; font-size:0.85rem; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-heading);">📋 Block Detail</h3>
+            <code class="ip-copy" onclick="copyIpToClipboard('{{ source_ip }}', this)" title="Click to copy IP" style="font-size:1.1rem;">{{ source_ip }}</code>
+        </div>
+        <span class="badge badge-healthy">active</span>
+    </div>
+
+    <!-- Block lifecycle -->
+    {% if blocks %}
+    {% for block in blocks %}
+    <div class="meta-card" style="display:grid; grid-template-columns: repeat(5, 1fr); gap:1.25rem; padding:1.25rem; margin-bottom:1rem;">
+        <div>
+            <span class="text-muted" style="display:block; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.2rem;">First Reported</span>
+            <span style="font-size:0.85rem;" data-ts="{{ block.first_reported_at or '—' }}">{{ block.first_reported_at or '—' }}</span>
+        </div>
+        <div>
+            <span class="text-muted" style="display:block; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.2rem;">Approved At</span>
+            <span style="font-size:0.85rem;" data-ts="{{ block.approved_at or '—' }}">{{ block.approved_at or '—' }}</span>
+        </div>
+        <div>
+            <span class="text-muted" style="display:block; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.2rem;">Last Renewed</span>
+            <span style="font-size:0.85rem;" data-ts="{{ block.last_renewed_at or '—' }}">{{ block.last_renewed_at or '—' }}</span>
+        </div>
+        <div>
+            <span class="text-muted" style="display:block; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.2rem;">Expires At</span>
+            <span style="font-size:0.85rem;" data-ts="{{ block.expires_at or '—' }}">{{ block.expires_at or '—' }}</span>
+        </div>
+        <div>
+            <span class="text-muted" style="display:block; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.2rem;">Status</span>
+            {% if block.status == 'active' %}
+            <span class="badge badge-healthy">active</span>
+            {% elif block.status == 'expired' %}
+            <span class="badge badge-degraded">expired</span>
+            {% elif block.status == 'removed' %}
+            <span class="badge badge-offline">removed</span>
+            {% else %}
+            <span class="badge">{{ block.status }}</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    <!-- Reporting history -->
+    <h3 style="margin:0 0 0.75rem 0; font-size:0.85rem; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-heading);">
+        Reporting History
+        <span class="badge" style="margin-left:0.5rem; vertical-align:middle;">{{ reports|length if reports else 0 }}</span>
+    </h3>
+    {% if reports %}
+    <div style="display:flex; flex-direction:column; gap:0.5rem;">
+        {% for report in reports %}
+        <div class="meta-card" style="display:flex; flex-wrap:wrap; align-items:center; gap:1rem; padding:0.75rem 1rem;">
+            <div style="flex:1; min-width:140px;">
+                <div class="text-muted" style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.1rem;">Node</div>
+                <code class="node-name">{{ (report.node_id or report.get('reporting_node_id', ''))|node_display_name }}</code>
+            </div>
+            <div style="flex:1; min-width:120px;">
+                <div class="text-muted" style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.1rem;">Event</div>
+                {% if report.event_type %}
+                <span class="badge badge-event-{{ report.event_type|lower|replace('_', '-') }}">{{ report.event_type }}</span>
+                {% else %}
+                <span class="text-muted">—</span>
+                {% endif %}
+            </div>
+            <div style="flex:1.5; min-width:120px;">
+                <div class="text-muted" style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.1rem;">Rule</div>
+                <span style="font-size:0.85rem;">{{ report.detection_rule or '—' }}</span>
+            </div>
+            <div style="min-width:130px;">
+                <div class="text-muted" style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.1rem;">Reported</div>
+                <span style="font-size:0.85rem;" data-ts="{{ report.reported_at or '—' }}">{{ report.reported_at or '—' }}</span>
+            </div>
+            <div style="min-width:60px; text-align:right;">
+                <div class="text-muted" style="font-size:0.65rem; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:0.1rem;">TTL</div>
+                <span class="badge {% if report.block_ttl_seconds and report.block_ttl_seconds > 3600 %}badge-healthy{% elif report.block_ttl_seconds %}badge-warning{% else %}badge-offline{% endif %}">{{ report.block_ttl_seconds|pretty_duration if report.block_ttl_seconds else '—' }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <p>No reports found for this IP.</p>
+    </div>
+    {% endif %}
+</div>

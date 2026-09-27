@@ -1,0 +1,41 @@
+[Unit]
+Description=VictoriaMetrics — fast time-series database
+Documentation=https://docs.victoriametrics.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/victoria-metrics-prod \
+    -retentionPeriod=90d \
+    -storageDataPath=/var/lib/victoria-metrics \
+    -httpListenAddr=:8428 \
+    -loggerLevel=INFO
+
+Restart=always
+RestartSec=5
+
+User=victoriametrics
+Group=victoriametrics
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/victoria-metrics
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectClock=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Allow a reasonable amount of RAM — VictoriaMetrics uses it for
+# performance, not from leaks. Adjust based on your workload.
+MemoryHigh=512M
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target

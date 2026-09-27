@@ -1,0 +1,78 @@
+# Postfix Mail Server Attack Detection Pack
+# Detects SMTP authentication abuse, relay attempts, and mail server probing.
+---
+pack_name: postfix-attacks
+display_name: Postfix Mail Server Attack Detection Pack
+icon: "📧"
+description: >
+  Detect SMTP authentication brute force, relay abuse, recipient
+  enumeration (VRFY/RCPT), command pipelining violations, and
+  non-SMTP protocol abuse against Postfix mail servers.
+prerequisite: >
+  Requires Postfix mail logs configured in log_sources. Typically
+  /var/log/maillog (RHEL) or /var/log/mail.log (Debian) with parser
+  "messages" or "secure" depending on your syslog configuration.
+
+rules:
+  - name: postfix_sasl_auth_failure
+    event_type: POSTFIX_SASL_BRUTE
+    regex: 'postfix/\w+\[\d+\]: warning: [-._\w]+\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\]: SASL (?:LOGIN|PLAIN|(?:CRAM|DIGEST)-MD5) authentication failed'
+    log_sources: ["secure", "messages"]
+    max_attempts: 5
+    window_seconds: 300
+
+  - name: postfix_lost_connection_after_auth
+    event_type: POSTFIX_AUTH_ABORT
+    regex: 'postfix/\w+\[\d+\]: lost connection after AUTH from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\]'
+    log_sources: ["secure", "messages"]
+    max_attempts: 5
+    window_seconds: 300
+
+  - name: postfix_relay_denied
+    event_type: POSTFIX_RELAY_DENIED
+    regex: 'postfix/\w+\[\d+\]: NOQUEUE: reject:.*from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\].*Relay access denied'
+    log_sources: ["secure", "messages"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: postfix_unknown_recipient
+    event_type: POSTFIX_RCPT_ENUM
+    regex: 'postfix/\w+\[\d+\]: NOQUEUE: reject:.*from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\].*(?:User unknown|Recipient address rejected|undeliverable address)'
+    log_sources: ["secure", "messages"]
+    max_attempts: 5
+    window_seconds: 300
+
+  - name: postfix_too_many_errors
+    event_type: POSTFIX_TOO_MANY_ERRORS
+    regex: 'postfix/\w+\[\d+\]: too many errors after \S+ from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\]'
+    log_sources: ["secure", "messages"]
+    max_attempts: 2
+    window_seconds: 600
+
+  - name: postfix_command_pipelining
+    event_type: POSTFIX_PIPELINING
+    regex: 'postfix/\w+\[\d+\]: improper command pipelining after \S+ from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\]'
+    log_sources: ["secure", "messages"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: postfix_non_smtp_command
+    event_type: POSTFIX_NON_SMTP
+    regex: 'postfix/\w+\[\d+\]: (?:warning: )?non-SMTP command from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\]'
+    log_sources: ["secure", "messages"]
+    max_attempts: 2
+    window_seconds: 120
+
+  - name: postfix_vrfy_probe
+    event_type: POSTFIX_VRFY_PROBE
+    regex: 'postfix/\w+\[\d+\]: NOQUEUE: reject:.*VRFY.*from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\]'
+    log_sources: ["secure", "messages"]
+    max_attempts: 3
+    window_seconds: 300
+
+  - name: postfix_sender_rejected
+    event_type: POSTFIX_SENDER_REJECTED
+    regex: 'postfix/\w+\[\d+\]: NOQUEUE: reject:.*from [^\[]*\[(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\].*Sender address rejected'
+    log_sources: ["secure", "messages"]
+    max_attempts: 5
+    window_seconds: 300

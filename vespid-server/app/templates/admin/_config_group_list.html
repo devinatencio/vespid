@@ -1,0 +1,44 @@
+<!-- Group List Fragment (HTMX) -->
+{% if groups %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Members</th>
+            <th>Profile Assignment</th>
+            <th>Created</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for group in groups %}
+        <tr>
+            <td><strong>{{ group.name }}</strong></td>
+            <td>{{ group.description or '—' }}</td>
+            <td>{{ group.member_count }}</td>
+            <td>
+                {% if group.profile_assignment %}
+                <span class="badge badge-active">{{ group.profile_assignment.profile_name }}</span>
+                {% else %}
+                <span class="badge badge-revoked">None</span>
+                {% endif %}
+            </td>
+            <td><span data-ts="{{ group.created_at }}">{{ group.created_at }}</span></td>
+            <td>
+                <button class="btn btn-sm"
+                        hx-get="{{ url_for('config_dashboard.fragment_group_detail', group_id=group.id) }}"
+                        hx-target="#group-detail-panel"
+                        hx-swap="innerHTML">Manage</button>
+                <form method="POST" action="{{ url_for('config_dashboard.delete_group', group_id=group.id) }}" style="display:inline;">
+                    <button type="submit" class="btn btn-sm btn-danger"
+                            onclick="return confirm('Delete group \'{{ group.name }}\'? All memberships will be removed.')">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No agent groups yet.</p>
+{% endif %}

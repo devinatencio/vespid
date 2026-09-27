@@ -1,0 +1,367 @@
+{% extends "base.html" %}
+{% block title %}Silences — Vespid{% endblock %}
+{% block content %}
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">🔇</div>
+    <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">Silences</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Alert notification silences
+        </div>
+    </div>
+    <div id="si-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    <button class="btn btn-primary" onclick="showSilenceModal()" style="white-space:nowrap;">+ New Silence</button>
+</div>
+
+<div id="silences-container">
+    <div class="loading">Loading silences…</div>
+</div>
+
+<!-- Silence Modal -->
+<div id="silence-modal-overlay" class="event-modal-overlay" style="display:none;" onclick="closeSilenceModal(event)">
+    <div class="event-modal" onclick="event.stopPropagation()">
+        <div class="event-modal-header">
+            <h3 class="event-modal-title" id="silence-modal-title">New Silence</h3>
+            <button class="event-modal-close" onclick="closeSilenceModal()">&times;</button>
+        </div>
+        <div class="event-modal-body">
+            <form id="silence-form" onsubmit="saveSilence(event)">
+                <input type="hidden" id="silence-edit-id" value="">
+                <div class="form-group">
+                    <label>Rule (optional)</label>
+                    <select id="silence-rule" class="form-input">
+                        <option value="">All Rules</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Matchers <button type="button" class="silence-help-btn" onclick="toggleMatcherHelp()" title="Show example">&#9432;</button></label>
+                    <div id="matcher-help-box" class="matcher-help-box" style="display:none;">
+                        <div class="matcher-help-content">
+                            <strong>Example: Silence a specific alert on a host</strong>
+                            <p>To silence an alert you typically need <em>two matchers</em> — one to match the alert name and one to match the target host:</p>
+                            <table class="matcher-help-table">
+                                <thead><tr><th>Label</th><th>Op</th><th>Value</th></tr></thead>
+                                <tbody>
+                                    <tr><td><code>alertname</code></td><td><code>=</code></td><td><code>HighCpuUsage</code></td></tr>
+                                    <tr><td><code>host</code></td><td><code>=</code></td><td><code>web-prod-01</code></td></tr>
+                                </tbody>
+                            </table>
+                            <p class="matcher-help-note">This silences the "HighCpuUsage" alert only on host "web-prod-01". Without both conditions, the silence would be too broad — either matching all alerts on that host or matching that alert across all hosts.</p>
+                        </div>
+                    </div>
+                    <div id="matchers-container"></div>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="addMatcher()">+ Add Matcher</button>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Starts At</label>
+                        <input type="datetime-local" id="silence-starts" class="form-input" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Ends At</label>
+                        <input type="datetime-local" id="silence-ends" class="form-input" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Reason</label>
+                    <input type="text" id="silence-reason" class="form-input" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" id="silence-submit-btn">Create Silence</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeSilenceModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+.silence-help-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    color: var(--text-muted, #94a3b8);
+    padding: 0 0.25rem;
+    vertical-align: middle;
+    line-height: 1;
+    border-radius: 50%;
+    transition: color 0.15s;
+}
+.silence-help-btn:hover {
+    color: var(--primary, #3b82f6);
+}
+.matcher-help-box {
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface, #1e293b);
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+.matcher-help-content strong {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: var(--text, #e2e8f0);
+}
+.matcher-help-content p {
+    margin: 0.4rem 0;
+    color: var(--text-muted, #94a3b8);
+}
+.matcher-help-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0;
+}
+.matcher-help-table th,
+.matcher-help-table td {
+    padding: 0.3rem 0.6rem;
+    text-align: left;
+    border: 1px solid var(--border-color, #334155);
+}
+.matcher-help-table th {
+    background: var(--bg, #0f172a);
+    font-weight: 600;
+    color: var(--text-muted, #94a3b8);
+}
+.matcher-help-table code {
+    color: var(--primary, #3b82f6);
+}
+.matcher-help-note {
+    font-style: italic;
+    font-size: 0.8rem;
+}
+.si-stat { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.si-stat .si-stat-n { font-weight:700; font-size:0.95rem; line-height:1; }
+.si-stat .si-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+</style>
+
+<script>
+(function() {
+    var editingId = null;
+
+    function renderSilenceStats(silences) {
+        var now = new Date();
+        var total = silences.length;
+        var active = 0, expired = 0;
+        silences.forEach(function(s) {
+            var start = new Date(s.starts_at);
+            var end = new Date(s.ends_at);
+            if (now >= start && now <= end) active++; else expired++;
+        });
+        var html = '';
+        html += '<div class="si-stat"><span class="si-stat-n">' + total + '</span> <span class="si-stat-l">Total</span></div>';
+        html += '<div class="si-stat"><span class="si-stat-n">' + active + '</span> <span class="si-stat-l">Active</span></div>';
+        if (expired > 0) html += '<div class="si-stat"><span class="si-stat-n">' + expired + '</span> <span class="si-stat-l">Expired</span></div>';
+        document.getElementById('si-panel-stats').innerHTML = html;
+    }
+
+    function loadSilences() {
+        fetch('/alerts/api/silences?include_expired=true')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var container = document.getElementById('silences-container');
+                var silences = d.silences || [];
+                renderSilenceStats(silences);
+                if (!silences.length) {
+                    container.innerHTML = '<div class="empty-state">No silences configured.</div>';
+                    return;
+                }
+                var now = new Date();
+                var html = '<table class="data-table"><thead><tr>' +
+                    '<th>Status</th><th>Rule</th><th>Matchers</th><th>Reason</th><th>Starts</th><th>Ends</th><th>Actions</th>' +
+                    '</tr></thead><tbody>';
+                silences.forEach(function(s) {
+                    var start = new Date(s.starts_at);
+                    var end = new Date(s.ends_at);
+                    var isActive = now >= start && now <= end;
+                    var statusClass = isActive ? 'badge-success' : 'badge-muted';
+                    var statusText = isActive ? 'Active' : 'Expired';
+
+                    var matchers = (s.matchers || []).map(function(m) {
+                        return '<span class="label-pill">' + m.label + m.op + m.value + '</span>';
+                    }).join(' ');
+
+                    html += '<tr>' +
+                        '<td><span class="badge ' + statusClass + '">' + statusText + '</span></td>' +
+                        '<td>' + (s.rule_id ? 'Rule #' + s.rule_id : 'All Rules') + '</td>' +
+                        '<td>' + matchers + '</td>' +
+                        '<td>' + escapeHtml(s.reason) + '</td>' +
+                        '<td>' + formatDate(start) + '</td>' +
+                        '<td>' + formatDate(end) + '</td>' +
+                        '<td class="actions-cell">' +
+                        '  <button class="btn btn-sm btn-secondary" onclick="editSilence(' + s.id + ')">Edit</button>' +
+                        '  <button class="btn btn-sm btn-danger" onclick="deleteSilence(' + s.id + ')">Remove</button>' +
+                        '</td>' +
+                        '</tr>';
+                });
+                html += '</tbody></table>';
+                container.innerHTML = html;
+            })
+            .catch(function() {
+                document.getElementById('silences-container').innerHTML =
+                    '<div class="flash flash-error">Failed to load silences</div>';
+            });
+    }
+
+    function loadRules() {
+        fetch('/alerts/api/rules')
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var select = document.getElementById('silence-rule');
+                var rules = d.rules || [];
+                rules.forEach(function(rule) {
+                    var opt = document.createElement('option');
+                    opt.value = rule.id;
+                    opt.textContent = rule.name;
+                    select.appendChild(opt);
+                });
+            });
+    }
+
+    window.toggleMatcherHelp = function() {
+        var box = document.getElementById('matcher-help-box');
+        box.style.display = box.style.display === 'none' ? 'block' : 'none';
+    };
+
+    window.showSilenceModal = function() {
+        editingId = null;
+        document.getElementById('silence-edit-id').value = '';
+        document.getElementById('silence-form').reset();
+        document.getElementById('matchers-container').innerHTML = '';
+        document.getElementById('matcher-help-box').style.display = 'none';
+        document.getElementById('silence-modal-title').textContent = 'New Silence';
+        document.getElementById('silence-submit-btn').textContent = 'Create Silence';
+        addMatcher();
+        var now = new Date();
+        var later = new Date(now.getTime() + 3600000);
+        document.getElementById('silence-starts').value = toLocalDateTime(now);
+        document.getElementById('silence-ends').value = toLocalDateTime(later);
+        document.getElementById('silence-modal-overlay').style.display = 'flex';
+    };
+
+    window.closeSilenceModal = function(e) {
+        if (e && e.target !== e.currentTarget) return;
+        editingId = null;
+        document.getElementById('silence-modal-overlay').style.display = 'none';
+    };
+
+    window.addMatcher = function() {
+        var container = document.getElementById('matchers-container');
+        var div = document.createElement('div');
+        div.className = 'form-row matcher-row';
+        div.innerHTML =
+            '<input type="text" placeholder="label" class="form-input matcher-label">' +
+            '<select class="form-input matcher-op">' +
+            '<option value="=">=</option><option value="!=">!=</option>' +
+            '<option value="=~">=~</option><option value="!~">!~</option>' +
+            '</select>' +
+            '<input type="text" placeholder="value" class="form-input matcher-value">' +
+            '<button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">&times;</button>';
+        container.appendChild(div);
+    };
+
+    window.editSilence = function(id) {
+        editingId = id;
+        document.getElementById('silence-edit-id').value = id;
+        document.getElementById('silence-form').reset();
+        document.getElementById('matchers-container').innerHTML = '';
+        document.getElementById('silence-modal-title').textContent = 'Edit Silence';
+        document.getElementById('silence-submit-btn').textContent = 'Update Silence';
+
+        fetch('/alerts/api/silences/' + id)
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                var s = d.silence || d;
+                document.getElementById('silence-starts').value = toLocalDateTime(new Date(s.starts_at));
+                document.getElementById('silence-ends').value = toLocalDateTime(new Date(s.ends_at));
+                document.getElementById('silence-reason').value = s.reason || '';
+                if (s.rule_id) {
+                    document.getElementById('silence-rule').value = s.rule_id;
+                }
+                (s.matchers || []).forEach(function(m) {
+                    var container = document.getElementById('matchers-container');
+                    var div = document.createElement('div');
+                    div.className = 'form-row matcher-row';
+                    div.innerHTML =
+                        '<input type="text" placeholder="label" class="form-input matcher-label" value="' + escapeHtml(m.label) + '">' +
+                        '<select class="form-input matcher-op">' +
+                        '<option value="="' + (m.op === '=' ? ' selected' : '') + '>=</option>' +
+                        '<option value="!="' + (m.op === '!=' ? ' selected' : '') + '>!=</option>' +
+                        '<option value="=~"' + (m.op === '=~' ? ' selected' : '') + '>=~</option>' +
+                        '<option value="!~"' + (m.op === '!~' ? ' selected' : '') + '>!~</option>' +
+                        '</select>' +
+                        '<input type="text" placeholder="value" class="form-input matcher-value" value="' + escapeHtml(m.value) + '">' +
+                        '<button type="button" class="btn btn-sm btn-danger" onclick="this.parentElement.remove()">&times;</button>';
+                    container.appendChild(div);
+                });
+                document.getElementById('silence-modal-overlay').style.display = 'flex';
+            })
+            .catch(function() { alert('Failed to load silence'); });
+    };
+
+    window.saveSilence = function(e) {
+        e.preventDefault();
+        var matchers = [];
+        document.querySelectorAll('.matcher-row').forEach(function(row) {
+            var label = row.querySelector('.matcher-label').value.trim();
+            var op = row.querySelector('.matcher-op').value;
+            var value = row.querySelector('.matcher-value').value.trim();
+            if (label && value) {
+                matchers.push({label: label, op: op, value: value});
+            }
+        });
+
+        var payload = {
+            matchers: matchers,
+            rule_id: document.getElementById('silence-rule').value || null,
+            starts_at: new Date(document.getElementById('silence-starts').value).toISOString(),
+            ends_at: new Date(document.getElementById('silence-ends').value).toISOString(),
+            reason: document.getElementById('silence-reason').value,
+        };
+
+        var method = editingId ? 'PUT' : 'POST';
+        var url = editingId ? '/alerts/api/silences/' + editingId : '/alerts/api/silences';
+
+        fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        }).then(function() {
+            editingId = null;
+            closeSilenceModal();
+            loadSilences();
+        }).catch(function() {
+            alert('Failed to save silence');
+        });
+    };
+
+    window.deleteSilence = function(id) {
+        if (!confirm('Remove this silence?')) return;
+        fetch('/alerts/api/silences/' + id, {method: 'DELETE'})
+            .then(function() { loadSilences(); })
+            .catch(function() { alert('Failed to remove'); });
+    };
+
+    function toLocalDateTime(d) {
+        var pad = function(n) { return n < 10 ? '0' + n : n; };
+        return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' +
+               pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    function formatDate(d) {
+        return d.toLocaleString(undefined, {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+    }
+
+    function escapeHtml(text) {
+        var div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    loadSilences();
+    loadRules();
+})();
+</script>
+{% endblock %}

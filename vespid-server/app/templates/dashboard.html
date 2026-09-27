@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Vespid Server{% endblock %}
+{% block content %}
+<h1 class="page-title">📊 Dashboard</h1>
+
+{% include 'fragments/stats_cards.html' %}
+
+<div class="grid-2">
+    <div class="card">
+        <h2 class="card-title">Event Type Breakdown (24h)</h2>
+        {% if stats.event_type_breakdown %}
+        <div style="position:relative; height:220px; display:flex; align-items:center;">
+            <canvas id="breakdownDonut"></canvas>
+        </div>
+        <ul class="breakdown-list breakdown-list-2col" style="margin-top:0.5rem;">
+            {% for item in stats.event_type_breakdown %}
+            <li>
+                <span><span class="badge badge-event-{{ item.event_type|lower|replace('_','-') }}">{{ item.event_type }}</span></span>
+                <span class="breakdown-count">{{ item.count }}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p style="color:var(--text-muted)">No events in the last 24 hours.</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Event Volume (24h)</h2>
+        <div style="position:relative; height:200px;">
+            <canvas id="volumeSparkline"></canvas>
+        </div>
+        <ul class="breakdown-list" style="margin-top:0.5rem;">
+            <li>
+                <span>Event Types Seen</span>
+                <span class="breakdown-count">{{ stats.event_type_breakdown|length }}</span>
+            </li>
+            <li>
+                <span>Top Event Type</span>
+                <span class="breakdown-count">{{ stats.event_type_breakdown[0].event_type if stats.event_type_breakdown else '—' }}</span>
+            </li>
+            <li>
+                <span>Peak Hour</span>
+                <span class="breakdown-count" id="peak-hour">—</span>
+            </li>
+        </ul>
+    </div>
+</div>
+
+{% include 'fragments/fleet_propagation_widget.html' %}
+
+<div class="card">
+    <h2 class="card-title">Recent Events</h2>
+    <div class="timeline" id="timeline-feed"
+         hx-ext="sse" sse-connect="{{ url_for('api.event_stream') }}" sse-swap="new_event"
+         hx-target="#dashboard-sse-sink" hx-swap="innerHTML">
+        {% for event in events %}
+        {% set meta = event.metadata|from_json if event.metadata else {} %}
+        <div class="timeline-item fade-in {% if event.action_taken == 'BLOCKED' or event.fleet_blocked %}timeline-item-danger{% endif %}" onclick="openEventModal('{{ event.event_id }}')" style="cursor:pointer;" title="Click to view details">
+            <div class="timeline-dot {% if event.action_taken == 'BLOCKED' or event.fleet_blocked %}timeline-dot-danger{% elif event.action_taken == 'RATE_LIMITED' %}timeline-dot-warning{% else %}timeline-dot-info{% endif %}"></div>
+            <div class="timeline-content">
+                <div class="timeline-header">
+                    <span class="badge badge-event-{{ event.event_type|lower|replace('_','-') }}">{{ event.event_type }}</span>
+                    {% if event.action_taken and event.action_taken != 'OBSERVED' %}
+                    <span class="badge badge-action-{{ event.action_taken|lower }}">{{ event.action_taken }}</span>
+                    {% endif %}
+                    {% if event.fleet_blocked %}<span class="badge badge-fleet">fleet</span>{% endif %}
+                    {% if meta.parser %}
+                    <span class="badge badge-parser">{{ meta.parser }}</span>
+                    {% endif %}
+                    <span class="timeline-time" data-ts="{{ event.timestamp }}">{{ event.timestamp }}</span>
+                </div>
+                <div class="timeline-body">
+                    <code class="ip-copy" onclick="event.stopPropagation(); copyIpToClipboard('{{ event.source_ip }}', this)" title="Click to copy">{{ event.source_ip }}</code> <a href="#" class="ip-intel-icon" onclick="event.stopPropagation(); event.preventDefault(); openIpIntelModal('{{ event.source_ip }}')" title="View IP intelligence">🔍</a> → <code>{{ event.node_id|node_display_name }}</code>
+                    {% if event.geo_country %}
+                    <span class="timeline-country">{{ event.geo_country|country_name }}</span>
+                    {% endif %}
+                    {% if event.geo_org or event.geo_asn %}
+                    <span class="timeline-asn" title="{{ event.geo_asn|default('', true) }}">{{ event.geo_org or event.geo_asn }}</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <!-- Hidden sink so htmx:sseMessage fires for notifications -->
+    <div id="dashboard-sse-sink" style="display:none;"></div>
+</div>
+
+<script>
+var dashboardCharts = {};
+
+function renderDashboardCharts() {
+    if (typeof Chart === 'undefined') return;
+    var theme = getChartThemeColors();
+    var palette = getChartPalette();
+
+    /* ── Donut chart for event type breakdown ──────────────── */
+    {% if stats.event_type_breakdown %}
+    var breakdownLabels = [{% for item in stats.event_type_breakdown %}'{{ item.event_type }}'{% if not loop.last %},{% endif %}{% endfor %}];
+    var breakdownData = [{% for item in stats.event_type_breakdown %}{{ item.count }}{% if not loop.last %},{% endif %}{% endfor %}];
+    var donutColors = (function() {
+        function hashStr(s) {
+            var h = 0;
+            for (var i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+            return Math.abs(h);
+        }
+        if (palette.length >= 12) {
+            return breakdownLabels.map(function(name) {
+                return palette[hashStr(name.toLowerCase().replace(/_/g,'-')) % palette.length];
+            });
+        }
+        /* Fallback to the default rainbow HSL palette. */
+        var PALETTE = [
+            [0,72,65],[25,80,60],[45,85,58],[80,60,55],[145,55,55],[170,60,55],
+            [195,70,60],[220,70,65],[255,60,65],[280,55,65],[310,60,65],[340,65,62]
+        ];
+        return breakdownLabels.map(function(name) {
+            var p = PALETTE[hashStr(name.toLowerCase().replace(/_/g,'-')) % PALETTE.length];
+            return 'hsl(' + p[0] + ',' + p[1] + '%,' + p[2] + '%)';
+        });
+    })();
+
+    if (dashboardCharts.breakdown) dashboardCharts.breakdown.destroy();
+    dashboardCharts.breakdown = new Chart(document.getElementById('breakdownDonut'), {
+        type: 'doughnut',
+        data: {
+            labels: breakdownLabels,
+            datasets: [{
+                data: breakdownData,
+                backgroundColor: donutColors,
+                borderColor: theme.bgCard,
+                borderWidth: 2,
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '65%',
+            plugins: { legend: { display: false } }
+        }
+    });
+    {% endif %}
+
+    /* ── Sparkline area chart for 24h volume ───────────────── */
+    var sparkData = {{ stats.sparkline_24h | tojson }};
+    var sparkLabels = [];
+    var now = new Date();
+    for (var i = 0; i < 24; i++) {
+        var h = new Date(now.getTime() - (23 - i) * 3600000);
+        sparkLabels.push(h.getHours() + ':00');
+    }
+
+    /* Find peak hour */
+    var maxVal = 0, maxIdx = 0;
+    for (var i = 0; i < sparkData.length; i++) {
+        if (sparkData[i] > maxVal) { maxVal = sparkData[i]; maxIdx = i; }
+    }
+    var peakEl = document.getElementById('peak-hour');
+    if (peakEl && maxVal > 0) peakEl.textContent = sparkLabels[maxIdx] + ' (' + maxVal + ')';
+
+    if (dashboardCharts.sparkline) dashboardCharts.sparkline.destroy();
+    dashboardCharts.sparkline = new Chart(document.getElementById('volumeSparkline'), {
+        type: 'line',
+        data: {
+            labels: sparkLabels,
+            datasets: [{
+                label: 'Events',
+                data: sparkData,
+                borderColor: theme.chartLine,
+                backgroundColor: theme.chartLineFill,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHoverRadius: 5,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    ticks: { color: theme.textMuted, maxRotation: 0, autoSkip: true, maxTicksLimit: 8, font: { size: 10 } },
+                    grid: { color: theme.gridLine }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: theme.textMuted, font: { size: 10 }, precision: 0 },
+                    grid: { color: theme.gridLine }
+                }
+            },
+            interaction: { intersect: false, mode: 'index' }
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', renderDashboardCharts);
+document.body.addEventListener('vespid:themechange', renderDashboardCharts);
+
+/* ── Timeline SSE handler ─────────────────────────────────── */
+(function() {
+    var timeline = document.getElementById('timeline-feed');
+    if (!timeline) return;
+
+    document.body.addEventListener('htmx:sseMessage', function(e) {
+        /* The SSE data is an HTML <tr> fragment, but we also get the raw
+           JSON from the htmx:sseMessage detail. Try to parse the event
+           data from the rendered HTML or from the JSON in the event. */
+        var data = e.detail.data || '';
+        var evt;
+        try { evt = JSON.parse(data); } catch(ex) { evt = null; }
+
+        /* If we can't parse JSON, try to extract from the HTML fragment */
+        if (!evt) {
+            /* The SSE pushes rendered event_row.html — extract text content */
+            var tmp = document.createElement('tbody');
+            tmp.innerHTML = data;
+            var cells = tmp.querySelectorAll('td');
+            if (cells.length >= 4) {
+                evt = {
+                    timestamp: (cells[0].querySelector('[data-ts]') || {}).getAttribute('data-ts') || '',
+                    node_id: (cells[1].textContent || '').trim(),
+                    source_ip: (cells[2].querySelector('.ip-copy') || cells[2].querySelector('code') || {}).textContent || (cells[2].textContent || '').trim(),
+                    event_type: (cells[3].querySelector('.badge') || {}).textContent || 'UNKNOWN',
+                    action_taken: 'OBSERVED',
+                    geo_country: (cells[4] || {}).textContent || '',
+                    geo_org: '',
+                    geo_asn: '',
+                };
+                /* Check for action badge — pick the LAST badge-action-* element
+                   (the first one is the event_type badge whose class also
+                   contains "badge-action-", e.g. badge-action-blocked-nft-action) */
+                var actionBadges = cells[3].querySelectorAll('[class*="badge-action-"]');
+                if (actionBadges.length > 1) {
+                    evt.action_taken = actionBadges[actionBadges.length - 1].textContent.trim();
+                }
+                /* Check for fleet_blocked badge */
+                evt.fleet_blocked = !!tmp.querySelector('.badge-fleet');
+
+                /* Extract ASN/org from the col-asn cell */
+                var asnCell = tmp.querySelector('.col-asn');
+                if (asnCell) {
+                    var asnSpan = asnCell.querySelector('span[title]');
+                    if (asnSpan) {
+                        evt.geo_org = asnSpan.textContent.trim();
+                        evt.geo_asn = asnSpan.getAttribute('title') || '';
+                    }
+                }
+                /* Extract event_id from the data attribute */
+                var trEl = tmp.querySelector('tr[data-event-id]');
+                if (trEl) {
+                    evt.event_id = trEl.getAttribute('data-event-id');
+                }
+            }
+        }
+
+        if (!evt || !evt.event_type) return;
+
+        var isBlocked = (evt.action_taken === 'BLOCKED');
+        var isRateLimited = (evt.action_taken === 'RATE_LIMITED' || evt.action_taken === 'RATE-LIMITED');
+        var isEffectivelyBlocked = isBlocked || evt.fleet_blocked;
+        var dotClass = isEffectivelyBlocked ? 'timeline-dot-danger' : (isRateLimited ? 'timeline-dot-warning' : 'timeline-dot-info');
+        var itemClass = isEffectivelyBlocked ? 'timeline-item timeline-item-danger fade-in' : 'timeline-item fade-in';
+
+        var eventSlug = (evt.event_type || '').toLowerCase().replace(/_/g, '-');
+        var actionSlug = (evt.action_taken || '').toLowerCase();
+
+        var html = '<div class="timeline-dot ' + dotClass + '"></div>' +
+            '<div class="timeline-content">' +
+            '<div class="timeline-header">' +
+            '<span class="badge badge-event-' + eventSlug + '">' + evt.event_type + '</span>';
+        if (evt.action_taken && evt.action_taken !== 'OBSERVED') {
+            html += ' <span class="badge badge-action-' + actionSlug + '">' + evt.action_taken + '</span>';
+        }
+        if (evt.fleet_blocked) {
+            html += ' <span class="badge badge-fleet">fleet</span>';
+        }
+        html += ' <span class="timeline-time" data-ts="' + (evt.timestamp || '') + '">' + timeAgo(evt.timestamp || '') + '</span>' +
+            '</div>' +
+            '<div class="timeline-body">' +
+            '<code class="ip-copy" onclick="event.stopPropagation(); copyIpToClipboard(\'' + (evt.source_ip || '?') + '\', this)" title="Click to copy">' + (evt.source_ip || '?') + '</code> <a href="#" class="ip-intel-icon" onclick="event.stopPropagation(); event.preventDefault(); openIpIntelModal(\'' + (evt.source_ip || '?') + '\')" title="View IP intelligence">🔍</a> → <code>' + (evt.node_id || '?') + '</code>';
+        if (evt.geo_country) {
+            html += ' <span class="timeline-country">' + evt.geo_country + '</span>';
+        }
+        if (evt.geo_org || evt.geo_asn) {
+            html += ' <span class="timeline-asn" title="' + (evt.geo_asn || '') + '">' + (evt.geo_org || evt.geo_asn) + '</span>';
+        }
+        html += '</div></div>';
+
+        var item = document.createElement('div');
+        item.className = itemClass;
+        item.innerHTML = html;
+        if (evt.event_id) {
+            item.style.cursor = 'pointer';
+            item.title = 'Click to view details';
+            item.setAttribute('onclick', "openEventModal('" + evt.event_id + "')");
+        }
+        timeline.insertBefore(item, timeline.firstChild);
+
+        /* Cap at 30 items in the timeline */
+        while (timeline.children.length > 30) {
+            timeline.removeChild(timeline.lastChild);
+        }
+
+        /* Trigger dynamic badge coloring */
+        if (typeof applyDynamicBadgeColors === 'function') {
+            setTimeout(applyDynamicBadgeColors, 50);
+        }
+    });
+})();
+</script>
+{% endblock %}

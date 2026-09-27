@@ -1,0 +1,755 @@
+/* ── Catppuccin Latte Theme ───────────────────────────────────
+ * Soothing pastel light theme from https://catppuccin.com
+ *
+ * Base:        #eff1f5
+ * Mantle:      #e6e9ef
+ * Crust:       #dce0e8
+ * Surface0:    #ccd0da
+ * Surface1:    #bcc0cc
+ * Text:        #4c4f69
+ * Subtext1:    #5c5f77
+ * Subtext0:    #6c6f85
+ * Overlay0:    #8c8fa1
+ * Peach:       #fe640b
+ * Red:         #d20f39
+ * Green:       #40a02b
+ * Yellow:      #df8e1d
+ * Blue:        #1e66f5
+ * Mauve:       #8839ef
+ *
+ * To customize: copy this file to your CUSTOM_THEME_DIR and edit.
+ * ──────────────────────────────────────────────────────────────── */
+
+body.theme-catppuccin-latte {
+    --bg: #eff1f5;
+    --bg-card: #dce0e8;
+    --bg-card-hover: #ccd0da;
+    --bg-input: #ffffff;
+    --bg-secondary: #e6e9ef;
+    --text: #4c4f69;
+    --text-muted: #5c5f77;
+    --text-heading: #4c4f69;
+    --border: #ccd0da;
+    --border-color: #ccd0da;
+    --nav-bg: #e6e9ef;
+    --info: #1e66f5;
+    --link: #1e66f5;
+    --shadow: 0 1px 3px rgba(76, 79, 105, 0.06), 0 1px 2px rgba(76, 79, 105, 0.04);
+    --accent: #fe640b;
+    --accent-hover: #d35f00;
+    --danger: #d20f39;
+    --danger-hover: #b50d31;
+    --success: #40a02b;
+    --warning: #df8e1d;
+    --button-text: #ffffff;
+    --toggle-knob: #ffffff;
+    --focus-ring: rgba(254, 100, 11, 0.3);
+    --json-key: #8839ef;
+    --json-string: #40a02b;
+    --json-number: #df8e1d;
+    --json-bool: #1e66f5;
+    --json-null: #6c6f85;
+    --worldmap-land: #e6e9ef;
+    --worldmap-border: #bcc0cc;
+    --worldmap-heat-low: #1e66f5;
+    --worldmap-heat-mid-low: #179299;
+    --worldmap-heat-mid-high: #fe640b;
+    --worldmap-heat-high: #d20f39;
+    --chart-line: #1e66f5;
+    --chart-line-fill: rgba(30, 102, 245, 0.1);
+    --chart-palette-0: #d20f39;
+    --chart-palette-1: #fe640b;
+    --chart-palette-2: #df8e1d;
+    --chart-palette-3: #40a02b;
+    --chart-palette-4: #179299;
+    --chart-palette-5: #04a5e5;
+    --chart-palette-6: #209fb5;
+    --chart-palette-7: #1e66f5;
+    --chart-palette-8: #7287fd;
+    --chart-palette-9: #8839ef;
+    --chart-palette-10: #ea76cb;
+    --chart-palette-11: #dd7878;
+    --chart-grid: rgba(0, 0, 0, 0.06);
+    background-size: 32px 32px;
+    background-image: radial-gradient(circle at 1px 1px, rgba(114, 135, 253, 0.06) 1px, transparent 0);
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+body.theme-catppuccin-latte ::-webkit-scrollbar { width: 10px; height: 10px; }
+body.theme-catppuccin-latte ::-webkit-scrollbar-track { background: #eff1f5; }
+body.theme-catppuccin-latte ::-webkit-scrollbar-thumb { background: #bcc0cc; border-radius: 5px; }
+body.theme-catppuccin-latte ::-webkit-scrollbar-thumb:hover { background: #fe640b; }
+
+/* ── Navigation ─────────────────────────────────────────────── */
+body.theme-catppuccin-latte .main-nav {
+    border-bottom-color: #ccd0da;
+}
+
+body.theme-catppuccin-latte .nav-brand {
+    background: linear-gradient(135deg, #fe640b, #df8e1d, #ea76cb, #fe640b);
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: brand-shimmer 4s ease-in-out infinite;
+    position: relative;
+    padding-bottom: 8px;
+}
+body.theme-catppuccin-latte .nav-brand-beam {
+    background: linear-gradient(90deg, #fe640b, #df8e1d, #fe640b);
+    opacity: 0.12;
+    box-shadow: 0 0 3px rgba(254, 100, 11, 0.15);
+}
+body.theme-catppuccin-latte .nav-brand-beam::after {
+    background: radial-gradient(ellipse at center, #fff 0%, #df8e1d 20%, #fe640b 50%, transparent 100%);
+    box-shadow:
+        0 0 18px rgba(254, 100, 11, 0.8),
+        0 -5px 20px rgba(254, 100, 11, 0.5),
+        0 0 32px rgba(254, 100, 11, 0.35),
+        0 -10px 40px rgba(254, 100, 11, 0.2),
+        0 0 56px rgba(254, 100, 11, 0.12);
+}
+body.theme-catppuccin-latte .nav-brand-logo {
+    filter: drop-shadow(0 0 5px rgba(254, 100, 11, 0.18));
+}
+
+body.theme-catppuccin-latte .nav-links a,
+body.theme-catppuccin-latte .nav-dropdown-toggle {
+    color: #5c5f77;
+}
+body.theme-catppuccin-latte .nav-links a:hover,
+body.theme-catppuccin-latte .nav-dropdown-toggle:hover {
+    color: #fe640b;
+    background: rgba(254, 100, 11, 0.06);
+}
+body.theme-catppuccin-latte .nav-links a.active,
+body.theme-catppuccin-latte .nav-dropdown-toggle.active {
+    background: #fe640b;
+    color: #ffffff;
+}
+
+body.theme-catppuccin-latte .nav-username {
+    background: rgba(76, 79, 105, 0.04);
+    color: #5c5f77;
+}
+body.theme-catppuccin-latte a.nav-username:hover {
+    background: rgba(76, 79, 105, 0.08);
+    color: #4c4f69;
+}
+
+/* ── Nav stats pill ─────────────────────────────────────────── */
+body.theme-catppuccin-latte .nav-stats-pill {
+    background: var(--bg-secondary);
+    border-color: var(--border);
+}
+body.theme-catppuccin-latte .nav-stats-pill .stat-val {
+    color: var(--accent);
+}
+body.theme-catppuccin-latte .nav-stats-pill .stat-label {
+    color: var(--text-muted);
+}
+body.theme-catppuccin-latte .nav-stats-pill .stat-sep {
+    color: rgba(76, 79, 105, 0.12);
+}
+
+/* ── Side panel ─────────────────────────────────────────────── */
+body.theme-catppuccin-latte .side-panel {
+    background: var(--nav-bg);
+    border-right-color: var(--border);
+}
+body.theme-catppuccin-latte .side-panel-title {
+    background: linear-gradient(135deg, #fe640b, #df8e1d, #ea76cb);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+body.theme-catppuccin-latte .spn-section-title {
+    border-top-color: var(--border);
+    color: var(--text-muted);
+}
+body.theme-catppuccin-latte .spn-item {
+    border-left-color: rgba(254, 100, 11, 0.06);
+}
+body.theme-catppuccin-latte .spn-item:hover {
+    background: rgba(254, 100, 11, 0.06);
+    color: #fe640b;
+}
+body.theme-catppuccin-latte .spn-item.active {
+    background: rgba(254, 100, 11, 0.12);
+    color: #fe640b;
+    border-left-color: #fe640b;
+}
+body.theme-catppuccin-latte .spn-item-home {
+    background: rgba(254, 100, 11, 0.04);
+}
+body.theme-catppuccin-latte .spn-item-home:hover {
+    background: rgba(254, 100, 11, 0.08);
+}
+body.theme-catppuccin-latte .spn-item-home.active {
+    background: rgba(254, 100, 11, 0.12);
+}
+
+/* ── Cards ──────────────────────────────────────────────────── */
+body.theme-catppuccin-latte .card {
+    background: var(--bg-card);
+    border-color: var(--border);
+}
+body.theme-catppuccin-latte .stat-card {
+    background: var(--bg-secondary);
+}
+body.theme-catppuccin-latte .stat-card:hover,
+body.theme-catppuccin-latte a.stat-card-link:hover {
+    border-color: var(--accent);
+    box-shadow: 0 4px 20px rgba(254, 100, 11, 0.08), var(--shadow);
+}
+body.theme-catppuccin-latte .empty-state {
+    background: #e6e9ef;
+}
+
+/* ── Tables ─────────────────────────────────────────────────── */
+body.theme-catppuccin-latte th {
+    background: var(--border-color);
+    color: var(--text-muted);
+}
+body.theme-catppuccin-latte tr:hover {
+    background: rgba(188, 192, 204, 0.5);
+}
+body.theme-catppuccin-latte td code {
+    background: rgba(220, 224, 232, 0.7);
+    color: var(--text);
+}
+body.theme-catppuccin-latte td code.ip-copy {
+    color: var(--link);
+}
+body.theme-catppuccin-latte td code.node-name {
+    color: var(--text-heading);
+}
+body.theme-catppuccin-latte td code.event-id {
+    color: var(--text-muted);
+}
+
+/* ── Buttons ────────────────────────────────────────────────── */
+body.theme-catppuccin-latte .btn:not(.btn-secondary):not(.btn-danger):not(.btn-success):not(.btn-password):not(.btn-success-outline) {
+    background: #c84f0a;
+    color: #ffffff;
+}
+body.theme-catppuccin-latte .btn:not(.btn-secondary):not(.btn-danger):not(.btn-success):not(.btn-password):not(.btn-success-outline):hover {
+    background: var(--accent-hover);
+    color: #ffffff;
+}
+body.theme-catppuccin-latte .btn.btn-success-outline {
+    background: transparent;
+    color: #40a02b;
+    border: 1px solid rgba(64, 160, 43, 0.5);
+}
+body.theme-catppuccin-latte .btn.btn-success-outline:hover {
+    background: rgba(64, 160, 43, 0.12);
+    color: #40a02b;
+    border-color: #40a02b;
+}
+body.theme-catppuccin-latte .btn-password:hover {
+    background: #c84f0a !important;
+    color: #ffffff !important;
+}
+body.theme-catppuccin-latte .btn.btn-danger {
+    color: #ffffff;
+}
+body.theme-catppuccin-latte .btn.btn-secondary {
+    background: rgba(254, 100, 11, 0.06);
+    color: #fe640b;
+    border: 1px solid rgba(254, 100, 11, 0.25);
+}
+body.theme-catppuccin-latte .btn.btn-secondary:hover {
+    background: rgba(254, 100, 11, 0.14);
+    color: #fe640b;
+    border-color: #fe640b;
+}
+body.theme-catppuccin-latte .theme-toggle:hover {
+    border-color: var(--accent);
+    background: rgba(76, 79, 105, 0.03);
+}
+
+/* ── Forms ──────────────────────────────────────────────────── */
+body.theme-catppuccin-latte .form-group input::placeholder,
+body.theme-catppuccin-latte .form-group textarea::placeholder {
+    color: #9ca0b0;
+}
+body.theme-catppuccin-latte .form-group input:focus,
+body.theme-catppuccin-latte .form-group select:focus,
+body.theme-catppuccin-latte .form-group textarea:focus {
+    box-shadow: 0 0 0 3px rgba(254, 100, 11, 0.12);
+}
+body.theme-catppuccin-latte .side-panel-search .search-input:focus {
+    box-shadow: 0 0 0 2px rgba(254, 100, 11, 0.12);
+}
+body.theme-catppuccin-latte .node-chip input[type="checkbox"]:checked + .node-chip-label {
+    background: rgba(30, 102, 245, 0.08);
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(30, 102, 245, 0.15);
+}
+
+/* ── Base badge override (darker default for unknown event types) ── */
+body.theme-catppuccin-latte .badge {
+    --badge-bg: rgba(108, 111, 133, 0.22);
+    --badge-clr: #4c4f69;
+}
+
+/* ── Standard badges ────────────────────────────────────────── */
+body.theme-catppuccin-latte .badge-healthy,
+body.theme-catppuccin-latte .badge-active,
+body.theme-catppuccin-latte .badge-success { --badge-bg: #40a02b; --badge-clr: #ffffff; }
+
+body.theme-catppuccin-latte .badge-warning,
+body.theme-catppuccin-latte .badge-degraded { --badge-bg: rgba(223, 142, 29, 0.35); --badge-clr: #8c5b10; }
+
+body.theme-catppuccin-latte .badge-danger,
+body.theme-catppuccin-latte .badge-offline,
+body.theme-catppuccin-latte .badge-revoked { --badge-bg: #d20f39; --badge-clr: #ffffff; }
+
+body.theme-catppuccin-latte .badge-info,
+body.theme-catppuccin-latte .badge-analyst { --badge-bg: rgba(30, 102, 245, 0.35); --badge-clr: #1e66f5; }
+
+body.theme-catppuccin-latte .badge-admin,
+body.theme-catppuccin-latte .badge-asn { --badge-bg: rgba(136, 57, 239, 0.32); --badge-clr: #8839ef; }
+
+body.theme-catppuccin-latte .badge-fleet,
+body.theme-catppuccin-latte .badge-org { --badge-bg: rgba(30, 102, 245, 0.28); --badge-clr: #1e66f5; }
+
+body.theme-catppuccin-latte .badge-viewer { --badge-bg: rgba(108, 111, 133, 0.28); --badge-clr: #4c4f69; }
+
+/* Boost danger/blocked badge visibility */
+body.theme-catppuccin-latte .badge-event-ssh-brute,
+body.theme-catppuccin-latte .badge-event-ssh-medium-brute,
+body.theme-catppuccin-latte .badge-event-ssh-slow-brute {
+    --badge-bg: rgba(210, 15, 57, 0.40);
+    --badge-clr: #d20f39;
+}
+
+body.theme-catppuccin-latte .badge-action-blocked {
+    --badge-bg: var(--danger);
+    --badge-clr: #ffffff;
+}
+
+/* ── Event / action badges ──────────────────────────────────── */
+body.theme-catppuccin-latte .badge-event-port-scan,
+body.theme-catppuccin-latte .badge-action-detected { --badge-bg: rgba(254, 100, 11, 0.26); --badge-clr: #fe640b; }
+
+body.theme-catppuccin-latte .badge-event-dns-tunnel { --badge-bg: rgba(136, 57, 239, 0.22); --badge-clr: #8839ef; }
+
+body.theme-catppuccin-latte .badge-event-web-attack,
+body.theme-catppuccin-latte .badge-event-http-auth-brute { --badge-bg: rgba(234, 118, 203, 0.22); --badge-clr: #ea76cb; }
+
+body.theme-catppuccin-latte .badge-event-malware-beacon { --badge-bg: rgba(210, 15, 57, 0.26); --badge-clr: #d20f39; }
+
+body.theme-catppuccin-latte .badge-event-blocklist-hit { --badge-bg: rgba(223, 142, 29, 0.26); --badge-clr: #8c5b10; }
+
+body.theme-catppuccin-latte .badge-event-nft-action { --badge-bg: rgba(23, 146, 153, 0.20); --badge-clr: #179299; }
+
+body.theme-catppuccin-latte .badge-event-ssh-banner-grab,
+body.theme-catppuccin-latte .badge-event-ssh-auth-timeout { --badge-bg: rgba(30, 102, 245, 0.24); --badge-clr: #1e66f5; }
+
+body.theme-catppuccin-latte .badge-action-allowlisted,
+body.theme-catppuccin-latte .badge-event-allowlist-add,
+body.theme-catppuccin-latte .badge-event-allowlist-remove { --badge-bg: rgba(64, 160, 43, 0.24); --badge-clr: #40a02b; }
+
+body.theme-catppuccin-latte .badge-action-unallowlisted { --badge-bg: rgba(223, 142, 29, 0.26); --badge-clr: #8c5b10; }
+
+body.theme-catppuccin-latte .badge-action-alerted { --badge-bg: rgba(254, 100, 11, 0.26); --badge-clr: #fe640b; }
+
+body.theme-catppuccin-latte .badge-action-rate-limited,
+body.theme-catppuccin-latte .badge-action-rate_limited { --badge-bg: rgba(223, 142, 29, 0.26); --badge-clr: #8c5b10; }
+
+body.theme-catppuccin-latte .badge-action-unblocked { --badge-bg: rgba(64, 160, 43, 0.24); --badge-clr: #40a02b; }
+
+body.theme-catppuccin-latte .badge-action-logged,
+body.theme-catppuccin-latte .badge-action-observed { --badge-bg: rgba(108, 111, 133, 0.18); --badge-clr: #4c4f69; }
+
+body.theme-catppuccin-latte .badge-action-observed-log-match { --badge-bg: rgba(30, 102, 245, 0.24); --badge-clr: #1e66f5; }
+
+body.theme-catppuccin-latte .badge-action-blocked::before {
+    background: var(--badge-clr);
+}
+
+/* ── Command status badges ──────────────────────────────────── */
+body.theme-catppuccin-latte .cmd-status-pending { --badge-bg: rgba(223, 142, 29, 0.26); --badge-clr: #8c5b10; }
+body.theme-catppuccin-latte .cmd-status-acknowledged { --badge-bg: rgba(30, 102, 245, 0.24); --badge-clr: #1e66f5; }
+body.theme-catppuccin-latte .cmd-status-completed { --badge-bg: rgba(64, 160, 43, 0.24); --badge-clr: #40a02b; }
+body.theme-catppuccin-latte .cmd-status-failed { --badge-bg: rgba(210, 15, 57, 0.24); --badge-clr: #d20f39; }
+body.theme-catppuccin-latte .cmd-status-expired { --badge-bg: rgba(108, 111, 133, 0.18); --badge-clr: #4c4f69; }
+
+/* ── Host info pills ────────────────────────────────────────── */
+body.theme-catppuccin-latte .host-pill-blue { background: rgba(30, 102, 245, 0.10); border-color: rgba(30, 102, 245, 0.22); color: #1e66f5; }
+body.theme-catppuccin-latte .host-pill-blue .host-pill-label { color: #7287fd; }
+
+body.theme-catppuccin-latte .host-pill-purple { background: rgba(136, 57, 239, 0.10); border-color: rgba(136, 57, 239, 0.22); color: #8839ef; }
+body.theme-catppuccin-latte .host-pill-purple .host-pill-label { color: #ea76cb; }
+
+body.theme-catppuccin-latte .host-pill-teal { background: rgba(23, 146, 153, 0.10); border-color: rgba(23, 146, 153, 0.22); color: #179299; }
+body.theme-catppuccin-latte .host-pill-teal .host-pill-label { color: #209fb5; }
+
+body.theme-catppuccin-latte .host-pill-amber { background: rgba(254, 100, 11, 0.10); border-color: rgba(254, 100, 11, 0.22); color: #fe640b; }
+body.theme-catppuccin-latte .host-pill-amber .host-pill-label { color: #df8e1d; }
+
+body.theme-catppuccin-latte .host-pill-green { background: rgba(64, 160, 43, 0.10); border-color: rgba(64, 160, 43, 0.22); color: #40a02b; }
+body.theme-catppuccin-latte .host-pill-green .host-pill-label { color: #179299; }
+
+body.theme-catppuccin-latte .host-pill-rose { background: rgba(210, 15, 57, 0.10); border-color: rgba(210, 15, 57, 0.22); color: #d20f39; }
+body.theme-catppuccin-latte .host-pill-rose .host-pill-label { color: #d20f39; }
+
+/* ── TTL badges ─────────────────────────────────────────────── */
+body.theme-catppuccin-latte .ttl-short { background: rgba(64, 160, 43, 0.24); color: #40a02b; }
+body.theme-catppuccin-latte .ttl-medium { background: rgba(223, 142, 29, 0.24); color: #8c5b10; }
+body.theme-catppuccin-latte .ttl-long { background: rgba(210, 15, 57, 0.22); color: #d20f39; }
+
+/* ── Feed cards ─────────────────────────────────────────────── */
+body.theme-catppuccin-latte .feed-card {
+    background: var(--bg-secondary);
+}
+body.theme-catppuccin-latte .feed-catalog-card:hover {
+    border-color: rgba(136, 57, 239, 0.3);
+}
+body.theme-catppuccin-latte .feed-provider,
+body.theme-catppuccin-latte .feed-provider-link {
+    color: #8839ef;
+}
+body.theme-catppuccin-latte .feed-provider-link:hover {
+    color: #8839ef;
+}
+body.theme-catppuccin-latte .feed-confidence-very_high { --badge-bg: rgba(64, 160, 43, 0.24); --badge-clr: #40a02b; }
+body.theme-catppuccin-latte .feed-confidence-high { --badge-bg: rgba(30, 102, 245, 0.24); --badge-clr: #1e66f5; }
+body.theme-catppuccin-latte .feed-confidence-medium { --badge-bg: rgba(223, 142, 29, 0.24); --badge-clr: #8c5b10; }
+body.theme-catppuccin-latte .feed-confidence-low { --badge-bg: rgba(210, 15, 57, 0.20); --badge-clr: #d20f39; }
+
+/* ── Sparklines ─────────────────────────────────────────────── */
+body.theme-catppuccin-latte .stat-sparkline-bar {
+    background: var(--accent);
+}
+
+/* ── IP intel ───────────────────────────────────────────────── */
+body.theme-catppuccin-latte .ip-intel-score {
+    background: var(--bg-secondary);
+    border-color: var(--border);
+}
+body.theme-catppuccin-latte .ip-intel-score.score-high {
+    background: rgba(210, 15, 57, 0.10);
+    color: #d20f39;
+    border-color: rgba(210, 15, 57, 0.22);
+}
+body.theme-catppuccin-latte .ip-intel-score.score-medium {
+    background: rgba(254, 100, 11, 0.10);
+    color: #fe640b;
+    border-color: rgba(254, 100, 11, 0.22);
+}
+body.theme-catppuccin-latte .ip-intel-score.score-low {
+    background: rgba(64, 160, 43, 0.10);
+    color: #40a02b;
+    border-color: rgba(64, 160, 43, 0.22);
+}
+
+/* ── Rules management ───────────────────────────────────────── */
+body.theme-catppuccin-latte .rules-icon-allowlist { background: rgba(64, 160, 43, 0.14); color: #40a02b; }
+body.theme-catppuccin-latte .rules-icon-blocklist { background: rgba(210, 15, 57, 0.12); color: #d20f39; }
+body.theme-catppuccin-latte .rule-entry-allowlist { background: rgba(64, 160, 43, 0.08); color: #40a02b; border-color: rgba(64, 160, 43, 0.15); }
+body.theme-catppuccin-latte .rule-entry-blocklist { background: rgba(210, 15, 57, 0.06); color: #d20f39; border-color: rgba(210, 15, 57, 0.15); }
+body.theme-catppuccin-latte .pack-assign-auto { background: rgba(108, 111, 133, 0.10); color: #4c4f69; }
+body.theme-catppuccin-latte .pack-assign-explicit { background: rgba(223, 142, 29, 0.12); color: #8c5b10; }
+body.theme-catppuccin-latte .pack-assign-all { background: rgba(30, 102, 245, 0.10); color: #1e66f5; }
+
+/* ── Timeline / Recent Events ───────────────────────────────── */
+body.theme-catppuccin-latte .timeline-item {
+    background: #e6e9ef;
+    border-color: var(--border);
+}
+
+body.theme-catppuccin-latte .timeline-item-danger {
+    background: linear-gradient(90deg, rgba(210, 15, 57, 0.10) 0%, #e6e9ef 12%);
+    border-left: 3px solid #d20f39;
+}
+
+body.theme-catppuccin-latte .timeline-dot-info {
+    box-shadow:
+        0 0 0 2px #e6e9ef,
+        0 0 0 3px rgba(254, 100, 11, 0.08);
+}
+body.theme-catppuccin-latte .timeline-dot-danger {
+    box-shadow:
+        0 0 0 2px #e6e9ef,
+        0 0 0 3px rgba(210, 15, 57, 0.10);
+}
+body.theme-catppuccin-latte .timeline-dot-warning {
+    box-shadow:
+        0 0 0 2px #e6e9ef,
+        0 0 0 3px rgba(223, 142, 29, 0.08);
+}
+
+/* Improve code/IP readability in Recent Events against light cards */
+body.theme-catppuccin-latte .timeline-body code {
+    background: var(--bg-secondary);
+    color: var(--accent);
+}
+
+/* Solid badge variants inside blocked timeline rows */
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-nft-action { --badge-bg-solid: #179299; --badge-clr-solid: #ffffff; }
+
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-ssh-brute,
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-ssh-medium-brute,
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-ssh-slow-brute,
+body.theme-catppuccin-latte .timeline-item-danger .badge-action-blocked { --badge-bg-solid: #d20f39; --badge-clr-solid: #ffffff; }
+
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-port-scan,
+body.theme-catppuccin-latte .timeline-item-danger .badge-action-detected { --badge-bg-solid: #fe640b; --badge-clr-solid: #ffffff; }
+
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-web-attack,
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-http-auth-brute { --badge-bg-solid: #ea76cb; --badge-clr-solid: #ffffff; }
+
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-malware-beacon { --badge-bg-solid: #d20f39; --badge-clr-solid: #ffffff; }
+
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-dns-tunnel { --badge-bg-solid: #8839ef; --badge-clr-solid: #ffffff; }
+
+body.theme-catppuccin-latte .timeline-item-danger .badge-event-blocklist-hit { --badge-bg-solid: #df8e1d; --badge-clr-solid: #ffffff; }
+
+body.theme-catppuccin-latte .timeline-country,
+body.theme-catppuccin-latte .timeline-asn {
+    --tc-clr: var(--text-muted);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+}
+body.theme-catppuccin-latte .timeline-item-danger .timeline-country,
+body.theme-catppuccin-latte .timeline-item-danger .timeline-asn {
+    background: rgba(210, 15, 57, 0.08);
+    border-color: rgba(210, 15, 57, 0.15);
+    --tc-clr: #d20f39;
+}
+
+
+
+/* ── Inventory detail page ──────────────────────────────────── */
+/* Override hardcoded dark-theme tints from detail.html so badges pop */
+body.theme-catppuccin-latte .detail-card .badge-healthy,
+body.theme-catppuccin-latte .detail-card .badge-active,
+body.theme-catppuccin-latte .detail-card .badge-success {
+    background: rgba(64, 160, 43, 0.28);
+    color: #2d6a1f;
+    border-color: rgba(64, 160, 43, 0.45);
+}
+
+body.theme-catppuccin-latte .detail-card .badge-warning,
+body.theme-catppuccin-latte .detail-card .badge-degraded {
+    background: rgba(223, 142, 29, 0.30);
+    color: #7a4b0a;
+    border-color: rgba(223, 142, 29, 0.50);
+}
+
+body.theme-catppuccin-latte .detail-card .badge-danger,
+body.theme-catppuccin-latte .detail-card .badge-offline,
+body.theme-catppuccin-latte .detail-card .badge-revoked {
+    background: rgba(210, 15, 57, 0.26);
+    color: #9e0b2b;
+    border-color: rgba(210, 15, 57, 0.45);
+}
+
+body.theme-catppuccin-latte .detail-card .badge-info {
+    background: rgba(30, 102, 245, 0.24);
+    color: #1647b5;
+    border-color: rgba(30, 102, 245, 0.45);
+}
+
+body.theme-catppuccin-latte .detail-section-title {
+    color: var(--text);
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+body.theme-catppuccin-latte .meta-card {
+    background: var(--bg-input);
+    border-color: var(--border);
+    box-shadow: 0 1px 3px rgba(76, 79, 105, 0.06);
+}
+
+body.theme-catppuccin-latte .meta-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 6px 20px rgba(76, 79, 105, 0.12);
+}
+
+body.theme-catppuccin-latte .meta-key {
+    color: var(--accent);
+    opacity: 1;
+}
+
+body.theme-catppuccin-latte .meta-list-item {
+    background: rgba(254, 100, 11, 0.10);
+    border-color: rgba(254, 100, 11, 0.22);
+    color: #d35f00;
+}
+
+body.theme-catppuccin-latte .hero-banner {
+    background: linear-gradient(135deg, rgba(30, 102, 245, 0.12) 0%, rgba(136, 57, 239, 0.08) 100%);
+    border-color: rgba(30, 102, 245, 0.22);
+}
+
+body.theme-catppuccin-latte .section-count {
+    background: rgba(254, 100, 11, 0.18);
+    color: #d35f00;
+}
+
+/* ── Flash messages ─────────────────────────────────────────── */
+body.theme-catppuccin-latte .flash-messages .flash-error {
+    background: rgba(210, 15, 57, 0.08);
+    color: #d20f39;
+    border-left-color: var(--danger);
+}
+body.theme-catppuccin-latte .flash-messages .flash-success {
+    background: rgba(64, 160, 43, 0.08);
+    color: #40a02b;
+    border-left-color: var(--success);
+}
+body.theme-catppuccin-latte .flash-messages .flash-info {
+    background: rgba(30, 102, 245, 0.08);
+    color: #1e66f5;
+    border-left-color: var(--accent);
+}
+
+/* ── Toast notifications ────────────────────────────────────── */
+body.theme-catppuccin-latte .toast-danger {
+    background: rgba(210, 15, 57, 0.08);
+    border-left-color: var(--danger);
+}
+body.theme-catppuccin-latte .toast-success {
+    border-left-color: var(--success);
+}
+body.theme-catppuccin-latte .toast-info {
+    border-left-color: var(--accent);
+}
+
+/* ── Notification panel ─────────────────────────────────────── */
+body.theme-catppuccin-latte .notif-panel {
+    background: var(--bg-card);
+    border-color: var(--border);
+    box-shadow:
+        0 12px 40px rgba(76, 79, 105, 0.12),
+        0 0 0 1px rgba(76, 79, 105, 0.04);
+}
+body.theme-catppuccin-latte .notif-clear-btn {
+    color: #fe640b;
+}
+body.theme-catppuccin-latte .notif-clear-btn:hover {
+    background: rgba(254, 100, 11, 0.05);
+    color: #d35f00;
+}
+body.theme-catppuccin-latte .notif-item {
+    border-bottom-color: var(--border);
+}
+body.theme-catppuccin-latte .notif-item:hover {
+    background: rgba(76, 79, 105, 0.03);
+}
+body.theme-catppuccin-latte .notif-item-danger {
+    border-left-color: #d20f39;
+    box-shadow: inset 3px 0 0 0 #d20f39;
+}
+body.theme-catppuccin-latte .notif-blocked-tag {
+    color: #d20f39;
+    background: rgba(210, 15, 57, 0.10);
+}
+body.theme-catppuccin-latte .notif-item-meta code {
+    background: rgba(220, 224, 232, 0.7);
+    color: var(--accent);
+}
+
+/* ── Modal & log context overrides ──────────────────────────── */
+body.theme-catppuccin-latte .event-modal-overlay {
+    background: rgba(220, 224, 232, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+body.theme-catppuccin-latte .event-modal {
+    background: var(--bg-card);
+    border-color: var(--border);
+    box-shadow:
+        0 24px 48px rgba(76, 79, 105, 0.2),
+        0 0 0 1px rgba(254, 100, 11, 0.08),
+        0 0 50px rgba(254, 100, 11, 0.04);
+}
+body.theme-catppuccin-latte .event-modal-header {
+    border-bottom-color: var(--border);
+}
+body.theme-catppuccin-latte .event-modal-section-title {
+    color: #fe640b;
+    border-bottom-color: rgba(254, 100, 11, 0.18);
+}
+body.theme-catppuccin-latte .event-modal .badge-action-blocked {
+    --badge-bg-solid: #d20f39;
+    --badge-clr-solid: #ffffff;
+    box-shadow: 0 0 10px rgba(210, 15, 57, 0.12);
+}
+body.theme-catppuccin-latte .event-modal-log-lines {
+    background: var(--bg-input);
+    border-color: var(--border);
+    color: var(--text-muted);
+}
+body.theme-catppuccin-latte .event-modal-log-lines .log-line-trigger {
+    background: rgba(223, 142, 29, 0.04);
+    color: #4c4f69;
+    border-left-color: #df8e1d;
+}
+body.theme-catppuccin-latte .log-context {
+    border-color: var(--border);
+}
+body.theme-catppuccin-latte .log-context-lines {
+    background: var(--bg-input);
+    color: var(--text-muted);
+}
+body.theme-catppuccin-latte .log-line-trigger {
+    background: rgba(223, 142, 29, 0.04);
+    color: #4c4f69;
+    border-left-color: #df8e1d;
+}
+body.theme-catppuccin-latte .btn-view-full-context {
+    color: var(--accent);
+}
+body.theme-catppuccin-latte .btn-view-full-context:hover {
+    color: var(--text);
+}
+
+/* ── Config management create profile card ──────────────────── */
+body.theme-catppuccin-latte .create-profile-card {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── JSON modal ──────────────────────────────────────────────── */
+body.theme-catppuccin-latte .json-modal-overlay {
+    background: rgba(220, 224, 232, 0.72);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+body.theme-catppuccin-latte .json-modal {
+    background: var(--bg-input);
+    border-color: var(--border);
+    box-shadow:
+        0 24px 48px rgba(76, 79, 105, 0.15),
+        0 0 0 1px rgba(254, 100, 11, 0.06);
+}
+body.theme-catppuccin-latte .json-modal-body {
+    color: var(--text);
+}
+
+/* ── Host monitoring modal stat pills ────────────────────────── */
+body.theme-catppuccin-latte .modal-stat-pill.crit { background: rgba(210, 15, 57, 0.25); color: #d20f39; }
+body.theme-catppuccin-latte .modal-stat-pill.warn { background: rgba(223, 142, 29, 0.25); color: #df8e1d; }
+body.theme-catppuccin-latte .modal-stat-pill.ok   { background: rgba(64, 160, 43, 0.25); color: #40a02b; }
+body.theme-catppuccin-latte .modal-stat-pill.unk  { background: rgba(108, 111, 133, 0.20); color: #6c6f85; }
+
+body.theme-catppuccin-latte .health-badge.critical { background: rgba(210, 15, 57, 0.25); color: #d20f39; }
+body.theme-catppuccin-latte .health-badge.warning  { background: rgba(223, 142, 29, 0.25); color: #df8e1d; }
+body.theme-catppuccin-latte .health-badge.ok       { background: rgba(64, 160, 43, 0.25); color: #40a02b; }
+body.theme-catppuccin-latte .health-badge.unknown  { background: rgba(108, 111, 133, 0.20); color: #6c6f85; }
+
+body.theme-catppuccin-latte .sp-dot.critical { background: #d20f39; }
+body.theme-catppuccin-latte .sp-dot.warning  { background: #df8e1d; }
+body.theme-catppuccin-latte .sp-dot.ok       { background: #40a02b; }
+body.theme-catppuccin-latte .sp-dot.unknown  { background: #6c6f85; }

@@ -1,0 +1,1426 @@
+{% extends "base.html" %}
+{% block title %}Query Explorer — Metrics{% endblock %}
+{% block content %}
+<div class="page-container">
+    <div class="content-card">
+        <div class="flex-between mb-4">
+            <h2 style="display:flex;align-items:center;gap:0.5rem;">🔍 Query Explorer <button class="help-icon" onclick="document.getElementById('helpModal').style.display='flex'" title="Query help">?</button></h2>
+            <a href="{{ url_for('metrics.overview') }}" class="btn-nav">&larr; System Metrics</a>
+        </div>
+
+        <div class="qt-bar" id="qtBar">
+            <div class="qt-tabs" id="qtTabs"></div>
+            <button class="qt-add" onclick="addQueryTab()" title="New Query">+</button>
+        </div>
+
+        <div class="query-layout">
+            <div class="query-sidebar">
+                <div class="sidebar-section">
+                    <div class="sidebar-title">
+                        Metric Names
+                        <span class="sidebar-count" id="metricCount">—</span>
+                    </div>
+                    <div class="sidebar-search-wrap">
+                        <input type="text" id="metricSearch" class="sidebar-search" placeholder="Filter metrics…" autocomplete="off">
+                    </div>
+                    <div class="metric-list" id="metricList">
+                        <div class="metric-list-loading">Loading…</div>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Common Queries</div>
+                    <div class="preset-list" id="presetList">
+                        <button class="preset-item" onclick="setQuery('100 - (avg(rate(vespid_monitor_cpu_idle_seconds_total[2m])) * 100)')" title="Overall CPU usage">
+                            <span class="preset-icon">⚡</span>CPU Usage %
+                        </button>
+                        <button class="preset-item" onclick="setQuery('vespid_monitor_memory_used_percent')" title="Memory usage percentage">
+                            <span class="preset-icon">🧠</span>Memory Used %
+                        </button>
+                        <button class="preset-item" onclick="setQuery('vespid_monitor_disk_used_percent{mountpoint=&quot;/&quot;}')" title="Root disk usage">
+                            <span class="preset-icon">💾</span>Root Disk %
+                        </button>
+                        <button class="preset-item" onclick="setQuery('rate(vespid_monitor_network_bytes_recv_total[2m])')" title="Network receive rate">
+                            <span class="preset-icon">🌐</span>Network RX Rate
+                        </button>
+                        <button class="preset-item" onclick="setQuery('vespid_monitor_systemd_unit_active == 0')" title="Failed systemd units">
+                            <span class="preset-icon">🔧</span>Failed Services
+                        </button>
+                        <button class="preset-item" onclick="setQuery('count by (hostname) (vespid_monitor_cpu_idle_seconds_total)')" title="Agent count">
+                            <span class="preset-icon">🖥️</span>Agent Count
+                        </button>
+                        <button class="preset-item" onclick="setQuery('topk(5, vespid_monitor_disk_used_percent)')" title="Top 5 disk usage">
+                            <span class="preset-icon">📊</span>Top 5 Disk Usage
+                        </button>
+                        <button class="preset-item" onclick="setQuery('vespid_monitor_process_zombies_count')" title="Zombie process count">
+                            <span class="preset-icon">🧟</span>Zombie Count
+                        </button>
+                        <button class="preset-item" onclick="setQuery('vespid_monitor_psi_avg60{resource=&quot;memory&quot;,level=&quot;some&quot;}')" title="Memory pressure 60s">
+                            <span class="preset-icon">📈</span>Memory Pressure
+                        </button>
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="sidebar-title">Saved Queries <span class="sidebar-count" id="savedCount">—</span></div>
+                    <div class="saved-list" id="savedList">
+                        <div class="saved-empty" style="font-size:0.72rem;color:var(--text-muted);padding:0.5rem 0">No saved queries yet.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="query-main">
+                <div class="query-input-wrap">
+                    <textarea
+                        id="queryInput"
+                        class="query-input"
+                        placeholder="Enter a PromQL query…"
+                        rows="3"
+                        spellcheck="false"
+                        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();runQuery();}"
+                    >100 - (avg(rate(vespid_monitor_cpu_idle_seconds_total[2m])) * 100)</textarea>
+                    <div class="query-actions">
+                        <div class="query-actions-left">
+                            <button class="qa-btn" onclick="setRange('')" title="Instant query">
+                                <span class="qa-icon">⚡</span>Instant
+                            </button>
+                            <button class="qa-btn qa-active" id="btn-1h" onclick="setRange('1h')" title="Last hour">1h</button>
+                            <button class="qa-btn" id="btn-6h" onclick="setRange('6h')" title="Last 6 hours">6h</button>
+                            <button class="qa-btn" id="btn-24h" onclick="setRange('24h')" title="Last 24 hours">24h</button>
+                            <span class="qa-step-wrap">
+                                Step
+                                <input type="text" id="stepInput" class="qa-step" value="60s" size="4">
+                            </span>
+                        </div>
+                        <button class="qa-run" onclick="runQuery()">▶ Run</button>
+                        <button class="qa-btn" onclick="formatQuery()" title="Format PromQL" style="margin-left:0.25rem;">&#9889; Format</button>
+                        <button class="qa-run" id="saveQueryBtn" onclick="promptSaveQuery()" style="background:var(--bg-card);color:var(--text-muted);margin-left:0.25rem;padding:0.4rem 0.75rem;font-size:0.78rem;border:1px solid var(--border);border-radius:6px;cursor:pointer" title="Save current query">💾 Save</button>
+                    </div>
+                </div>
+
+                <div class="query-stats" id="queryStats" style="display:none">
+                    <span id="stats-series"></span>
+                    <span id="stats-time"></span>
+                </div>
+
+                <div class="query-error" id="queryError" style="display:none"></div>
+
+                <div class="query-result-wrap" id="resultWrap" style="display:none">
+                    <div class="result-toolbar">
+                        <div class="result-tabs">
+                            <button class="rtab active" id="tab-graph" onclick="switchResultView('graph')">Graph</button>
+                            <button class="rtab" id="tab-table" onclick="switchResultView('table')">Table</button>
+                            <button class="rtab" id="tab-raw" onclick="switchResultView('raw')">Raw JSON</button>
+                        </div>
+                        <button class="btn-sm" onclick="copyResults()">📋 Copy</button>
+                    </div>
+                    <div id="graphView" class="result-graph">
+                        <canvas id="queryChart"></canvas>
+                    </div>
+                    <div id="resultView" class="result-view" style="display:none"></div>
+                </div>
+
+                <div class="query-history" id="queryHistory">
+                    <div class="history-header">
+                        <div class="history-title" onclick="document.getElementById('historyList').classList.toggle('collapsed')">
+                            🕘 Recent Queries <span class="history-count" id="historyCount"></span> ▾
+                        </div>
+                        <button class="history-clear" id="historyClear" onclick="clearHistory()" style="display:none">Clear</button>
+                    </div>
+                    <div class="history-list" id="historyList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="help-modal-overlay" id="helpModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+    <div class="help-modal">
+        <div class="help-modal-header">
+            <h3>PromQL / VictoriaMetrics Query Examples</h3>
+            <button class="help-modal-close" onclick="document.getElementById('helpModal').style.display='none'">&times;</button>
+        </div>
+        <div class="help-modal-body">
+            <div class="help-section">
+                <div class="help-section-title">Basic Selectors</div>
+                <div class="help-example"><code>vespid_monitor_cpu_idle_seconds_total</code><span>Select a metric by name</span></div>
+                <div class="help-example"><code>vespid_monitor_disk_used_percent{mountpoint="/"}</code><span>Filter by label value</span></div>
+                <div class="help-example"><code>{hostname=~"web-.*"}</code><span>Regex match on label</span></div>
+                <div class="help-example"><code>{__name__=~"vespid_monitor_cpu.*"}</code><span>Regex match on metric name</span></div>
+            </div>
+            <div class="help-section">
+                <div class="help-section-title">Rate &amp; Counters</div>
+                <div class="help-example"><code>rate(metric_total[5m])</code><span>Per-second rate over 5 minutes</span></div>
+                <div class="help-example"><code>increase(metric_total[1h])</code><span>Total increase over 1 hour</span></div>
+                <div class="help-example"><code>irate(metric_total[5m])</code><span>Instant rate (last two samples)</span></div>
+            </div>
+            <div class="help-section">
+                <div class="help-section-title">Aggregations</div>
+                <div class="help-example"><code>sum(rate(metric[5m]))</code><span>Sum across all series</span></div>
+                <div class="help-example"><code>avg by (hostname) (metric)</code><span>Average grouped by hostname</span></div>
+                <div class="help-example"><code>max without (cpu) (metric)</code><span>Max, excluding cpu label</span></div>
+                <div class="help-example"><code>count by (job) (up)</code><span>Count series per job</span></div>
+                <div class="help-example"><code>topk(5, metric)</code><span>Top 5 series by value</span></div>
+                <div class="help-example"><code>bottomk(3, metric)</code><span>Bottom 3 series by value</span></div>
+            </div>
+            <div class="help-section">
+                <div class="help-section-title">Math &amp; Comparisons</div>
+                <div class="help-example"><code>100 - (avg(rate(cpu_idle[2m])) * 100)</code><span>CPU usage percentage</span></div>
+                <div class="help-example"><code>metric_a / metric_b</code><span>Divide two metrics</span></div>
+                <div class="help-example"><code>metric > 80</code><span>Filter where value exceeds 80</span></div>
+                <div class="help-example"><code>metric offset 1h</code><span>Value from 1 hour ago</span></div>
+            </div>
+            <div class="help-section">
+                <div class="help-section-title">Functions</div>
+                <div class="help-example"><code>abs(metric)</code><span>Absolute value</span></div>
+                <div class="help-example"><code>ceil(metric)</code><span>Round up</span></div>
+                <div class="help-example"><code>delta(metric[5m])</code><span>Difference over range (gauges)</span></div>
+                <div class="help-example"><code>deriv(metric[5m])</code><span>Per-second derivative (gauges)</span></div>
+                <div class="help-example"><code>histogram_quantile(0.95, rate(metric_bucket[5m]))</code><span>95th percentile</span></div>
+                <div class="help-example"><code>clamp_min(metric, 0)</code><span>Floor values at 0</span></div>
+                <div class="help-example"><code>label_replace(metric, "dst", "$1", "src", "(.+)")</code><span>Rewrite labels</span></div>
+            </div>
+            <div class="help-section">
+                <div class="help-section-title">VictoriaMetrics Extensions</div>
+                <div class="help-example"><code>range_median(metric[1h])</code><span>Median over time range</span></div>
+                <div class="help-example"><code>range_avg(metric[1h])</code><span>Average over time range</span></div>
+                <div class="help-example"><code>ttf(metric[24h])</code><span>Time to reach threshold</span></div>
+                <div class="help-example"><code>running_avg(metric[1h])</code><span>Running average</span></div>
+                <div class="help-example"><code>smooth_exponential(metric[1h], 0.5)</code><span>Exponential smoothing</span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="help-modal-overlay" id="saveModal" style="display:none" onclick="if(event.target===this)this.style.display='none'">
+    <div class="help-modal" style="max-width:640px">
+        <div class="help-modal-header">
+            <h3>💾 Save Query</h3>
+            <button class="help-modal-close" onclick="document.getElementById('saveModal').style.display='none'">&times;</button>
+        </div>
+        <div class="help-modal-body">
+            <div style="margin-bottom:1rem">
+                <label style="display:block;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.3rem">Name</label>
+                <input type="text" id="saveNameInput" class="query-input" style="padding:0.5rem 0.6rem;font-size:0.82rem;width:100%;box-sizing:border-box" placeholder="e.g. Network RX by host" autocomplete="off">
+            </div>
+            <div style="margin-bottom:1rem">
+                <label style="display:block;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.3rem">Query</label>
+                <textarea id="saveQueryText" class="query-input" rows="6" style="padding:0.5rem 0.6rem;font-size:0.82rem;width:100%;box-sizing:border-box;font-family:monospace" readonly></textarea>
+            </div>
+            <div style="display:flex;gap:0.5rem;justify-content:flex-end">
+                <button class="btn" onclick="document.getElementById('saveModal').style.display='none'" style="opacity:0.7">Cancel</button>
+                <button class="btn btn-primary" id="saveConfirmBtn" onclick="doSaveQuery()">Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var queryInput = document.getElementById('queryInput');
+    var resultWrap = document.getElementById('resultWrap');
+    var queryError = document.getElementById('queryError');
+    var queryStats = document.getElementById('queryStats');
+    var currentRange = '1h';
+    var history = JSON.parse(localStorage.getItem('hive_queries') || '[]');
+    var queryChart = null;
+
+    // ── Query Tabs ─────────────────────────────────────────
+    var _tabs = [];
+    var _tabIdCounter = 0;
+    var _currentTabId = null;
+
+    function getTab(id) {
+        for (var i = 0; i < _tabs.length; i++) {
+            if (_tabs[i].id === id) return _tabs[i];
+        }
+        return null;
+    }
+
+    function createTab(name, query) {
+        _tabIdCounter++;
+        return {
+            id: _tabIdCounter,
+            name: name || 'Query ' + _tabIdCounter,
+            query: query || '',
+            range: '1h',
+            step: '60s',
+            view: 'graph',
+            results: null,
+            tableHtml: ''
+        };
+    }
+
+    function saveCurrentTabState() {
+        var tab = getTab(_currentTabId);
+        if (!tab) return;
+        tab.query = queryInput.value;
+        tab.range = currentRange;
+        tab.step = document.getElementById('stepInput').value.trim() || '60s';
+        if (resultWrap.style.display !== 'none') {
+            var active = document.querySelector('.rtab.active');
+            tab.view = active ? active.id.replace('tab-', '') : 'graph';
+        }
+    }
+
+    function restoreTabState(tab) {
+        queryInput.value = tab.query || '';
+        currentRange = tab.range || '1h';
+        document.getElementById('stepInput').value = tab.step || '60s';
+        document.querySelectorAll('.qa-btn').forEach(function(b) {
+            b.classList.toggle('qa-active', !tab.range ? b === document.querySelector('.qa-btn:first-child') : b.id === 'btn-' + tab.range);
+        });
+    }
+
+    function renderTabBar() {
+        var container = document.getElementById('qtTabs');
+        container.innerHTML = _tabs.map(function(t) {
+            var active = t.id === _currentTabId ? ' qt-tab-active' : '';
+            return '<div class="qt-tab' + active + '" data-id="' + t.id + '" onclick="switchQueryTab(' + t.id + ')">' +
+                '<span class="qt-tab-name" ondblclick="renameQueryTab(' + t.id + ')">' + escapeHtml(t.name) + '</span>' +
+                (_tabs.length > 1 ? '<button class="qt-tab-close" onclick="event.stopPropagation();closeQueryTab(' + t.id + ')" title="Close">&times;</button>' : '') +
+                '</div>';
+        }).join('');
+    }
+
+    window.addQueryTab = function() {
+        saveCurrentTabState();
+        var tab = createTab();
+        _tabs.push(tab);
+        _currentTabId = tab.id;
+        renderTabBar();
+        restoreTabState(tab);
+        showEmptyState();
+    };
+
+    window.closeQueryTab = function(id) {
+        if (_tabs.length <= 1) return;
+        var idx = -1;
+        for (var i = 0; i < _tabs.length; i++) {
+            if (_tabs[i].id === id) { idx = i; break; }
+        }
+        if (idx === -1) return;
+        var wasActive = id === _currentTabId;
+        _tabs.splice(idx, 1);
+        if (wasActive) {
+            var next = _tabs[Math.min(idx, _tabs.length - 1)];
+            _currentTabId = next.id;
+            restoreTabState(next);
+            if (next.results) {
+                restoreResults(next);
+            } else {
+                showEmptyState();
+            }
+        }
+        renderTabBar();
+    };
+
+    window.switchQueryTab = function(id) {
+        if (id === _currentTabId) return;
+        saveCurrentTabState();
+        if (queryChart) { queryChart.destroy(); queryChart = null; }
+        _currentTabId = id;
+        var tab = getTab(id);
+        if (!tab) return;
+        restoreTabState(tab);
+        renderTabBar();
+        if (tab.results) {
+            restoreResults(tab);
+        } else {
+            showEmptyState();
+        }
+    };
+
+    window.renameQueryTab = function(id) {
+        var tab = getTab(id);
+        if (!tab) return;
+        var name = prompt('Query name:', tab.name);
+        if (name && name.trim()) {
+            tab.name = name.trim();
+            renderTabBar();
+        }
+    };
+
+    function showEmptyState() {
+        resultWrap.style.display = 'none';
+        queryError.style.display = 'none';
+        queryStats.style.display = 'none';
+    }
+
+    function restoreResults(tab) {
+        if (!tab.results) return;
+        window._lastResult = tab.results;
+        window._lastTable = tab.tableHtml;
+        queryStats.style.display = 'flex';
+        var data = tab.results;
+        var results = (data.data && data.data.result) || [];
+        document.getElementById('stats-series').textContent = results.length + ' series';
+        var series = tab.results.data && tab.results.data.result || [];
+        if (tab.range && series.length > 0 && series[0].values) {
+            resultWrap.style.display = 'block';
+            document.getElementById('graphView').style.display = 'block';
+            document.getElementById('resultView').style.display = 'none';
+            document.querySelectorAll('.rtab').forEach(function(t) { t.classList.remove('active'); });
+            document.getElementById('tab-graph').classList.add('active');
+            renderGraph(series);
+        } else if (tab.tableHtml) {
+            resultWrap.style.display = 'block';
+            document.getElementById('graphView').style.display = 'none';
+            document.getElementById('resultView').style.display = 'block';
+            document.getElementById('resultView').innerHTML = tab.tableHtml;
+            document.querySelectorAll('.rtab').forEach(function(t) { t.classList.remove('active'); });
+            document.getElementById('tab-table').classList.add('active');
+        } else {
+            resultWrap.style.display = 'none';
+        }
+    }
+
+    function renderHistory() {
+        var list = document.getElementById('historyList');
+        var countEl = document.getElementById('historyCount');
+        var clearBtn = document.getElementById('historyClear');
+        countEl.textContent = history.length > 0 ? '(' + history.length + ')' : '';
+        clearBtn.style.display = history.length > 0 ? 'inline-block' : 'none';
+        list.innerHTML = history.slice(0, 20).map(function(q, i) {
+            return '<div class="history-item" onclick="setQuery(\'' + q.replace(/'/g, "\\'") + '\')" title="' + escapeHtml(q) + '">' +
+                '<span class="history-num">' + (i + 1) + '</span>' +
+                '<span class="history-query">' + escapeHtml(truncate(q, 90)) + '</span>' +
+                '<span class="history-run">▶</span>' +
+                '</div>';
+        }).join('') || '<div class="history-empty">No queries yet — run one above</div>';
+    }
+
+    window.clearHistory = function() {
+        history = [];
+        localStorage.removeItem('hive_queries');
+        renderHistory();
+    };
+
+    function addHistory(q) {
+        history = [q].concat(history.filter(function(h) { return h !== q; })).slice(0, 50);
+        localStorage.setItem('hive_queries', JSON.stringify(history));
+        renderHistory();
+    }
+
+    window.setQuery = function(q) {
+        queryInput.value = q;
+        queryInput.focus();
+        var tab = getTab(_currentTabId);
+        if (tab) tab.query = q;
+        runQuery();
+    };
+
+    window.setRange = function(r) {
+        currentRange = r;
+        document.querySelectorAll('.qa-btn').forEach(function(b) { b.classList.remove('qa-active'); });
+        if (r) {
+            document.getElementById('btn-' + r).classList.add('qa-active');
+        } else {
+            document.querySelector('.qa-btn:first-child').classList.add('qa-active');
+        }
+        var tab = getTab(_currentTabId);
+        if (tab) tab.range = r;
+    };
+
+    window.switchResultView = function(view) {
+        document.querySelectorAll('.rtab').forEach(function(t) { t.classList.remove('active'); });
+        document.getElementById('tab-' + view).classList.add('active');
+        var graphView = document.getElementById('graphView');
+        var resultView = document.getElementById('resultView');
+        var tab = getTab(_currentTabId);
+        if (tab) tab.view = view;
+        if (view === 'graph') {
+            graphView.style.display = 'block';
+            resultView.style.display = 'none';
+            if (!queryChart && window._lastResult) {
+                var results = window._lastResult.data.result || [];
+                if (results.length > 0 && results[0].values) {
+                    renderGraph(results);
+                }
+            }
+        } else {
+            graphView.style.display = 'none';
+            resultView.style.display = 'block';
+            resultView.innerHTML = window._lastResult
+                ? (view === 'raw' ? '<pre class="raw-json">' + JSON.stringify(window._lastResult, null, 2) + '</pre>' : window._lastTable)
+                : '';
+        }
+    };
+
+    window.copyResults = function() {
+        if (window._lastResult) {
+            navigator.clipboard.writeText(JSON.stringify(window._lastResult, null, 2)).then(function() {
+                var btn = event.target;
+                btn.textContent = '✓ Copied';
+                setTimeout(function() { btn.textContent = '📋 Copy'; }, 1500);
+            });
+        }
+    };
+
+    function runQuery() {
+        var q = queryInput.value.trim();
+        if (!q) return;
+
+        addHistory(q);
+        queryError.style.display = 'none';
+        resultWrap.style.display = 'none';
+        queryStats.style.display = 'none';
+
+        var step = document.getElementById('stepInput').value.trim() || '60s';
+        var url;
+
+        if (currentRange) {
+            url = '/metrics/api/query_range?q=' + encodeURIComponent(q) + '&start=-' + currentRange + '&step=' + step;
+        } else {
+            url = '/metrics/api/query?q=' + encodeURIComponent(q);
+        }
+
+        var t0 = performance.now();
+
+        fetch(url)
+            .then(function(r) {
+                if (!r.ok) {
+                    return r.text().then(function(t) {
+                        throw new Error('HTTP ' + r.status + ': ' + t.substring(0, 200));
+                    });
+                }
+                return r.json();
+            })
+            .then(function(data) {
+                var dt = (performance.now() - t0).toFixed(0);
+                queryStats.style.display = 'flex';
+
+                if (data.status !== 'success') {
+                    queryError.style.display = 'block';
+                    queryError.innerHTML = '<strong>Query error:</strong> ' + (data.error || 'Unknown error');
+                    document.getElementById('stats-time').textContent = dt + 'ms';
+                    return;
+                }
+
+                var results = data.data.result || [];
+                document.getElementById('stats-series').textContent = results.length + ' series';
+                document.getElementById('stats-time').textContent = dt + 'ms';
+
+                if (results.length === 0) {
+                    queryError.style.display = 'block';
+                    queryError.innerHTML = 'No data matched this query in the selected time range.';
+                    return;
+                }
+
+                window._lastResult = data;
+                var tableHtml = renderTable(results, currentRange ? 'range' : 'instant');
+                window._lastTable = tableHtml;
+
+                // save to current tab
+                var curTab = getTab(_currentTabId);
+                if (curTab) {
+                    curTab.results = data;
+                    curTab.tableHtml = tableHtml;
+                    curTab.query = queryInput.value;
+                    curTab.range = currentRange;
+                    curTab.step = document.getElementById('stepInput').value.trim() || '60s';
+                    if (curTab.name === 'Query ' + curTab.id) {
+                        var short = curTab.query.replace(/^100\s*-\s*\(?\s*/, '').replace(/\s*\)?\s*\*\s*100$/, '').substring(0, 30);
+                        curTab.name = short + '…';
+                        renderTabBar();
+                    }
+                }
+
+                resultWrap.style.display = 'block';
+
+                if (currentRange && results.length > 0 && results[0].values) {
+                    document.getElementById('graphView').style.display = 'block';
+                    document.getElementById('resultView').style.display = 'none';
+                    document.querySelectorAll('.rtab').forEach(function(t) { t.classList.remove('active'); });
+                    document.getElementById('tab-graph').classList.add('active');
+                    renderGraph(results);
+                } else {
+                    document.getElementById('graphView').style.display = 'none';
+                    document.getElementById('resultView').style.display = 'block';
+                    document.getElementById('resultView').innerHTML = tableHtml;
+                    document.querySelectorAll('.rtab').forEach(function(t) { t.classList.remove('active'); });
+                    document.getElementById('tab-table').classList.add('active');
+                }
+            })
+            .catch(function(e) {
+                queryError.style.display = 'block';
+                queryError.innerHTML = '<strong>Request failed:</strong> ' + e.message;
+                document.getElementById('stats-time').textContent = (performance.now() - t0).toFixed(0) + 'ms';
+            });
+    }
+    window.runQuery = runQuery;
+
+    function renderTable(results, mode) {
+        if (results.length === 0) return '';
+
+        var cols = collectColumns(results, mode);
+        var rows = results.slice(0, 200);
+        var html = '<div class="query-table-wrap"><table class="query-table"><thead><tr>';
+        for (var i = 0; i < cols.length; i++) {
+            html += '<th>' + cols[i] + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+
+        for (var r = 0; r < rows.length; r++) {
+            html += '<tr>';
+            for (var c = 0; c < cols.length; c++) {
+                var val = getCellValue(rows[r], cols[c], mode);
+                html += '<td>' + formatCell(val) + '</td>';
+            }
+            html += '</tr>';
+        }
+
+        html += '</tbody></table></div>';
+        if (results.length > 200) {
+            html += '<div class="query-table-note">Showing 200 of ' + results.length + ' series</div>';
+        }
+        return html;
+    }
+
+    function collectColumns(results, mode) {
+        var cols = [];
+        if (mode === 'range') {
+            cols.push('Timestamp');
+        }
+        var seenLabels = new Set();
+        for (var i = 0; i < results.length; i++) {
+            var metric = results[i].metric || {};
+            var keys = Object.keys(metric).sort();
+            for (var k = 0; k < keys.length; k++) {
+                if (!seenLabels.has(keys[k])) {
+                    seenLabels.add(keys[k]);
+                    cols.push(keys[k]);
+                }
+            }
+        }
+        cols.push('Value');
+        return cols;
+    }
+
+    function getCellValue(result, col, mode) {
+        if (col === 'Timestamp') {
+            var vals = result.values || [];
+            if (vals.length > 0) {
+                return new Date(vals[vals.length - 1][0] * 1000).toISOString();
+            }
+            return '';
+        }
+        if (col === 'Value') {
+            if (mode === 'instant' && result.value) {
+                return parseFloat(result.value[1]);
+            }
+            if (mode === 'range') {
+                var vals = result.values || [];
+                if (vals.length > 0) return parseFloat(vals[vals.length - 1][1]);
+            }
+            return '';
+        }
+        return (result.metric || {})[col] || '';
+    }
+
+    function formatCell(val) {
+        if (typeof val === 'number') {
+            if (val === Math.floor(val) && Math.abs(val) < 1000000) return val.toString();
+            return val.toFixed(4);
+        }
+        if (!val) return '<span class="cell-null">—</span>';
+        return escapeHtml(String(val));
+    }
+
+    function renderGraph(results) {
+        var theme = window.getChartThemeColors();
+        var palette = window.getChartPalette();
+        var axisColor = theme.textMuted;
+        var canvas = document.getElementById('queryChart');
+        var ctx = canvas.getContext('2d');
+        if (queryChart) { queryChart.destroy(); queryChart = null; }
+
+        var series = results.slice(0, 20);
+        var longestValues = series.reduce(function(a, s) { return s.values.length > a.length ? s.values : a; }, []);
+        var labels = longestValues.map(function(v) {
+            var d = new Date(v[0] * 1000);
+            if (currentRange === '24h') return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+            return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+        });
+
+        var datasets = series.map(function(s, i) {
+            var color = palette[i % palette.length];
+            var metric = s.metric || {};
+            var labelParts = Object.keys(metric).filter(function(k) { return k !== '__name__'; })
+                .map(function(k) { return metric[k]; });
+            var label = labelParts.length > 0 ? labelParts.join(' / ') : (metric.__name__ || 'series ' + i);
+            return {
+                label: label,
+                data: s.values.map(function(v) { return parseFloat(v[1]); }),
+                borderColor: color,
+                backgroundColor: window.colorWithAlpha(color, 0.08),
+                fill: series.length === 1,
+                tension: 0.35,
+                pointRadius: 0,
+                borderWidth: 2
+            };
+        });
+
+        queryChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: labels, datasets: datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 300 },
+                interaction: { intersect: false, mode: 'index' },
+                scales: {
+                    x: {
+                        grid: { display: false },
+                        ticks: { maxTicksLimit: 8, maxRotation: 0, color: axisColor, font: { size: 10 } },
+                        title: { display: true, text: 'Time', color: axisColor, font: { size: 11 } }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: theme.gridLine },
+                        ticks: { color: axisColor, font: { size: 10 } },
+                        title: { display: true, text: 'Value', color: axisColor, font: { size: 11 } }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: series.length > 1 && series.length <= 10,
+                        position: 'bottom',
+                        labels: { color: theme.textMuted, boxWidth: 12, padding: 8, font: { size: 11 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(c) { return c.dataset.label + ': ' + c.parsed.y.toFixed(2); }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    document.body.addEventListener('vespid:themechange', function() {
+        if (queryChart) {
+            queryChart.destroy();
+            queryChart = null;
+        }
+        var graphView = document.getElementById('graphView');
+        if (graphView.style.display !== 'none' && window._lastResult) {
+            var results = window._lastResult.data.result || [];
+            if (results.length > 0 && results[0].values) {
+                renderGraph(results);
+            }
+        }
+    });
+
+    function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function truncate(s, n) { return s.length > n ? s.substring(0, n) + '…' : s; }
+
+    // ── PromQL Formatter ─────────────────────────────────
+    function isPromqlOp(ch) {
+        return ch === '+' || ch === '-' || ch === '*' || ch === '/' || ch === '%' || ch === '^';
+    }
+    function isPromqlIdentChar(ch) {
+        return /[a-zA-Z0-9_:.]/.test(ch);
+    }
+
+    window.formatQuery = function() {
+        var q = queryInput.value;
+        if (!q.trim()) return;
+        var formatted = formatPromQL(q);
+        if (formatted !== q) {
+            queryInput.value = formatted;
+            var tab = getTab(_currentTabId);
+            if (tab) tab.query = formatted;
+        }
+    };
+
+    function formatPromQL(s) {
+        s = s.trim();
+        // Normalize whitespace
+        s = s.replace(/\s+/g, ' ');
+        s = s.replace(/\s*([,{}()\[\]])\s*/g, '$1');
+        s = s.replace(/\s+(=~|!=|!~|<=|>=|==|=)\s*/g, ' $1 ');
+
+        // Tokenize with depth tracking
+        var tokens = [];
+        var i = 0;
+        while (i < s.length) {
+            var ch = s[i];
+            if (/\s/.test(ch)) { i++; continue; }
+
+            // Multi-char operators
+            var two = s.substr(i, 2);
+            if (two === '=~' || two === '!~' || two === '<=' || two === '>=' || two === '==' || two === '!=') {
+                tokens.push({ t: 'op', v: two }); i += 2; continue;
+            }
+            if (two === 'or' || two === 'and' || two === 'on' || two === 'by') {
+                var next = s[i + 2];
+                if (next && isPromqlIdentChar(next)) { tokens.push({ t: 'id', v: ch }); i++; continue; }
+                tokens.push({ t: 'kw', v: two }); i += 2; continue;
+            }
+            if (s.substr(i, 6) === 'unless') {
+                var nxt = s[i + 6];
+                if (nxt && isPromqlIdentChar(nxt)) { tokens.push({ t: 'id', v: ch }); i++; continue; }
+                tokens.push({ t: 'kw', v: 'unless' }); i += 6; continue;
+            }
+            if (s.substr(i, 10) === 'group_left') { tokens.push({ t: 'kw', v: 'group_left' }); i += 10; continue; }
+            if (s.substr(i, 11) === 'group_right') { tokens.push({ t: 'kw', v: 'group_right' }); i += 11; continue; }
+            if (s.substr(i, 7) === 'without') { tokens.push({ t: 'kw', v: 'without' }); i += 7; continue; }
+            if (s.substr(i, 5) === 'offset') { tokens.push({ t: 'kw', v: 'offset' }); i += 5; continue; }
+
+            if (ch === ',' || ch === '(' || ch === ')' || ch === '{' || ch === '}' || ch === '[' || ch === ']') {
+                tokens.push({ t: ch, v: ch }); i++; continue;
+            }
+
+            if (isPromqlOp(ch)) {
+                tokens.push({ t: 'op', v: ch }); i++; continue;
+            }
+
+            if (ch === '"' || ch === "'") {
+                var quote = ch;
+                var j = i + 1;
+                while (j < s.length && s[j] !== quote) j++;
+                tokens.push({ t: 'str', v: s.substring(i, j + 1) });
+                i = j + 1;
+                continue;
+            }
+
+            // Number or identifier
+            var end = i;
+            while (end < s.length && (isPromqlIdentChar(s[end]) || s[end] === '.' || s[end] === '-' || s[end] === '+')) end++;
+            if (end > i) {
+                var word = s.substring(i, end);
+                var type = /^[0-9]/.test(word) ? 'num' : 'id';
+                tokens.push({ t: type, v: word });
+                i = end;
+                continue;
+            }
+
+            tokens.push({ t: ch, v: ch });
+            i++;
+        }
+
+        // Build output with depth tracking
+        var lines = [];
+        var depth = 0;
+        var INDENT = '    ';
+        var line = '';
+        var inBrackets = false;
+        var bracketDepth = 0;
+
+        function emit(text) {
+            line += text;
+        }
+        function breakLine(extraDepth) {
+            if (line.trim()) {
+                lines.push({ text: line.trim(), depth: depth + (extraDepth || 0) });
+            }
+            line = '';
+        }
+        function flushLine() {
+            if (line.trim()) {
+                lines.push({ text: line.trim(), depth: depth });
+            }
+            line = '';
+        }
+
+        for (var t = 0; t < tokens.length; t++) {
+            var tok = tokens[t];
+            var prev = t > 0 ? tokens[t - 1] : null;
+            var next = t < tokens.length - 1 ? tokens[t + 1] : null;
+
+            if (tok.t === '{') {
+                if (line.trim()) flushLine();
+                lines.push({ text: '{', depth: depth });
+                depth++;
+                inBrackets = true;
+                bracketDepth = 0;
+                continue;
+            }
+
+            if (tok.t === '}') {
+                depth = Math.max(0, depth - 1);
+                flushLine();
+                lines.push({ text: '}', depth: depth });
+                inBrackets = false;
+                continue;
+            }
+
+            if (inBrackets) {
+                if (tok.t === ',') {
+                    emit(',');
+                    breakLine(1);
+                    continue;
+                }
+                if (tok.t === 'id') {
+                    if (line.trim()) emit(' ');
+                    emit(tok.v);
+                    // If next is = or =~ etc, no space
+                    continue;
+                }
+                if (tok.t === 'str') {
+                    emit(tok.v);
+                    continue;
+                }
+                if (tok.t === 'op') {
+                    emit(' ' + tok.v + ' ');
+                    continue;
+                }
+                emit(tok.v);
+                continue;
+            }
+
+            // Handle parentheses
+            if (tok.t === '(') {
+                // Check if prev token is a function name
+                if (prev && (prev.t === 'id' || (prev.t === ')'))) {
+                    if (prev.t === 'id') {
+                        flushLine();
+                        lines.push({ text: tok.v, depth: depth });
+                        depth++;
+                        continue;
+                    }
+                    // Check if this is the start of a by/without clause - keep on same line
+                    flushLine();
+                    lines.push({ text: '(', depth: depth });
+                    depth++;
+                } else {
+                    emit('(');
+                    // If next token suggests multi-line, break
+                    if (next && (next.t === 'id' || next.t === '(')) {
+                        // look ahead for comma
+                        var hasComma = false;
+                        for (var k = t + 1; k < Math.min(t + 20, tokens.length); k++) {
+                            if (tokens[k].t === ',') { hasComma = true; break; }
+                            if (tokens[k].t === ')') break;
+                        }
+                        if (hasComma && line.length > 50) {
+                            breakLine(0);
+                            depth++;
+                            continue;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            if (tok.t === ')') {
+                if (depth > 0) depth--;
+                // If we have content on the current line from the previous token, include )
+                if (!line.trim() && lines.length > 0) {
+                    // Check if ) is a standalone closing line
+                    depth = Math.max(0, depth);
+                    lines.push({ text: ')', depth: depth });
+                } else {
+                    emit(')');
+                }
+                continue;
+            }
+
+            // Binary operators - break before them
+            if (tok.t === 'op' && prev && prev.t !== 'op' && prev.t !== '(' && prev.t !== ',' && prev.t !== '[' && prev.t !== 'kw') {
+                // Only break at depth 0 or in the top-level expression
+                if (line.length > 40) {
+                    flushLine();
+                    depth = Math.max(0, depth);
+                    lines.push({ text: tok.v, depth: depth });
+                    continue;
+                }
+                emit(' ' + tok.v + ' ');
+                continue;
+            }
+
+            if (tok.t === 'kw') {
+                // by, without, on, group_left, group_right, offset, and, or, unless
+                if (tok.v === 'by' || tok.v === 'without' || tok.v === 'on' || tok.v === 'group_left' || tok.v === 'group_right') {
+                    flushLine();
+                    lines.push({ text: tok.v, depth: depth });
+                    continue;
+                }
+                if (tok.v === 'and' || tok.v === 'or' || tok.v === 'unless') {
+                    flushLine();
+                    lines.push({ text: tok.v, depth: depth });
+                    continue;
+                }
+                emit(' ' + tok.v + ' ');
+                continue;
+            }
+
+            if (tok.t === ',') {
+                emit(',');
+                // If inside function args, break line
+                if (depth > 0 || line.length > 60) {
+                    breakLine(0);
+                } else {
+                    emit(' ');
+                }
+                continue;
+            }
+
+            if (tok.t === '[') {
+                emit('[');
+                continue;
+            }
+            if (tok.t === ']') {
+                emit(']');
+                continue;
+            }
+
+            // Identifier, number, string
+            if (line.trim() && !prev) {
+                // Shouldn't happen
+            }
+            if (line.trim() && tok.t !== 'str') {
+                emit(' ');
+            }
+            emit(tok.v);
+        }
+        flushLine();
+
+        // Build final string
+        var out = '';
+        for (var l = 0; l < lines.length; l++) {
+            var ln = lines[l];
+            if (l > 0) out += '\n';
+            var d = Math.max(0, ln.depth);
+            if (ln.text === ')' || ln.text === ']') d = Math.max(0, d);
+            out += INDENT.repeat(d) + ln.text;
+        }
+
+        // Clean up: remove trailing spaces, collapse multiple blank lines
+        out = out.replace(/ +\n/g, '\n');
+        out = out.replace(/\n{3,}/g, '\n\n');
+
+        return out.trim();
+    }
+
+    var filterTimer = null;
+
+    function loadMetricNames() {
+        fetch('/metrics/api/labels/__name__')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var names = (data && data.data) || [];
+                if (names.length === 0) {
+                    names = [
+                        'vespid_monitor_cpu_idle_seconds_total',
+                        'vespid_monitor_memory_used_percent',
+                        'vespid_monitor_disk_used_percent',
+                        'vespid_monitor_network_bytes_recv_total',
+                        'vespid_monitor_systemd_unit_active',
+                        'vespid_monitor_process_zombies_count',
+                        'vespid_monitor_psi_avg60',
+                        'vespid_monitor_exec_exit_code',
+                    ];
+                }
+                window._metricNames = names.sort();
+                renderMetricList(names, '');
+            })
+            .catch(function() {
+                window._metricNames = [
+                    'vespid_monitor_cpu_idle_seconds_total',
+                    'vespid_monitor_memory_used_percent',
+                    'vespid_monitor_disk_used_percent',
+                ];
+                renderMetricList(window._metricNames, '');
+            });
+    }
+
+    function renderMetricList(names, filter) {
+        var f = filter.toLowerCase().trim();
+        var filtered = f ? names.filter(function(n) { return n.toLowerCase().indexOf(f) !== -1; }) : names;
+        var sliced = filtered.slice(0, 100);
+        var html = sliced.map(function(n) {
+            var short = n.replace(/^vespid_monitor_/, '');
+            return '<div class="metric-item" onclick="insertMetric(\'' + n + '\')" title="' + n + '">' +
+                '<span class="metric-name">' + escapeHtml(short) + '</span>' +
+                '</div>';
+        }).join('');
+        var moreHtml = filtered.length > 100
+            ? '<div class="metric-list-more">+ ' + (filtered.length - 100) + ' more matching &mdash; refine filter</div>'
+            : '';
+        document.getElementById('metricList').innerHTML = html + moreHtml;
+        document.getElementById('metricCount').textContent = names.length + ' metrics';
+    }
+
+    document.getElementById('metricSearch').addEventListener('input', function() {
+        var q = this.value;
+        clearTimeout(filterTimer);
+        filterTimer = setTimeout(function() {
+            if (window._metricNames) renderMetricList(window._metricNames, q);
+        }, 200);
+    });
+
+    window.insertMetric = function(name) {
+        queryInput.value = queryInput.value.trim()
+            ? queryInput.value + '\n' + name
+            : name;
+        queryInput.focus();
+    };
+
+    // ── Saved Queries ──────────────────────────────────────────
+
+    window.loadSavedQueries = function() {
+        fetch('/metrics/api/queries').then(function(r) { return r.json(); }).then(function(data) {
+            var list = document.getElementById('savedList');
+            var queries = data.queries || [];
+            document.getElementById('savedCount').textContent = queries.length;
+            if (queries.length === 0) {
+                list.innerHTML = '<div class="saved-empty" style="font-size:0.72rem;color:var(--text-muted);padding:0.5rem 0">No saved queries yet.</div>';
+                return;
+            }
+            list.innerHTML = queries.map(function(q) {
+                return '<div class="saved-item" data-query="' + escapeHtml(q.query) + '" title="' + escapeHtml(q.query) + '" style="display:flex;align-items:center;gap:0.3rem;padding:0.35rem 0.5rem;cursor:pointer;border-bottom:1px solid var(--border-color);font-size:0.78rem;border-radius:4px">' +
+                    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(q.name) + '</span>' +
+                    '<span class="saved-del" data-id="' + q.id + '" style="cursor:pointer;color:var(--text-muted);font-size:0.68rem;padding:0 0.2rem" title="Delete">✕</span>' +
+                    '</div>';
+            }).join('');
+            list.querySelectorAll('.saved-item').forEach(function(el) {
+                el.addEventListener('click', function(e) {
+                    if (e.target.classList.contains('saved-del')) return;
+                    setQuery(el.getAttribute('data-query'));
+                });
+            });
+            list.querySelectorAll('.saved-del').forEach(function(el) {
+                el.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    deleteSavedQuery(parseInt(el.getAttribute('data-id')));
+                });
+            });
+        }).catch(function() {});
+    };
+
+    window.promptSaveQuery = function() {
+        var tab = getTab(_currentTabId);
+        var q = tab ? tab.query : queryInput.value.trim();
+        if (!q) return;
+        document.getElementById('saveQueryText').value = q;
+        document.getElementById('saveNameInput').value = '';
+        document.getElementById('saveModal').style.display = 'flex';
+        document.getElementById('saveNameInput').focus();
+    };
+
+    window.doSaveQuery = function() {
+        var name = document.getElementById('saveNameInput').value.trim();
+        var q = document.getElementById('saveQueryText').value.trim();
+        if (!name || !q) return;
+        document.getElementById('saveConfirmBtn').disabled = true;
+        fetch('/metrics/api/queries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, query: q })
+        }).then(function(r) {
+            document.getElementById('saveConfirmBtn').disabled = false;
+            if (r.ok) {
+                document.getElementById('saveModal').style.display = 'none';
+                loadSavedQueries();
+            }
+        }).catch(function() { document.getElementById('saveConfirmBtn').disabled = false; });
+    };
+
+    window.deleteSavedQuery = function(id) {
+        fetch('/metrics/api/queries/' + id, { method: 'DELETE' }).then(function(r) {
+            if (r.ok) loadSavedQueries();
+        }).catch(function() {});
+    };
+
+    renderHistory();
+    loadMetricNames();
+    loadSavedQueries();
+    // Create first query tab
+    var firstTab = createTab('Query 1', queryInput.value);
+    _tabs.push(firstTab);
+    _currentTabId = firstTab.id;
+    renderTabBar();
+    runQuery();
+})();
+</script>
+
+<style>
+.qt-bar {
+    display: flex; align-items: stretch; gap: 0;
+    margin-bottom: 0.75rem; border-bottom: 1px solid var(--border-color);
+    min-height: 32px;
+}
+.qt-tabs {
+    display: flex; gap: 0; overflow-x: auto; flex: 1;
+    scrollbar-width: none;
+}
+.qt-tabs::-webkit-scrollbar { display: none; }
+.qt-tab {
+    display: flex; align-items: center; gap: 0.35rem;
+    padding: 0.35rem 0.6rem 0.35rem 0.85rem;
+    font-size: 0.75rem; color: var(--text-muted); cursor: pointer;
+    border: 1px solid transparent; border-bottom: 2px solid transparent;
+    margin-bottom: -1px; white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s; user-select: none;
+    background: none; border-radius: 6px 6px 0 0;
+}
+.qt-tab:hover { color: var(--text); background: color-mix(in srgb, var(--text-muted) 4%, transparent); }
+.qt-tab-active { color: var(--text); border-bottom-color: var(--accent); background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.qt-tab-name { overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+.qt-tab-close {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; border-radius: 3px; border: none;
+    background: none; color: var(--text-muted); font-size: 0.75rem;
+    cursor: pointer; padding: 0; line-height: 1; flex-shrink: 0;
+    opacity: 0; transition: opacity 0.15s;
+}
+.qt-tab:hover .qt-tab-close, .qt-tab-active .qt-tab-close { opacity: 0.7; }
+.qt-tab-close:hover { opacity: 1 !important; background: color-mix(in srgb, var(--text-muted) 15%, transparent); }
+.qt-add {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; flex-shrink: 0; border: none; background: none;
+    color: var(--text-muted); font-size: 1.1rem; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color 0.15s; padding: 0; line-height: 1;
+}
+.qt-add:hover { color: var(--accent); }
+
+.query-layout { display: grid; grid-template-columns: minmax(260px, 320px) 1fr; gap: 1.5rem; }
+.query-sidebar { display: flex; flex-direction: column; gap: 1rem; }
+.query-main { display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+
+.sidebar-section { border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.sidebar-title {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 0.5rem 0.75rem; background: var(--bg-card); color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+}
+.sidebar-search-wrap { padding: 0.4rem; }
+.sidebar-search {
+    width: 100%; padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.7rem;
+    border: 1px solid var(--border-color); background: var(--bg-input, var(--bg-card));
+    color: var(--text); box-sizing: border-box;
+}
+.sidebar-search:focus { outline: none; border-color: var(--accent); }
+
+.metric-list { max-height: 360px; overflow-y: auto; }
+.metric-list-loading { padding: 0.5rem 0.75rem; font-size: 0.72rem; color: var(--text-muted); }
+.metric-list-empty { padding: 0.5rem 0.75rem; font-size: 0.7rem; color: var(--text-muted); }
+.metric-list-more { padding: 0.3rem 0.75rem; font-size: 0.65rem; color: var(--text-muted); border-top: 1px solid var(--border-color); }
+.sidebar-count { font-weight: 400; color: var(--text-muted); float: right; font-size: 0.6rem; margin-top: 1px; }
+.metric-item {
+    padding: 0.3rem 0.75rem; font-size: 0.7rem; cursor: pointer; color: var(--text-muted);
+    font-family: 'SF Mono', 'Fira Code', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background 0.1s;
+}
+.metric-item:hover { background: var(--accent); color: #000; }
+.metric-name { font-size: 0.68rem; }
+
+.preset-list { padding: 0.35rem; display: flex; flex-direction: column; gap: 2px; }
+.preset-item {
+    display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.5rem;
+    border: none; border-radius: 6px; background: none; color: var(--text-muted);
+    font-size: 0.7rem; cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    transition: background 0.1s;
+}
+.preset-item:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.preset-icon { font-size: 0.75rem; flex-shrink: 0; }
+.saved-list { padding: 0.35rem; }
+.saved-item:hover { background: var(--bg-card-hover); }
+.saved-del:hover { color: var(--text) !important; }
+
+.query-input-wrap {
+    border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden;
+    background: var(--bg-card);
+}
+.query-input {
+    width: 100%; padding: 0.75rem 1rem; border: none; background: none; color: var(--text);
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 0.82rem;
+    line-height: 1.5; resize: vertical; box-sizing: border-box;
+}
+.query-input:focus { outline: none; }
+.query-input::placeholder { color: var(--text-muted); }
+.query-actions {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.4rem 0.75rem; border-top: 1px solid var(--border-color); gap: 0.5rem;
+}
+.query-actions-left { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+.qa-btn {
+    padding: 0.25rem 0.5rem; border-radius: 5px; border: 1px solid var(--border-color);
+    background: none; color: var(--text-muted); font-size: 0.68rem; cursor: pointer;
+    transition: background 0.1s, border-color 0.1s; white-space: nowrap;
+}
+.qa-btn:hover { border-color: var(--accent); color: var(--text); }
+.qa-btn.qa-active { background: var(--accent); color: #000; border-color: var(--accent); }
+.qa-icon { font-size: 0.7rem; }
+.qa-step-wrap { font-size: 0.65rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.25rem; margin-left: 0.5rem; }
+.qa-step {
+    padding: 0.2rem 0.3rem; border-radius: 4px; border: 1px solid var(--border-color);
+    background: var(--bg-input); color: var(--text); font-size: 0.65rem; font-family: monospace;
+    text-align: center; width: 40px;
+}
+.qa-run {
+    padding: 0.4rem 1rem; border-radius: 6px; border: none; background: var(--accent);
+    color: #000; font-size: 0.75rem; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s; white-space: nowrap;
+}
+.qa-run:hover { opacity: 0.85; }
+
+.query-stats {
+    display: flex; gap: 1rem; font-size: 0.7rem; color: var(--text-muted);
+}
+.query-error {
+    padding: 0.75rem 1rem; border-radius: 8px; background: #ef444415; color: #ef4444;
+    font-size: 0.78rem; border: 1px solid #ef444430;
+}
+
+.result-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border-color);
+    background: var(--bg-card); border-radius: 8px 8px 0 0;
+}
+.result-tabs { display: flex; gap: 4px; }
+.rtab {
+    padding: 0.25rem 0.6rem; border-radius: 4px; border: none; background: none;
+    color: var(--text-muted); font-size: 0.7rem; cursor: pointer;
+}
+.rtab.active { background: var(--accent); color: #000; }
+.rtab:hover:not(.active) { color: var(--text); }
+.btn-sm {
+    padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid var(--border-color);
+    background: none; color: var(--text-muted); font-size: 0.68rem; cursor: pointer;
+}
+.btn-sm:hover { border-color: var(--accent); color: var(--text); }
+
+.result-view { overflow: hidden; border-radius: 0 0 8px 8px; }
+.result-graph { height: 320px; padding: 0.75rem; border-radius: 0 0 8px 8px; background: var(--bg-card); }
+.query-table-wrap { overflow-x: auto; }
+.query-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+.query-table th {
+    padding: 0.4rem 0.6rem; text-align: left; font-weight: 600; font-size: 0.65rem;
+    color: var(--text-muted); white-space: nowrap; background: var(--bg-card);
+    border-bottom: 1px solid var(--border-color); position: sticky; top: 0;
+}
+.query-table td {
+    padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--border-color);
+    white-space: nowrap; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.68rem;
+    max-width: 300px; overflow: hidden; text-overflow: ellipsis;
+}
+.query-table tbody tr:hover { background: var(--bg-card-hover); }
+.query-table-note { padding: 0.4rem 0.75rem; font-size: 0.65rem; color: var(--text-muted); }
+.raw-json {
+    padding: 0.75rem; font-size: 0.7rem; font-family: 'SF Mono', 'Fira Code', monospace;
+    white-space: pre-wrap; overflow-x: auto; max-height: 500px; color: var(--text);
+    background: var(--bg-card); border-radius: 0 0 8px 8px;
+}
+.cell-null { color: var(--text-muted); }
+
+.query-history {
+    margin-top: 0.75rem; border: 1px solid var(--border-color); border-radius: 10px;
+    overflow: hidden; background: var(--bg-card);
+}
+.history-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color);
+}
+.history-title {
+    font-size: 0.72rem; color: var(--text-muted); cursor: pointer; user-select: none;
+    transition: color 0.1s; font-weight: 600;
+}
+.history-title:hover { color: var(--text); }
+.history-count { font-weight: 400; font-size: 0.65rem; color: var(--text-muted); }
+.history-clear {
+    padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid var(--border-color);
+    background: none; color: var(--text-muted); font-size: 0.62rem; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+}
+.history-clear:hover { border-color: #ef4444; color: #ef4444; }
+.history-list { display: flex; flex-direction: column; max-height: 240px; overflow-y: auto; }
+.history-list.collapsed { display: none; }
+.history-item {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem;
+    cursor: pointer; font-size: 0.7rem; transition: background 0.1s;
+    border-bottom: 1px solid rgba(128,128,128,0.06);
+}
+.history-item:last-child { border-bottom: none; }
+.history-item:hover { background: rgba(255,255,255,0.04); }
+.history-item:hover .history-run { opacity: 1; }
+.history-num {
+    font-size: 0.6rem; color: var(--text-muted); min-width: 16px; text-align: center;
+    opacity: 0.5;
+}
+.history-query {
+    font-family: 'SF Mono', 'Fira Code', monospace; color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+    font-size: 0.68rem;
+}
+.history-item:hover .history-query { color: var(--text); }
+.history-run {
+    font-size: 0.6rem; color: var(--accent); opacity: 0; transition: opacity 0.15s;
+    flex-shrink: 0;
+}
+.history-empty {
+    padding: 1rem 0.75rem; font-size: 0.7rem; color: var(--text-muted); text-align: center;
+}
+
+.btn-nav {
+    padding: 0.4rem 0.9rem; border: 1.5px solid var(--accent); border-radius: 8px;
+    background: transparent; color: var(--text); cursor: pointer; text-decoration: none;
+    font-size: 0.75rem; font-weight: 600; white-space: nowrap; letter-spacing: 0.02em;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.15s, color 0.2s;
+}
+.btn-nav:hover {
+    background: var(--accent); color: #000;
+    box-shadow: 0 0 14px rgba(255,230,0,0.25);
+    transform: translateY(-1px); text-decoration: none;
+}
+.mb-4 { margin-bottom: 1rem; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+
+.help-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 1.5px solid var(--accent); background: rgba(255,230,0,0.08);
+    color: var(--accent); font-size: 0.72rem; font-weight: 700;
+    cursor: pointer; vertical-align: middle; margin-left: 0.5rem;
+    transition: all 0.25s ease; position: relative;
+    box-shadow: 0 0 6px rgba(255,230,0,0.15);
+}
+.help-icon:hover {
+    background: var(--accent); color: #000;
+    box-shadow: 0 0 16px rgba(255,230,0,0.4), 0 0 4px rgba(255,230,0,0.6);
+    transform: scale(1.15);
+}
+
+.help-modal-overlay {
+    position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.help-modal {
+    background: var(--bg-card, #1a1a2e); border: 1px solid var(--border-color);
+    border-radius: 12px; width: 100%; max-width: 640px; max-height: 80vh;
+    display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.help-modal-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-color);
+}
+.help-modal-header h3 { margin: 0; font-size: 0.9rem; color: var(--text); }
+.help-modal-close {
+    background: none; border: none; color: var(--text-muted); font-size: 1.4rem;
+    cursor: pointer; line-height: 1; padding: 0 0.25rem;
+}
+.help-modal-close:hover { color: var(--text); }
+.help-modal-body { padding: 1rem 1.25rem; overflow-y: auto; }
+.help-section { margin-bottom: 1rem; }
+.help-section-title {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--accent); margin-bottom: 0.4rem;
+}
+.help-example {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;
+    padding: 0.3rem 0; border-bottom: 1px solid rgba(128,128,128,0.1);
+}
+.help-example code {
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.72rem; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.help-example span {
+    font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+    .query-layout { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}

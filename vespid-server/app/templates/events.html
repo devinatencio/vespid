@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+{% block title %}Events — Vespid Server{% endblock %}
+{% block content %}
+<h1 class="page-title">🔍 Event Search</h1>
+
+<style>
+.event-row:hover {
+    background: var(--hover-bg, rgba(255,255,255,0.03));
+}
+.event-detail-content {
+    padding: 1rem 1.25rem;
+    max-height: 600px;
+    overflow: auto;
+}
+.event-json {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text);
+    background: transparent;
+}
+.event-row td:first-child::before {
+    content: '▶';
+    display: inline-block;
+    margin-right: 0.4rem;
+    font-size: 0.65rem;
+    transition: transform 0.15s;
+    color: var(--text-muted);
+}
+.event-row.expanded td:first-child::before {
+    transform: rotate(90deg);
+}
+/* Sticky action bar */
+.events-sticky-bar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--card-bg, #1e293b);
+    border: 1px solid var(--border-color, #334155);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.events-sticky-bar .quick-search {
+    flex: 1;
+    min-width: 200px;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #334155);
+    background: var(--bg-input, #0f172a);
+    color: var(--text);
+    font-size: 0.9rem;
+}
+.events-sticky-bar .quick-search:focus {
+    outline: none;
+    border-color: var(--primary-color, #3b82f6);
+}
+/* Filter chips */
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.78rem;
+    border-radius: 999px;
+    background: var(--primary-color, #3b82f6);
+    color: #fff;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.filter-chip .chip-remove {
+    cursor: pointer;
+    font-size: 0.7rem;
+    line-height: 1;
+    opacity: 0.8;
+}
+.filter-chip .chip-remove:hover {
+    opacity: 1;
+}
+.filter-active-count {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+</style>
+
+<!-- ════════════════ Sticky bar: quick search + actions ════════════════ -->
+{% set active_count = filters.keys()|reject('equalto', 'q')|list|length + (1 if filters.get('q') else 0) %}
+<div class="events-sticky-bar" id="events-sticky-bar">
+    <input type="text" class="quick-search" id="events-quick-search"
+           placeholder="Search IP, event type, country, node…"
+           value="{{ filters.get('q', '') }}"
+           onkeydown="if(event.key==='Enter'){event.preventDefault();quickSearchEvents()}">
+    <button class="btn" onclick="quickSearchEvents()">Search</button>
+    <button class="btn btn-sm btn-secondary" onclick="toggleEventsFilters()" style="white-space:nowrap;">
+        <span id="events-filter-toggle-icon">▾</span> Filters{% if active_count > 0 %}<span class="filter-active-count"> ({{ active_count }})</span>{% endif %}
+    </button>
+    {% if active_count > 0 %}
+    <a href="{{ url_for('dashboard.events') }}" class="btn btn-sm btn-secondary">Clear</a>
+    {% endif %}
+    <span id="events-filter-indicator" class="htmx-indicator" style="margin-left:auto;">Refreshing…</span>
+</div>
+
+<!-- ════════════════ Collapsible detailed filters ════════════════ -->
+<div id="events-detailed-filters" style="display:none;">
+    <div class="card">
+        <h2 class="card-title">Detailed Filters</h2>
+        <form id="events-filter-form" class="form-inline" hx-get="{{ url_for('dashboard.events') }}" hx-target="#search-results" hx-swap="outerHTML" hx-indicator="#events-filter-indicator">
+            <input type="hidden" name="q" value="{{ filters.get('q', '') }}">
+            <div class="form-group">
+                <label for="source_ip">Source IP</label>
+                <input type="text" id="source_ip" name="source_ip" placeholder="203.0.113.42" value="{{ filters.get('source_ip', '') }}">
+            </div>
+            <div class="form-group">
+                <label for="node">Node</label>
+                <input type="text" id="node" name="node" placeholder="web01" value="{{ filters.get('node', filters.get('node_id', filters.get('node_name', ''))) }}">
+            </div>
+            <div class="form-group">
+                <label for="event_type">Event Type</label>
+                <select id="event_type" name="event_type">
+                    <option value="">All (excl. NFT_ACTION)</option>
+                    <option value="__all__" {% if selected_event_type == '__all__' %}selected{% endif %}>All Events</option>
+                    {% for et in event_types|default([]) %}
+                    <option value="{{ et }}" {% if selected_event_type == et %}selected{% endif %}>{{ et }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="geo_country">Country</label>
+                <input type="text" id="geo_country" name="geo_country" placeholder="CN" value="{{ filters.get('geo_country', '') }}">
+            </div>
+            <div class="form-group">
+                <label for="events-start_time">Start Time</label>
+                <input type="datetime-local" id="events-start_time" name="start_time" value="{{ start_raw_display }}">
+            </div>
+            <div class="form-group">
+                <label for="events-end_time">End Time</label>
+                <input type="datetime-local" id="events-end_time" name="end_time" value="{{ end_raw_display }}">
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+                <label style="font-size:0.75rem;">Quick Dates</label>
+                <div style="display:flex;gap:0.25rem;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setEventsQuickDate(1, 'hours')" style="font-size:0.7rem;padding:0.2rem 0.5rem;">1h</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setEventsQuickDate(6, 'hours')" style="font-size:0.7rem;padding:0.2rem 0.5rem;">6h</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setEventsQuickDate(24, 'hours')" style="font-size:0.7rem;padding:0.2rem 0.5rem;">24h</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setEventsQuickDate(7, 'days')" style="font-size:0.7rem;padding:0.2rem 0.5rem;">7d</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setEventsQuickDate(30, 'days')" style="font-size:0.7rem;padding:0.2rem 0.5rem;">30d</button>
+                    <button type="button" class="btn btn-sm btn-secondary" onclick="setEventsQuickDate(null, null)" style="font-size:0.7rem;padding:0.2rem 0.5rem;">Clear</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="events-per_page">Per Page</label>
+                <select id="events-per_page" name="per_page">
+                    <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                    <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
+                </select>
+            </div>
+            <div class="form-group" style="align-self:flex-end;">
+                <label>
+                    <input type="checkbox" id="events-auto-refresh" onchange="toggleEventsRefresh(this.checked)">
+                    Auto-refresh (30s)
+                </label>
+            </div>
+            <div class="form-group">
+                <button type="submit" class="btn">Search</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Saved filters -->
+    <div class="card" style="padding:0.75rem 1rem;">
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <label for="events-saved-filter-select" style="font-weight:500;font-size:0.85rem;">Saved Filters:</label>
+            <select id="events-saved-filter-select" style="padding:0.3rem 0.5rem;border-radius:4px;border:1px solid var(--border-color);background:var(--card-bg);color:var(--text-color);font-size:0.8rem;min-width:180px;">
+                <option value="">— Select —</option>
+            </select>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="loadEventsFilter()" style="font-size:0.75rem;">Load</button>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="saveEventsFilter()" style="font-size:0.75rem;">💾 Save Current</button>
+            <button type="button" class="btn btn-sm btn-danger" onclick="deleteEventsFilter()" style="font-size:0.75rem;">✕ Delete</button>
+        </div>
+    </div>
+</div>
+
+<!-- ════════════════ Filter chips ════════════════ -->
+{% if filters %}
+<div id="events-filter-chips" style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.75rem;align-items:center;">
+    {% for key, value in filters.items() if key != 'start_time' and key != 'end_time' and key != 'q' and value %}
+    {% set label = {'source_ip': 'IP', 'node': 'Node', 'event_type': 'Type', 'geo_country': 'Country'}.get(key, key) %}
+    {% set chip_url = url_for('dashboard.events', **dict(filters, **{key: ''})) %}
+    <span class="filter-chip">
+        {{ label }}: {{ value }}
+        <a href="{{ chip_url }}" class="chip-remove" hx-get="{{ chip_url }}" hx-target="#search-results" hx-swap="outerHTML" title="Remove filter">✕</a>
+    </span>
+    {% endfor %}
+    {% if filters.get('start_time') or filters.get('end_time') %}
+    <span class="filter-chip">
+        Time: {{ filters.get('start_time','…')|replace('T',' ') }} → {{ filters.get('end_time','…')|replace('T',' ') }}
+        <a href="{{ url_for('dashboard.events', **dict(filters, start_time='', end_time='')) }}" class="chip-remove" hx-get="{{ url_for('dashboard.events', **dict(filters, start_time='', end_time='')) }}" hx-target="#search-results" hx-swap="outerHTML" title="Clear time range">✕</a>
+    </span>
+    {% endif %}
+    {% if filters.get('q') %}
+    <span class="filter-chip">
+        Search: {{ filters.q }}
+        <a href="{{ url_for('dashboard.events', **dict(filters, q='')) }}" class="chip-remove" hx-get="{{ url_for('dashboard.events', **dict(filters, q='')) }}" hx-target="#search-results" hx-swap="outerHTML" title="Clear search">✕</a>
+    </span>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- ════════════════ Search Results ════════════════ -->
+<div class="card">
+    <h2 class="card-title">Search Results</h2>
+    <div id="search-results">
+        {% include 'fragments/search_results.html' %}
+    </div>
+</div>
+
+{% if not filters %}
+<div class="card">
+    <h2 class="card-title">Live Event Feed</h2>
+    <div hx-ext="sse" sse-connect="{{ url_for('api.event_stream') }}" sse-swap="new_event" hx-target="#live-feed-body" hx-swap="afterbegin">
+        <table>
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Node</th>
+                    <th>Source IP</th>
+                    <th>Action</th>
+                    <th>Country</th>
+                    <th class="col-asn">ASN / Org</th>
+                </tr>
+            </thead>
+            <tbody id="live-feed-body">
+                <tr><td colspan="6" style="color:var(--text-muted); text-align:center; padding:1rem;">Waiting for live events…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<script>
+function toggleEventDetail(row) {
+    var detailRow = row.nextElementSibling;
+    if (!detailRow || !detailRow.classList.contains('event-detail-row')) return;
+    var isVisible = detailRow.style.display !== 'none';
+    detailRow.style.display = isVisible ? 'none' : 'table-row';
+    row.classList.toggle('expanded', !isVisible);
+    if (!isVisible) {
+        var contextDiv = detailRow.querySelector('.log-context-container');
+        if (contextDiv && contextDiv.dataset.loaded !== 'true') {
+            contextDiv.dataset.loaded = 'true';
+            htmx.ajax('GET', '/api/v1/events/' + contextDiv.dataset.eventId + '/context', {
+                target: contextDiv, swap: 'innerHTML'
+            });
+        }
+    }
+}
+
+// ── Quick Search ───────────────────────────────────────────────────────
+function quickSearchEvents() {
+    var q = document.getElementById('events-quick-search').value;
+    var hiddenQ = document.querySelector('#events-filter-form input[name="q"]');
+    if (hiddenQ) hiddenQ.value = q;
+    document.getElementById('events-filter-form').requestSubmit();
+}
+
+// ── Toggle detailed filters ────────────────────────────────────────────
+function toggleEventsFilters() {
+    var panel = document.getElementById('events-detailed-filters');
+    var icon = document.getElementById('events-filter-toggle-icon');
+    if (!panel) return;
+    var showing = panel.style.display !== 'none';
+    panel.style.display = showing ? 'none' : 'block';
+    icon.textContent = showing ? '▸' : '▾';
+}
+
+// ── Quick Date Presets ─────────────────────────────────────────────────
+function setEventsQuickDate(amount, unit) {
+    var startInput = document.getElementById('events-start_time');
+    var endInput = document.getElementById('events-end_time');
+    if (amount === null) {
+        startInput.value = '';
+        endInput.value = '';
+        document.getElementById('events-filter-form').requestSubmit();
+        return;
+    }
+    var now = new Date();
+    var start = new Date(now);
+    if (unit === 'hours') {
+        start.setUTCHours(start.getUTCHours() - amount);
+    } else {
+        start.setUTCDate(start.getUTCDate() - amount);
+    }
+    startInput.value = toEventsDt(start);
+    endInput.value = toEventsDt(now);
+    document.getElementById('events-filter-form').requestSubmit();
+}
+function toEventsDt(date) {
+    var y = date.getUTCFullYear();
+    var m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    var d = String(date.getUTCDate()).padStart(2, '0');
+    var h = String(date.getUTCHours()).padStart(2, '0');
+    var min = String(date.getUTCMinutes()).padStart(2, '0');
+    return y + '-' + m + '-' + d + 'T' + h + ':' + min;
+}
+
+// ── Auto-refresh ───────────────────────────────────────────────────────
+var eventsRefreshInterval = null;
+function toggleEventsRefresh(enabled) {
+    if (eventsRefreshInterval) {
+        clearInterval(eventsRefreshInterval);
+        eventsRefreshInterval = null;
+    }
+    if (enabled) {
+        eventsRefreshInterval = setInterval(function() {
+            var form = document.getElementById('events-filter-form');
+            if (form) form.requestSubmit();
+        }, 30000);
+    }
+}
+
+// ── Saved Filters ──────────────────────────────────────────────────────
+function getEventsFilters() {
+    try { return JSON.parse(localStorage.getItem('vespid_events_filters') || '[]'); }
+    catch(e) { return []; }
+}
+function saveEventsFilters(filters) {
+    localStorage.setItem('vespid_events_filters', JSON.stringify(filters));
+}
+function loadEventsFilterList() {
+    var select = document.getElementById('events-saved-filter-select');
+    var filters = getEventsFilters();
+    select.innerHTML = '<option value="">— Select —</option>';
+    filters.forEach(function(f, i) {
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = f.name || 'Filter ' + (i + 1);
+        select.appendChild(opt);
+    });
+}
+function saveEventsFilter() {
+    var name = prompt('Name this filter:');
+    if (!name) return;
+    var form = document.getElementById('events-filter-form');
+    var data = new FormData(form);
+    var filter = { name: name, params: {} };
+    for (var pair of data.entries()) {
+        if (pair[1]) filter.params[pair[0]] = pair[1];
+    }
+    var filters = getEventsFilters();
+    filters.push(filter);
+    saveEventsFilters(filters);
+    loadEventsFilterList();
+}
+function loadEventsFilter() {
+    var select = document.getElementById('events-saved-filter-select');
+    var idx = select.value;
+    if (idx === '') return;
+    var filters = getEventsFilters();
+    var filter = filters[parseInt(idx)];
+    if (!filter) return;
+    var form = document.getElementById('events-filter-form');
+    for (var key in filter.params) {
+        var input = form.querySelector('[name="' + key + '"]');
+        if (input) input.value = filter.params[key];
+    }
+    form.requestSubmit();
+}
+function deleteEventsFilter() {
+    var select = document.getElementById('events-saved-filter-select');
+    var idx = select.value;
+    if (idx === '') return;
+    if (!confirm('Delete this saved filter?')) return;
+    var filters = getEventsFilters();
+    filters.splice(parseInt(idx), 1);
+    saveEventsFilters(filters);
+    loadEventsFilterList();
+    select.value = '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadEventsFilterList();
+    var cb = document.getElementById('events-auto-refresh');
+    if (cb && cb.checked) toggleEventsRefresh(true);
+    {% if filters %}toggleEventsFilters();{% endif %}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,797 @@
+<!-- Profile Detail Panel (HTMX fragment) -->
+<div class="card">
+    <h2 class="card-title">Profile: {{ profile.name }} <span class="badge">v{{ profile.version }}</span></h2>
+    <p>{{ profile.description or 'No description.' }}</p>
+    <p><small>Created by {{ profile.created_by }} on <span data-ts="{{ profile.created_at }}">{{ profile.created_at }}</span>
+    &middot; Last updated <span data-ts="{{ profile.updated_at }}">{{ profile.updated_at }}</span></small></p>
+
+    <!-- Managed Categories Indicator -->
+    <div style="margin:0.75rem 0; padding:0.5rem 0.75rem; background:#f0f7ff; border-left:3px solid #3b82f6; border-radius:3px;">
+        <strong style="font-size:0.85rem;">This profile manages:</strong>
+        <span style="font-size:0.85rem;">
+            {% set managed_cats = [] %}
+            {% for key in settings.keys() %}
+                {% if key in ('brute_force_rules', 'custom_rules') and 'Detection' not in managed_cats %}
+                    {% if managed_cats.append('Detection') %}{% endif %}
+                {% elif key in ('nft_local_block_ttl', 'excluded_http_paths') and 'Network' not in managed_cats %}
+                    {% if managed_cats.append('Network') %}{% endif %}
+                {% elif key in ('flush_interval_seconds', 'flush_batch_size', 'heartbeat_interval_seconds') and 'Telemetry' not in managed_cats %}
+                    {% if managed_cats.append('Telemetry') %}{% endif %}
+                {% elif key in ('fleet_blocklist_report_enabled', 'fleet_blocklist_subscribe_enabled', 'fleet_block_ttl_seconds', 'fleet_local_allow_list') and 'Fleet' not in managed_cats %}
+                    {% if managed_cats.append('Fleet') %}{% endif %}
+                {% elif key == 'subscriptions' and 'Feeds' not in managed_cats %}
+                    {% if managed_cats.append('Feeds') %}{% endif %}
+                {% elif key == 'log_sources' and 'Log Sources' not in managed_cats %}
+                    {% if managed_cats.append('Log Sources') %}{% endif %}
+                {% elif key in ('detection_pack_mode', 'detection_packs') and 'Detection Packs' not in managed_cats %}
+                    {% if managed_cats.append('Detection Packs') %}{% endif %}
+                {% elif key in ('suppress_rules', 'group_rules', 'threshold_rules', 'disabled_host_threat_rules') and 'Host Threats' not in managed_cats %}
+                    {% if managed_cats.append('Host Threats') %}{% endif %}
+                {% elif key == 'auditd' and 'Auditd Monitoring' not in managed_cats %}
+                    {% if managed_cats.append('Auditd Monitoring') %}{% endif %}
+                {% endif %}
+            {% endfor %}
+            {{ managed_cats | join(', ') or 'None' }}
+        </span>
+        <br><small style="color:#666;">Settings not listed here remain under local agent control.</small>
+    </div>
+</div>
+
+<!-- Edit Profile -->
+<div class="card">
+    <h2 class="card-title">Edit Profile</h2>
+    <p style="color:#666; margin-bottom:1rem;">
+        Check the sections you want this profile to manage. Unchecked sections will be removed from the profile settings.
+    </p>
+    <form method="POST" action="{{ url_for('config_dashboard.update_profile', profile_id=profile.id) }}" id="edit-profile-form-{{ profile.id }}">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label for="edit-name-{{ profile.id }}">Name</label>
+                <input type="text" id="edit-name-{{ profile.id }}" name="name" value="{{ profile.name }}" maxlength="128" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="edit-desc-{{ profile.id }}">Description</label>
+                <input type="text" id="edit-desc-{{ profile.id }}" name="description" value="{{ profile.description or '' }}" maxlength="512" class="form-control">
+            </div>
+        </div>
+
+        <!-- Hidden field for assembled JSON -->
+        <input type="hidden" name="settings" id="edit-assembled-settings-{{ profile.id }}">
+
+        <!-- Telemetry Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-telemetry-{{ profile.id }}"
+                       {{ 'checked' if 'flush_interval_seconds' in settings or 'flush_batch_size' in settings or 'heartbeat_interval_seconds' in settings }}
+                       onchange="toggleEditSection('telemetry', {{ profile.id }})">
+                Manage Telemetry Settings
+            </label>
+            <div id="edit-section-telemetry-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'flush_interval_seconds' not in settings and 'flush_batch_size' not in settings and 'heartbeat_interval_seconds' not in settings }}">
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label>Flush Interval (seconds)</label>
+                        <input type="number" id="edit-flush_interval_seconds-{{ profile.id }}" min="1" value="{{ settings.get('flush_interval_seconds', 5) }}" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Flush Batch Size</label>
+                        <input type="number" id="edit-flush_batch_size-{{ profile.id }}" min="1" value="{{ settings.get('flush_batch_size', 100) }}" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Heartbeat Interval (seconds)</label>
+                        <input type="number" id="edit-heartbeat_interval_seconds-{{ profile.id }}" min="1" value="{{ settings.get('heartbeat_interval_seconds', 300) }}" class="form-control">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-network-{{ profile.id }}"
+                       {{ 'checked' if 'nft_local_block_ttl' in settings or 'excluded_http_paths' in settings }}
+                       onchange="toggleEditSection('network', {{ profile.id }})">
+                Manage Network Settings
+            </label>
+            <div id="edit-section-network-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'nft_local_block_ttl' not in settings and 'excluded_http_paths' not in settings }}">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label>Local Block TTL (seconds)</label>
+                        <input type="number" id="edit-nft_local_block_ttl-{{ profile.id }}" min="0" value="{{ settings.get('nft_local_block_ttl', 86400) }}" class="form-control">
+                        <small style="color:#666;">How long local blocks last. 86400 = 24 hours.</small>
+                    </div>
+
+                </div>
+                <div class="form-group" style="margin-top:0.75rem;">
+                    <label>Excluded HTTP Paths (one per line)</label>
+                    <textarea id="edit-excluded_http_paths_input-{{ profile.id }}" rows="3" class="form-control">{{ settings.get('excluded_http_paths', ['/favicon.ico']) | join('\n') }}</textarea>
+                    <small style="color:#666;">Request paths that should never count toward detection thresholds (404 noise filtering).</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fleet Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-fleet-{{ profile.id }}"
+                       {{ 'checked' if 'fleet_blocklist_report_enabled' in settings or 'fleet_blocklist_subscribe_enabled' in settings or 'fleet_block_ttl_seconds' in settings }}
+                       onchange="toggleEditSection('fleet', {{ profile.id }})">
+                Manage Fleet Blocklist Settings
+            </label>
+            <div id="edit-section-fleet-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'fleet_blocklist_report_enabled' not in settings and 'fleet_blocklist_subscribe_enabled' not in settings and 'fleet_block_ttl_seconds' not in settings }}">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label><input type="checkbox" id="edit-fleet_blocklist_report_enabled-{{ profile.id }}" {{ 'checked' if settings.get('fleet_blocklist_report_enabled', true) }}> Report blocks to fleet</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="edit-fleet_blocklist_subscribe_enabled-{{ profile.id }}" {{ 'checked' if settings.get('fleet_blocklist_subscribe_enabled', true) }}> Subscribe to fleet blocklist</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Fleet Block TTL (seconds)</label>
+                        <input type="number" id="edit-fleet_block_ttl_seconds-{{ profile.id }}" min="0" value="{{ settings.get('fleet_block_ttl_seconds', 3600) }}" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Fleet Allow List (one IP per line)</label>
+                        <textarea id="edit-fleet_local_allow_list_input-{{ profile.id }}" rows="3" class="form-control">{{ settings.get('fleet_local_allow_list', []) | join('\n') }}</textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detection Rules Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-rules-{{ profile.id }}"
+                       {{ 'checked' if 'brute_force_rules' in settings or 'custom_rules' in settings }}
+                       onchange="toggleEditSection('rules', {{ profile.id }})">
+                Manage Detection Rules
+            </label>
+            <div id="edit-section-rules-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'brute_force_rules' not in settings and 'custom_rules' not in settings }}">
+                <div class="form-group">
+                    <label>Brute Force Rules (JSON array)</label>
+                    <textarea id="edit-brute_force_rules_input-{{ profile.id }}" rows="14" class="form-control" style="width:100%; font-family:monospace; font-size:0.85rem;">{{ settings.get('brute_force_rules', []) | tojson(indent=2) }}</textarea>
+                    <small style="color:#666;">Each rule needs: name, event_type, max_attempts, window_seconds, parser</small>
+                </div>
+                <div class="form-group" style="margin-top:0.75rem;">
+                    <label>Custom Rules (JSON array)</label>
+                    <textarea id="edit-custom_rules_input-{{ profile.id }}" rows="10" class="form-control" style="width:100%; font-family:monospace; font-size:0.85rem;">{{ settings.get('custom_rules', []) | tojson(indent=2) }}</textarea>
+                    <small style="color:#666;">Each rule needs: name, event_type, regex, log_sources, max_attempts, window_seconds</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feeds Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-feeds-{{ profile.id }}"
+                       {{ 'checked' if 'subscriptions' in settings }}
+                       onchange="toggleEditSection('feeds', {{ profile.id }})">
+                Manage Subscription Feeds
+            </label>
+            <div id="edit-section-feeds-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'subscriptions' not in settings }}">
+                <p style="color:#666; font-size:0.85rem; margin-bottom:0.75rem;">Select which feeds to include. Nodes assigned this profile will subscribe to the checked feeds.</p>
+                {% set current_feed_names = settings.get('subscriptions', []) | map(attribute='name') | list %}
+                {% if feed_catalog %}
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; max-height:300px; overflow-y:auto; padding:0.25rem;">
+                    {% for feed in feed_catalog %}
+                    <label style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.5rem; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;"
+                           title="{{ feed.description }}">
+                        <input type="checkbox" class="edit-feed-checkbox-{{ profile.id }}"
+                               value="{{ feed.name }}"
+                               data-url="{{ feed.url }}"
+                               data-format="{{ feed.format }}"
+                               data-refresh="{{ feed.refresh_seconds }}"
+                               {{ 'checked' if feed.name in current_feed_names }}>
+                        <span style="font-size:0.85rem;">
+                            <strong>{{ feed.name }}</strong>
+                            <br><small style="color:#666;">{{ feed.category }} &middot; {{ feed.format }} &middot; refresh {{ (feed.refresh_seconds / 3600) | round(1) }}h</small>
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p style="color:#666; font-style:italic;">No feeds in catalog.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Log Sources Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-logsources-{{ profile.id }}"
+                       {{ 'checked' if 'log_sources' in settings }}
+                       onchange="toggleEditSection('logsources', {{ profile.id }})">
+                Manage Log Sources
+            </label>
+            <small style="color:#666; display:block; margin-top:0.25rem;">
+                Agents auto-detect OS log paths (Debian, RedHat, SUSE). Sources listed here are
+                <strong>merged</strong> with the auto-detected defaults — use this to add app-specific logs.
+                If a path matches an auto-detected one, the profile entry wins.
+            </small>
+            <div id="edit-section-logsources-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'log_sources' not in settings }}">
+                <div class="form-group">
+                    <label>Additional Log Sources (JSON array)</label>
+                    <textarea id="edit-log_sources_input-{{ profile.id }}" rows="10" class="form-control" style="width:100%; font-family:monospace; font-size:0.85rem;">{{ settings.get('log_sources', []) | tojson(indent=2) }}</textarea>
+                    <small style="color:#666;">
+                        Each source needs: <code>path</code> (file path on agent), <code>parser</code> ("secure", "messages", "apache").
+                        <br>These are merged with the agent's auto-detected OS defaults. You only need to list extra sources here.
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detection Packs Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-detection-packs-{{ profile.id }}"
+                       {{ 'checked' if 'detection_pack_mode' in settings or 'detection_packs' in settings }}
+                       onchange="toggleEditSection('detection-packs', {{ profile.id }})">
+                Manage Detection Pack Assignment
+            </label>
+            <div id="edit-section-detection-packs-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'detection_pack_mode' not in settings and 'detection_packs' not in settings }}">
+                <div class="form-group">
+                    <label>Pack Mode</label>
+                    <select id="edit-detection_pack_mode-{{ profile.id }}" class="form-control"
+                            onchange="toggleEditPackSelector({{ profile.id }})">
+                        <option value="auto" {{ 'selected' if settings.get('detection_pack_mode', 'auto') == 'auto' }}>Auto &mdash; match packs by log_sources</option>
+                        <option value="explicit" {{ 'selected' if settings.get('detection_pack_mode', 'auto') == 'explicit' }}>Explicit &mdash; only selected packs</option>
+                    </select>
+                </div>
+                <div id="edit-packs-selector-{{ profile.id }}" style="{{ 'display:none;' if settings.get('detection_pack_mode', 'auto') != 'explicit' }} margin-top:0.5rem;">
+                    <label style="font-weight:600; font-size:0.85rem;">Select Detection Packs</label>
+                    <div style="margin-top:0.25rem; display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                        {% set current_packs = settings.get('detection_packs', []) %}
+                        {% for pack in available_packs %}
+                        <label style="display:flex; align-items:center; gap:0.5rem; padding:0.4rem; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;">
+                            <input type="checkbox" class="edit-pack-checkbox-{{ profile.id }}" value="{{ pack.pack_name }}"
+                                   {{ 'checked' if pack.pack_name in current_packs }}>
+                            <span>{{ pack.icon }} {{ pack.display_name }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% if not available_packs %}
+                    <p style="color:#666; font-style:italic; font-size:0.85rem;">No detection packs available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Host Threats Suppression Section -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-host-threats-{{ profile.id }}"
+                       {{ 'checked' if 'suppress_rules' in settings or 'group_rules' in settings or 'threshold_rules' in settings or 'disabled_host_threat_rules' in settings }}
+                       onchange="toggleEditSection('host-threats', {{ profile.id }})">
+                Manage Host Threats Suppression
+            </label>
+            <div id="edit-section-host-threats-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'suppress_rules' not in settings and 'group_rules' not in settings and 'threshold_rules' not in settings and 'disabled_host_threat_rules' not in settings }}">
+                <p style="color:#666; font-size:0.85rem; margin-bottom:0.75rem;">
+                    Control which host threat detection rules are suppressed, grouped, or threshold-gated.
+                    Rules listed here will be hidden from the Host Threats Dashboard for assigned agents.
+                </p>
+                <div class="form-group">
+                    <label>Suppressed Rules (one rule name per line)</label>
+                    <textarea id="edit-suppress_rules_input-{{ profile.id }}" rows="6" class="form-control" style="font-family:monospace; font-size:0.85rem;">{{ settings.get('suppress_rules', []) | join('\n') }}</textarea>
+                    <small style="color:#666;">Events matching these rule names will be completely hidden from the dashboard.</small>
+                </div>
+                <div class="form-group" style="margin-top:0.75rem;">
+                    <label>Grouped Rules (one rule name per line)</label>
+                    <textarea id="edit-group_rules_input-{{ profile.id }}" rows="4" class="form-control" style="font-family:monospace; font-size:0.85rem;">{{ settings.get('group_rules', []) | join('\n') }}</textarea>
+                    <small style="color:#666;">Repeated firings within 5-minute windows will be collapsed into a single event with a grouped count.</small>
+                </div>
+                <div class="form-group" style="margin-top:0.75rem;">
+                    <label>Threshold Rules (JSON mapping rule_name → {"min_count": N, "window_minutes": M})</label>
+                    <textarea id="edit-threshold_rules_input-{{ profile.id }}" rows="6" class="form-control" style="font-family:monospace; font-size:0.85rem;">{{ settings.get('threshold_rules', {}) | tojson(indent=2) }}</textarea>
+                    <small style="color:#666;">Rules that fire fewer than min_count times within window_minutes will be hidden.</small>
+                </div>
+                <div class="form-group" style="margin-top:0.75rem;">
+                    <label>Disabled Host Threat Rules (one rule name per line)</label>
+                    <textarea id="edit-disabled_host_threat_rules_input-{{ profile.id }}" rows="6" class="form-control" style="font-family:monospace; font-size:0.85rem;">{{ settings.get('disabled_host_threat_rules', []) | join('\n') }}</textarea>
+                    <small style="color:#666;">Rules listed here will NOT be distributed to the agent — they never fire and no data is sent to the server.</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auditd Monitoring Section -->
+        {% set auditd = settings.get('auditd', {}) %}
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="edit-manage-auditd-{{ profile.id }}"
+                       {{ 'checked' if 'auditd' in settings }}
+                       onchange="toggleEditSection('auditd', {{ profile.id }})">
+                Manage Auditd Monitoring
+            </label>
+            <small style="color:#666; display:block; margin-top:0.25rem;">
+                Enable and configure the auditd host-based detection pipeline on assigned agents.
+            </small>
+            <div id="edit-section-auditd-{{ profile.id }}" style="margin-top:0.75rem; {{ 'display:none;' if 'auditd' not in settings }}">
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label><input type="checkbox" id="edit-auditd_enabled-{{ profile.id }}" {{ 'checked' if auditd.get('enabled', false) }}> Enabled</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Mode</label>
+                        <select id="edit-auditd_mode-{{ profile.id }}" class="form-control">
+                            <option value="learning" {{ 'selected' if auditd.get('mode', 'learning') == 'learning' }}>Learning</option>
+                            <option value="detecting" {{ 'selected' if auditd.get('mode', 'learning') == 'detecting' }}>Detecting</option>
+                            <option value="alerting" {{ 'selected' if auditd.get('mode', 'learning') == 'alerting' }}>Alerting</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Log Path</label>
+                        <input type="text" id="edit-auditd_log_path-{{ profile.id }}" value="{{ auditd.get('log_path', '/var/log/audit/audit.log') }}" class="form-control">
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                    <div class="form-group">
+                        <label>Learning Duration (hours)</label>
+                        <input type="number" id="edit-auditd_learning_duration_hours-{{ profile.id }}" min="1" max="720" value="{{ auditd.get('learning_duration_hours', 24) }}" class="form-control">
+                        <small style="color:#666;">Auto-promote to detecting after this period (1–720).</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Scorer Threshold</label>
+                        <input type="number" id="edit-auditd_scorer_threshold-{{ profile.id }}" min="1" max="10000" value="{{ auditd.get('scorer_threshold', 100) }}" class="form-control">
+                        <small style="color:#666;">Score above which alerts fire (1–10000).</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Alert Cooldown (seconds)</label>
+                        <input type="number" id="edit-auditd_alert_cooldown_seconds-{{ profile.id }}" min="0" max="86400" value="{{ auditd.get('alert_cooldown_seconds', 900) }}" class="form-control">
+                        <small style="color:#666;">Min seconds between alerts for the same host (0–86400).</small>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                    <div class="form-group">
+                        <label>Scorer Half-Life (seconds)</label>
+                        <input type="number" id="edit-auditd_scorer_half_life_seconds-{{ profile.id }}" min="60" max="86400" value="{{ auditd.get('scorer_half_life_seconds', 1800) }}" class="form-control">
+                        <small style="color:#666;">Score decay half-life (60–86400).</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Process Tree TTL (seconds)</label>
+                        <input type="number" id="edit-auditd_process_tree_ttl_seconds-{{ profile.id }}" min="60" max="604800" value="{{ auditd.get('process_tree_ttl_seconds', 3600) }}" class="form-control">
+                        <small style="color:#666;">How long to track process ancestry (60–604800).</small>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                    <div class="form-group">
+                        <label>Exclude UIDs (one per line)</label>
+                        <textarea id="edit-auditd_exclude_uids_input-{{ profile.id }}" rows="3" class="form-control" style="font-family:monospace; font-size:0.85rem;">{{ auditd.get('exclude_uids', []) | join('\n') }}</textarea>
+                        <small style="color:#666;">Numeric UIDs whose processes should be ignored.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Exclude Exe Prefixes (one per line)</label>
+                        <textarea id="edit-auditd_exclude_exe_prefixes_input-{{ profile.id }}" rows="5" class="form-control" style="font-family:monospace; font-size:0.85rem;">{{ auditd.get('exclude_exe_prefixes', ['/usr/lib/dpkg', '/usr/bin/apt', '/usr/bin/rpm', '/usr/bin/dnf', '/usr/lib/systemd', '/opt/vespid', '/usr/bin/vespid', '/usr/bin/vespid-agent', '/usr/sbin/nft']) | join('\n') }}</textarea>
+                        <small style="color:#666;">Executables starting with these paths are ignored.</small>
+                    </div>
+                </div>
+                {% set baseline_rules = [
+                    'sigma_execution_of_script_located_in_potentially_suspicious_direct',
+                    'sigma_python_one-liners_with_base64_decoding_-_linux',
+                    'sigma_linux_shell_pipe_to_shell',
+                    'sigma_system_network_discovery_-_linux',
+                    'sigma_os_architecture_discovery_via_grep',
+                    'sigma_print_history_file_contents'
+                ] %}
+                {% set current_disabled = settings.get('disabled_host_threat_rules', []) %}
+                {% set has_baseline = baseline_rules | reject('in', current_disabled) | list | length == 0 and current_disabled | length > 0 %}
+                <div style="margin-top:0.75rem; padding:0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px;">
+                    <label style="font-weight:600; cursor:pointer;">
+                        <input type="checkbox" id="edit-auditd_baseline_suppress-{{ profile.id }}" {{ 'checked' if has_baseline }}>
+                        Disable noisy baseline rules (6 rules)
+                    </label>
+                    <small style="color:#666; display:block; margin-top:0.25rem;">
+                        Disables 6 OS-level Sigma rules that fire frequently on normal system operations
+                        (script execution, shell pipes, network discovery, grep config, history reads, Python base64 patterns).
+                        These rules are merged into the Host Threats &rarr; Disabled Rules list.
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Change Reason & Submit -->
+        <div class="form-group" style="margin-top:1rem;">
+            <label for="edit-reason-{{ profile.id }}">Change Reason (required)</label>
+            <input type="text" id="edit-reason-{{ profile.id }}" name="change_reason" required maxlength="256"
+                   placeholder="Describe why this change is being made" class="form-control">
+        </div>
+        <div style="display:flex; gap:1rem; align-items:center; margin-top:1rem;">
+            <button type="submit" class="btn" onclick="return assembleEditSettings({{ profile.id }})">Save Changes</button>
+            <button type="button" class="btn btn-secondary" onclick="toggleEditRawJson({{ profile.id }})">Toggle Raw JSON</button>
+        </div>
+
+        <!-- Raw JSON view (hidden by default) -->
+        <div id="edit-raw-json-panel-{{ profile.id }}" style="display:none; margin-top:1rem;">
+            <div class="form-group">
+                <label>Raw JSON (preview of assembled settings)</label>
+                <textarea id="edit-raw-json-preview-{{ profile.id }}" rows="12" class="form-control" readonly style="font-family:monospace; font-size:0.85rem; background:#f8f9fa;"></textarea>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+(function() {
+    var pid = {{ profile.id }};
+
+    window.toggleEditSection = function(name, profileId) {
+        var section = document.getElementById('edit-section-' + name + '-' + profileId);
+        var checkbox = document.getElementById('edit-manage-' + name + '-' + profileId);
+        section.style.display = checkbox.checked ? 'block' : 'none';
+    };
+
+    window.toggleEditPackSelector = function(profileId) {
+        var mode = document.getElementById('edit-detection_pack_mode-' + profileId).value;
+        var selector = document.getElementById('edit-packs-selector-' + profileId);
+        selector.style.display = mode === 'explicit' ? 'block' : 'none';
+    };
+
+    window.toggleEditRawJson = function(profileId) {
+        var panel = document.getElementById('edit-raw-json-panel-' + profileId);
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            assembleEditSettings(profileId);
+            document.getElementById('edit-raw-json-preview-' + profileId).value =
+                document.getElementById('edit-assembled-settings-' + profileId).value;
+        } else {
+            panel.style.display = 'none';
+        }
+    };
+
+    function parseLines(text) {
+        return text.split('\n').map(function(l) { return l.trim(); }).filter(function(l) { return l.length > 0; });
+    }
+
+    window.assembleEditSettings = function(profileId) {
+        var settings = {};
+        var hasAny = false;
+        var p = profileId;
+
+        // Telemetry
+        if (document.getElementById('edit-manage-telemetry-' + p).checked) {
+            settings.flush_interval_seconds = parseInt(document.getElementById('edit-flush_interval_seconds-' + p).value) || 5;
+            settings.flush_batch_size = parseInt(document.getElementById('edit-flush_batch_size-' + p).value) || 100;
+            settings.heartbeat_interval_seconds = parseInt(document.getElementById('edit-heartbeat_interval_seconds-' + p).value) || 300;
+            hasAny = true;
+        }
+
+        // Network
+        if (document.getElementById('edit-manage-network-' + p).checked) {
+            settings.nft_local_block_ttl = parseInt(document.getElementById('edit-nft_local_block_ttl-' + p).value) || 86400;
+
+            var excluded = parseLines(document.getElementById('edit-excluded_http_paths_input-' + p).value);
+            if (excluded.length > 0) settings.excluded_http_paths = excluded;
+            hasAny = true;
+        }
+
+        // Fleet
+        if (document.getElementById('edit-manage-fleet-' + p).checked) {
+            settings.fleet_blocklist_report_enabled = document.getElementById('edit-fleet_blocklist_report_enabled-' + p).checked;
+            settings.fleet_blocklist_subscribe_enabled = document.getElementById('edit-fleet_blocklist_subscribe_enabled-' + p).checked;
+            settings.fleet_block_ttl_seconds = parseInt(document.getElementById('edit-fleet_block_ttl_seconds-' + p).value) || 3600;
+            settings.fleet_local_allow_list = parseLines(document.getElementById('edit-fleet_local_allow_list_input-' + p).value);
+            hasAny = true;
+        }
+
+        // Detection Rules
+        if (document.getElementById('edit-manage-rules-' + p).checked) {
+            try {
+                settings.brute_force_rules = JSON.parse(document.getElementById('edit-brute_force_rules_input-' + p).value || '[]');
+            } catch(e) {
+                alert('Brute Force Rules: Invalid JSON - ' + e.message);
+                return false;
+            }
+            try {
+                settings.custom_rules = JSON.parse(document.getElementById('edit-custom_rules_input-' + p).value || '[]');
+            } catch(e) {
+                alert('Custom Rules: Invalid JSON - ' + e.message);
+                return false;
+            }
+            hasAny = true;
+        }
+
+        // Feeds
+        if (document.getElementById('edit-manage-feeds-' + p).checked) {
+            var feedCheckboxes = document.querySelectorAll('.edit-feed-checkbox-' + p + ':checked');
+            var feeds = [];
+            feedCheckboxes.forEach(function(cb) {
+                feeds.push({
+                    name: cb.value,
+                    url: cb.getAttribute('data-url'),
+                    format: cb.getAttribute('data-format'),
+                    refresh_seconds: parseInt(cb.getAttribute('data-refresh')) || 3600,
+                    enabled: true
+                });
+            });
+            settings.subscriptions = feeds;
+            hasAny = true;
+        }
+
+        // Log Sources
+        if (document.getElementById('edit-manage-logsources-' + p).checked) {
+            try {
+                settings.log_sources = JSON.parse(document.getElementById('edit-log_sources_input-' + p).value || '[]');
+            } catch(e) {
+                alert('Log Sources: Invalid JSON - ' + e.message);
+                return false;
+            }
+            hasAny = true;
+        }
+
+        // Detection Packs
+        if (document.getElementById('edit-manage-detection-packs-' + p).checked) {
+            settings.detection_pack_mode = document.getElementById('edit-detection_pack_mode-' + p).value;
+            if (settings.detection_pack_mode === 'explicit') {
+                var checkboxes = document.querySelectorAll('.edit-pack-checkbox-' + p + ':checked');
+                settings.detection_packs = Array.from(checkboxes).map(function(cb) { return cb.value; });
+            } else {
+                settings.detection_packs = [];
+            }
+            hasAny = true;
+        }
+
+        // Host Threats Suppression
+        if (document.getElementById('edit-manage-host-threats-' + p).checked) {
+            var suppressRules = parseLines(document.getElementById('edit-suppress_rules_input-' + p).value);
+            if (suppressRules.length > 0) settings.suppress_rules = suppressRules;
+            var groupRules = parseLines(document.getElementById('edit-group_rules_input-' + p).value);
+            if (groupRules.length > 0) settings.group_rules = groupRules;
+            try {
+                var thresholdRaw = document.getElementById('edit-threshold_rules_input-' + p).value || '{}';
+                var thresholdParsed = JSON.parse(thresholdRaw);
+                if (typeof thresholdParsed === 'object' && !Array.isArray(thresholdParsed) && Object.keys(thresholdParsed).length > 0) {
+                    settings.threshold_rules = thresholdParsed;
+                }
+            } catch(e) {
+                alert('Threshold Rules: Invalid JSON - ' + e.message);
+                return false;
+            }
+            var disabledRules = parseLines(document.getElementById('edit-disabled_host_threat_rules_input-' + p).value);
+            if (disabledRules.length > 0) settings.disabled_host_threat_rules = disabledRules;
+            hasAny = true;
+        }
+
+        // Auditd Monitoring
+        if (document.getElementById('edit-manage-auditd-' + p).checked) {
+            var auditd = {
+                enabled: document.getElementById('edit-auditd_enabled-' + p).checked,
+                log_path: document.getElementById('edit-auditd_log_path-' + p).value || '/var/log/audit/audit.log',
+                mode: document.getElementById('edit-auditd_mode-' + p).value,
+                learning_duration_hours: parseInt(document.getElementById('edit-auditd_learning_duration_hours-' + p).value) || 24,
+                scorer_threshold: parseInt(document.getElementById('edit-auditd_scorer_threshold-' + p).value) || 100,
+                alert_cooldown_seconds: parseInt(document.getElementById('edit-auditd_alert_cooldown_seconds-' + p).value) || 900,
+                scorer_half_life_seconds: parseInt(document.getElementById('edit-auditd_scorer_half_life_seconds-' + p).value) || 1800,
+                process_tree_ttl_seconds: parseInt(document.getElementById('edit-auditd_process_tree_ttl_seconds-' + p).value) || 3600
+            };
+            var excludeUids = parseLines(document.getElementById('edit-auditd_exclude_uids_input-' + p).value);
+            auditd.exclude_uids = excludeUids.map(function(s) { return parseInt(s); }).filter(function(n) { return !isNaN(n); });
+            auditd.exclude_exe_prefixes = parseLines(document.getElementById('edit-auditd_exclude_exe_prefixes_input-' + p).value);
+            settings.auditd = auditd;
+            hasAny = true;
+        }
+
+        // Baseline suppression merge (auditd noisy rules → disabled_host_threat_rules)
+        var baselineCb = document.getElementById('edit-auditd_baseline_suppress-' + p);
+        if (baselineCb && baselineCb.checked) {
+            var BASELINE_RULES = [
+                'sigma_execution_of_script_located_in_potentially_suspicious_direct',
+                'sigma_python_one-liners_with_base64_decoding_-_linux',
+                'sigma_linux_shell_pipe_to_shell',
+                'sigma_system_network_discovery_-_linux',
+                'sigma_os_architecture_discovery_via_grep',
+                'sigma_print_history_file_contents'
+            ];
+            var existing = settings.disabled_host_threat_rules || [];
+            var merged = existing.slice();
+            BASELINE_RULES.forEach(function(r) {
+                if (merged.indexOf(r) === -1) merged.push(r);
+            });
+            settings.disabled_host_threat_rules = merged;
+            hasAny = true;
+        }
+
+        if (!hasAny) {
+            alert('Please enable at least one section to manage.');
+            return false;
+        }
+
+        document.getElementById('edit-assembled-settings-' + p).value = JSON.stringify(settings);
+
+        // Update raw preview if visible
+        var preview = document.getElementById('edit-raw-json-preview-' + p);
+        if (preview) preview.value = JSON.stringify(settings, null, 2);
+
+        return true;
+    };
+})();
+</script>
+
+
+<!-- Current Settings -->
+<div class="card">
+    <h2 class="card-title">Current Settings</h2>
+    {% if settings %}
+    <table>
+        <thead>
+            <tr><th>Key</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+            {% for key, value in settings.items() %}
+            <tr>
+                <td><code>{{ key }}</code></td>
+                <td><code>{{ value | tojson }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No settings configured.</p>
+    {% endif %}
+</div>
+
+<!-- Version History -->
+<div class="card">
+    <h2 class="card-title">Version History</h2>
+    {% if history and history.history %}
+    <table>
+        <thead>
+            <tr><th>Version</th><th>Changed By</th><th>Reason</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+            {% for entry in history.history %}
+            <tr>
+                <td><span class="badge">v{{ entry.version }}</span></td>
+                <td>{{ entry.changed_by }}</td>
+                <td>{{ entry.change_reason }}</td>
+                <td><span data-ts="{{ entry.changed_at }}">{{ entry.changed_at }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No version history yet (profile is at initial version).</p>
+    {% endif %}
+</div>
+
+<!-- Assignments -->
+<div class="card">
+    <h2 class="card-title">Assignments</h2>
+
+    <!-- Assign to Agent -->
+    <form method="POST" action="{{ url_for('config_dashboard.create_assignment_form') }}" class="form-inline" style="margin-bottom:1rem;">
+        <input type="hidden" name="profile_id" value="{{ profile.id }}">
+        <div class="form-group">
+            <label for="assign-node-{{ profile.id }}">Assign to Agent</label>
+            <select id="assign-node-{{ profile.id }}" name="node_id" class="form-control">
+                <option value="">-- Select agent --</option>
+                {% for agent in enrolled_agents %}
+                <option value="{{ agent.node_id }}">{{ agent.node_id }} ({{ agent.hostname }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="assign-group-{{ profile.id }}">Or assign to Group</label>
+            <select id="assign-group-{{ profile.id }}" name="group_id" class="form-control">
+                <option value="">-- Select group --</option>
+                {% for g in groups %}
+                <option value="{{ g.id }}">{{ g.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-sm">Assign</button>
+    </form>
+
+    {% if assignments and assignments.assignments %}
+    <table>
+        <thead>
+            <tr><th>Target</th><th>Type</th><th>Assigned By</th><th>Date</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            {% for a in assignments.assignments %}
+            <tr>
+                <td>
+                    {% if a.node_id %}
+                        {% if a.node_display and a.node_display != a.node_id %}
+                            {{ a.node_display }} <code style="font-size:0.7rem; color:var(--text-muted);">{{ a.node_id[:12] }}…</code>
+                        {% else %}
+                            <code>{{ a.node_id }}</code>
+                        {% endif %}
+                    {% elif a.group_name %}
+                        {{ a.group_name }}
+                    {% else %}
+                        <code>group:{{ a.group_id }}</code>
+                    {% endif %}
+                </td>
+                <td>{{ 'Direct' if a.node_id else 'Group' }}</td>
+                <td>{{ a.assigned_by }}</td>
+                <td><span data-ts="{{ a.assigned_at }}">{{ a.assigned_at }}</span></td>
+                <td>
+                    <form method="POST" action="{{ url_for('config_dashboard.delete_assignment_form', assignment_id=a.id) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Remove this assignment?')">Unassign</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No agents assigned to this profile.</p>
+    {% endif %}
+</div>
+
+<!-- Rollouts -->
+<div class="card">
+    <h2 class="card-title">Rollouts</h2>
+
+    <!-- Create Rollout Form -->
+    <details style="margin-bottom:1rem;">
+        <summary style="cursor:pointer; font-weight:600;">Create New Rollout</summary>
+        <form method="POST" action="{{ url_for('config_dashboard.create_rollout_form') }}" style="margin-top:0.5rem;">
+            <input type="hidden" name="profile_id" value="{{ profile.id }}">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                <div class="form-group">
+                    <label for="rollout-policy-{{ profile.id }}">Policy</label>
+                    <select id="rollout-policy-{{ profile.id }}" name="policy" class="form-control">
+                        <option value="immediate">Immediate (all agents)</option>
+                        <option value="canary">Canary (subset first)</option>
+                        <option value="staged">Staged (percentage-based)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="rollout-canary-{{ profile.id }}">Canary Nodes (comma-separated)</label>
+                    <input type="text" id="rollout-canary-{{ profile.id }}" name="canary_nodes"
+                           placeholder="node-1, node-2" class="form-control">
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="rollout-pct-{{ profile.id }}">Initial Percentage (staged only)</label>
+                <input type="number" id="rollout-pct-{{ profile.id }}" name="initial_percentage"
+                       value="10" min="1" max="100" class="form-control" style="width:100px;">
+            </div>
+            <button type="submit" class="btn btn-sm">Create Rollout</button>
+        </form>
+    </details>
+
+    {% if rollouts %}
+    <table>
+        <thead>
+            <tr><th>ID</th><th>Policy</th><th>Status</th><th>Version</th><th>Progress</th><th>Created</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            {% for r in rollouts %}
+            <tr>
+                <td>#{{ r.id }}</td>
+                <td><span class="badge">{{ r.policy }}</span></td>
+                <td>
+                    {% if r.status == 'completed' %}
+                    <span class="badge badge-active">{{ r.status }}</span>
+                    {% elif r.status == 'failed' or r.status == 'cancelled' %}
+                    <span class="badge badge-revoked">{{ r.status }}</span>
+                    {% elif r.status == 'in_progress' %}
+                    <span class="badge badge-pending">{{ r.status }}</span>
+                    {% else %}
+                    <span class="badge">{{ r.status }}</span>
+                    {% endif %}
+                </td>
+                <td>v{{ r.target_version }}</td>
+                <td>{{ r.success_count }}/{{ r.total_targeted }} ({{ r.current_percentage }}%)</td>
+                <td><span data-ts="{{ r.created_at }}">{{ r.created_at }}</span></td>
+                <td>
+                    {% if r.status in ('pending', 'in_progress') %}
+                    <form method="POST" action="{{ url_for('config_dashboard.promote_rollout', rollout_id=r.id) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm">Promote</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('config_dashboard.cancel_rollout', rollout_id=r.id) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Cancel this rollout?')">Cancel</button>
+                    </form>
+                    {% else %}
+                    &mdash;
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No rollouts for this profile.</p>
+    {% endif %}
+</div>

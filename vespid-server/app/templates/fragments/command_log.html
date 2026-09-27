@@ -1,0 +1,52 @@
+<div id="command-log" hx-get="{{ url_for('dashboard.rules_commands') }}" hx-trigger="every 15s" hx-swap="outerHTML">
+    {% if recent_commands %}
+    <table>
+        <thead>
+            <tr>
+                <th>Command</th>
+                <th>Target</th>
+                <th>Node</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Acknowledged</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cmd in recent_commands %}
+            <tr class="fade-in">
+                <td>
+                    <span class="badge badge-cmd-{{ cmd.command_type|lower|replace('_','-') }}">{{ cmd.command_type }}</span>
+                </td>
+                <td>
+                    {% if cmd.payload is mapping %}
+                        <code>{{ cmd.payload.get('entry', '') or cmd.payload.get('ip', '') or cmd.payload.get('name', '') or '—' }}</code>
+                    {% else %}
+                        <code>—</code>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if cmd.node_id == '*' %}
+                    <span class="badge badge-all-nodes">ALL</span>
+                    {% else %}
+                    <code>{{ cmd.node_id }}</code>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="cmd-status cmd-status-{{ cmd.status }}">
+                        {% if cmd.status == 'pending' %}⏳{% elif cmd.status == 'acknowledged' %}📨{% elif cmd.status == 'completed' %}✅{% elif cmd.status == 'failed' %}❌{% else %}❓{% endif %}
+                        {{ cmd.status }}
+                    </span>
+                </td>
+                <td><span data-ts="{{ cmd.created_at }}">{{ cmd.created_at }}</span></td>
+                <td><span data-ts="{{ cmd.acknowledged_at or '' }}">{{ cmd.acknowledged_at or '—' }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📡</div>
+        <p>No commands queued yet</p>
+    </div>
+    {% endif %}
+</div>

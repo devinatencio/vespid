@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Intelligence Admin — Vespid Server{% endblock %}
+{% block content %}
+<section aria-label="Intelligence Database Administration">
+    <h1 class="page-title">🛠️ Intelligence Database Admin</h1>
+
+    <!-- Current Status Card -->
+    <div class="card">
+        <h2 class="card-title">Current Status</h2>
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <div class="stat-card">
+                <div class="stat-value">{{ ip_count | default(0) }}</div>
+                <div class="stat-label">IP Records</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ event_count | default(0) }}</div>
+                <div class="stat-label">Event Records</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backfill Source Card -->
+    <div class="card">
+        <h2 class="card-title">Available Block Events (Source for Backfill)</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1rem;">
+            These are BLOCKED events in the main events table that can be imported into the intelligence database.
+        </p>
+
+        <h4 style="margin-bottom: 0.5rem; color: var(--text-muted);">All BLOCKED Events</h4>
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+            <div class="stat-card">
+                <div class="stat-value">{{ blocked_24h | default(0) }}</div>
+                <div class="stat-label">Last 24 Hours</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ blocked_7d | default(0) }}</div>
+                <div class="stat-label">Last 7 Days</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ blocked_all | default(0) }}</div>
+                <div class="stat-label">All Time</div>
+            </div>
+        </div>
+
+        <h4 style="margin-bottom: 0.5rem; color: var(--text-muted);">NFT_ACTION Only (Firewall Blocks)</h4>
+        <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+            <div class="stat-card">
+                <div class="stat-value">{{ nft_24h | default(0) }}</div>
+                <div class="stat-label">Last 24 Hours</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ nft_7d | default(0) }}</div>
+                <div class="stat-label">Last 7 Days</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ nft_all | default(0) }}</div>
+                <div class="stat-label">All Time</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions Card -->
+    <div class="card">
+        <h2 class="card-title">Actions</h2>
+
+        <!-- Backfill Section -->
+        <div style="margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border-color);">
+            <h3 style="margin-bottom: 0.5rem;">Backfill Intelligence Database</h3>
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">
+                Import BLOCKED events from the main events table into the intelligence database.
+                This will update existing IP records and create new ones as needed.
+            </p>
+
+            <!-- Event Type Filter -->
+            <div style="margin-bottom: 1rem;">
+                <label for="backfill-event-type" style="font-weight: 500; margin-right: 0.5rem;">Event Type Filter:</label>
+                <select id="backfill-event-type" style="padding: 0.4rem 0.75rem; border-radius: 4px; border: 1px solid var(--border-color); background: var(--card-bg); color: var(--text-color);">
+                    <option value="">All BLOCKED Events</option>
+                    <option value="NFT_ACTION">NFT_ACTION Only (Firewall Blocks)</option>
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <form method="POST" action="{{ url_for('intel_dashboard.admin_backfill') }}" style="display: inline;" class="backfill-form">
+                    <input type="hidden" name="hours" value="24">
+                    <input type="hidden" name="event_type" value="" class="backfill-event-type-input">
+                    <button type="submit" class="btn">Backfill Last 24 Hours</button>
+                </form>
+                <form method="POST" action="{{ url_for('intel_dashboard.admin_backfill') }}" style="display: inline;" class="backfill-form">
+                    <input type="hidden" name="hours" value="168">
+                    <input type="hidden" name="event_type" value="" class="backfill-event-type-input">
+                    <button type="submit" class="btn btn-secondary">Backfill Last 7 Days</button>
+                </form>
+                <form method="POST" action="{{ url_for('intel_dashboard.admin_backfill') }}" style="display: inline;" class="backfill-form"
+                      onsubmit="return confirm('This will process ALL historical block events. This may take a while. Continue?');">
+                    <input type="hidden" name="hours" value="all">
+                    <input type="hidden" name="event_type" value="" class="backfill-event-type-input">
+                    <button type="submit" class="btn btn-secondary">Backfill All Time</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Purge Section -->
+        <div>
+            <h3 style="margin-bottom: 0.5rem; color: var(--danger-color);">⚠️ Danger Zone</h3>
+            <p style="color: var(--text-muted); margin-bottom: 1rem;">
+                Purge all records from the intelligence database. This action cannot be undone.
+                Use this before a full backfill to start fresh.
+            </p>
+            <form method="POST" action="{{ url_for('intel_dashboard.admin_purge') }}"
+                  onsubmit="return confirm('Are you sure you want to DELETE ALL intelligence records? This cannot be undone.');">
+                <button type="submit" class="btn btn-danger">Purge All Intelligence Data</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quick Workflow Card -->
+    <div class="card">
+        <h2 class="card-title">Quick Workflow: Reset & Rebuild</h2>
+        <p style="color: var(--text-muted); margin-bottom: 1rem;">
+            To completely rebuild the intelligence database from historical events:
+        </p>
+        <ol style="margin-left: 1.5rem; color: var(--text-muted);">
+            <li>Click <strong>Purge All Intelligence Data</strong> to clear existing records</li>
+            <li>Click <strong>Backfill Last 24 Hours</strong> (or 7 Days / All Time) to repopulate</li>
+        </ol>
+        <p style="color: var(--text-muted); margin-top: 1rem;">
+            <strong>Note:</strong> The backfill process is idempotent — running it multiple times
+            will update existing records rather than create duplicates.
+        </p>
+    </div>
+
+    <!-- Back Link -->
+    <div style="margin-top: 1.5rem;">
+        <a href="{{ url_for('intel_dashboard.search_page') }}" class="btn btn-secondary">← Back to Intelligence Search</a>
+        <a href="{{ url_for('intel_dashboard.analytics_page') }}" class="btn btn-secondary">Analytics Dashboard</a>
+    </div>
+</section>
+
+<style>
+.stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+}
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+.stat-card .stat-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+.btn-danger {
+    background: var(--danger-color, #dc3545);
+    border-color: var(--danger-color, #dc3545);
+    color: white;
+}
+.btn-danger:hover {
+    background: #c82333;
+    border-color: #bd2130;
+}
+</style>
+
+<script>
+// Sync the event type dropdown to all backfill form hidden inputs
+document.addEventListener('DOMContentLoaded', function() {
+    var selector = document.getElementById('backfill-event-type');
+    var inputs = document.querySelectorAll('.backfill-event-type-input');
+
+    selector.addEventListener('change', function() {
+        inputs.forEach(function(input) {
+            input.value = selector.value;
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,56 @@
+<!-- Group Detail Panel (HTMX fragment) -->
+<div class="card">
+    <h2 class="card-title">Group: {{ group.name }}</h2>
+    <p>{{ group.description or 'No description.' }}</p>
+    <p><small>Created by {{ group.created_by }} on <span data-ts="{{ group.created_at }}">{{ group.created_at }}</span></small></p>
+
+    {% if assignment %}
+    <p><strong>Assigned Profile:</strong> <span class="badge badge-active">{{ assignment.profile_name }}</span></p>
+    {% else %}
+    <p><strong>Assigned Profile:</strong> <span class="badge badge-revoked">None</span></p>
+    {% endif %}
+</div>
+
+<!-- Members -->
+<div class="card">
+    <h2 class="card-title">Members ({{ members|length }})</h2>
+
+    <!-- Add Member Form -->
+    <form method="POST" action="{{ url_for('config_dashboard.add_member', group_id=group.id) }}" class="form-inline" style="margin-bottom:1rem;">
+        <div class="form-group">
+            <label for="member-node-{{ group.id }}">Add Agent</label>
+            <select id="member-node-{{ group.id }}" name="node_id" class="form-control">
+                <option value="">— Select agent —</option>
+                {% for agent in enrolled_agents %}
+                <option value="{{ agent.node_id }}">{{ agent.node_id }} ({{ agent.hostname }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-sm">Add Member</button>
+    </form>
+
+    {% if members %}
+    <table>
+        <thead>
+            <tr><th>Node ID</th><th>Added By</th><th>Added At</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+            {% for m in members %}
+            <tr>
+                <td><code>{{ m.node_id }}</code></td>
+                <td>{{ m.added_by }}</td>
+                <td><span data-ts="{{ m.added_at }}">{{ m.added_at }}</span></td>
+                <td>
+                    <form method="POST" action="{{ url_for('config_dashboard.remove_member', group_id=group.id, node_id=m.node_id) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Remove {{ m.node_id }} from this group?')">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No members in this group.</p>
+    {% endif %}
+</div>

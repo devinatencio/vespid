@@ -1,0 +1,15 @@
+#!/bin/bash
+set -e
+
+# Create the vespid system user if it does not exist
+if ! getent group vespid >/dev/null; then
+    addgroup --system vespid
+fi
+
+if ! getent passwd vespid >/dev/null; then
+    adduser --system --ingroup vespid --home /opt/vespid-server \
+        --no-create-home --shell /usr/sbin/nologin \
+        --gecos "Vespid Server" vespid
+fi
+
+exit 0

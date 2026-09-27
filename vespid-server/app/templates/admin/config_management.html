@@ -1,0 +1,738 @@
+{% extends "base.html" %}
+{% block title %}Configuration Management — Vespid Server{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+    <div style="font-size:1.5rem;line-height:1;">⚙️</div>
+    <div style="flex:1;">
+        <h1 style="margin:0;font-size:1.2rem;">Configuration Management</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Agent configuration profiles and group assignments
+        </div>
+    </div>
+    <div style="display:flex;gap:1rem;text-align:center;">
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ profiles|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">profiles</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ groups|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">groups</div>
+        </div>
+        <div>
+            <div style="font-size:1.1rem;font-weight:600;">{{ enrolled_agents|length }}</div>
+            <div style="font-size:0.7rem;color:var(--text-muted);">agents</div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div style="display:flex; gap:0.5rem; margin-bottom:1.5rem;">
+    <button class="btn" onclick="showTab('profiles')" id="tab-profiles">Profiles</button>
+    <button class="btn btn-secondary" onclick="showTab('groups')" id="tab-groups">Groups</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- PROFILES TAB -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="section-profiles">
+
+<!-- Profile List -->
+<div class="card" id="profile-list-card">
+    <h2 class="card-title">Configuration Profiles ({{ profiles|length }})</h2>
+    {% if profiles %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Version</th>
+                <th>Manages</th>
+                <th>Assigned Agents</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for profile in profiles %}
+            <tr>
+                <td><strong>{{ profile.name }}</strong><br><small style="color:#666;">{{ profile.description or '' }}</small></td>
+                <td><span class="badge">v{{ profile.version }}</span></td>
+                <td><small>{{ profile.managed_keys_summary or '—' }}</small></td>
+                <td>{{ profile.assignment_count }}</td>
+                <td><span data-ts="{{ profile.created_at }}">{{ profile.created_at }}</span></td>
+                <td>
+                    <button class="btn btn-sm"
+                            hx-get="{{ url_for('config_dashboard.fragment_profile_detail', profile_id=profile.id) }}"
+                            hx-target="#profile-detail-panel"
+                            hx-swap="innerHTML">View</button>
+                    <form method="POST" action="{{ url_for('config_dashboard.delete_profile', profile_id=profile.id) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Delete profile \'{{ profile.name }}\'?')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color:#666; padding:1rem;">No configuration profiles yet. Create one below.</p>
+    {% endif %}
+</div>
+
+<!-- Profile Detail Panel (loaded via HTMX) -->
+<div id="profile-detail-panel"></div>
+
+<style>
+.create-profile-card {
+    background: rgba(30, 41, 59, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+.create-profile-summary {
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-heading);
+    padding: 0.85rem 1.25rem;
+    list-style: none;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.create-profile-summary::-webkit-details-marker {
+    display: none;
+}
+.create-profile-summary::before {
+    content: '+';
+    display: inline-block;
+    font-size: 1.15rem;
+    font-weight: 400;
+    line-height: 1;
+    transition: transform 0.15s;
+    color: var(--text-heading);
+    width: 1em;
+    text-align: center;
+    opacity: 0.65;
+}
+.create-profile-card[open] > .create-profile-summary::before {
+    content: '\2212';
+    transform: none;
+    opacity: 0.5;
+}
+.create-profile-subtitle {
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+.create-profile-card[open] .create-profile-subtitle {
+    display: none;
+}
+.create-profile-content {
+    padding: 0 1.25rem 1.25rem 1.25rem;
+}
+body.light-theme .create-profile-card,
+body.theme-light .create-profile-card {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+</style>
+
+<details id="create-profile-details" class="create-profile-card" {% if not profiles %}open{% endif %}>
+<summary class="create-profile-summary">Create Profile <span class="create-profile-subtitle">telemetry, rules, feeds, &amp; more</span></summary>
+<div class="create-profile-content">
+    <p style="color:#666; margin-bottom:1rem;">
+        Check the sections you want this profile to manage. Unchecked sections remain under local agent control.
+        For feeds and rules, the profile provides the baseline — local additions (via Security pages) layer on top.
+    </p>
+    <form method="POST" action="{{ url_for('config_dashboard.create_profile') }}" id="create-profile-form">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label for="profile-name">Name</label>
+                <input type="text" id="profile-name" name="name" required maxlength="128"
+                       placeholder="e.g. production-standard" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="profile-desc">Description</label>
+                <input type="text" id="profile-desc" name="description" maxlength="512"
+                       placeholder="Optional description" class="form-control">
+            </div>
+        </div>
+
+        <!-- Hidden field that receives the assembled JSON -->
+        <input type="hidden" name="settings" id="assembled-settings">
+
+        <!-- ─── Telemetry Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-telemetry" checked onchange="toggleSection('telemetry')">
+                Manage Telemetry Settings
+            </label>
+            <div id="section-telemetry" style="margin-top:0.75rem;">
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label for="flush_interval_seconds">Flush Interval (seconds)</label>
+                        <input type="number" id="flush_interval_seconds" min="1" value="5" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="flush_batch_size">Flush Batch Size</label>
+                        <input type="number" id="flush_batch_size" min="1" value="100" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="heartbeat_interval_seconds">Heartbeat Interval (seconds)</label>
+                        <input type="number" id="heartbeat_interval_seconds" min="1" value="300" class="form-control">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ─── Network Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-network" onchange="toggleSection('network')">
+                Manage Network Settings
+            </label>
+            <div id="section-network" style="margin-top:0.75rem; display:none;">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label for="nft_local_block_ttl">Local Block TTL (seconds)</label>
+                        <input type="number" id="nft_local_block_ttl" min="0" value="86400" class="form-control">
+                        <small style="color:#666;">How long local blocks last. 86400 = 24 hours.</small>
+                    </div>
+
+                </div>
+                <div class="form-group" style="margin-top:0.75rem;">
+                    <label for="excluded_http_paths_input">Excluded HTTP Paths (one per line)</label>
+                    <textarea id="excluded_http_paths_input" rows="3" class="form-control" placeholder="/favicon.ico&#10;/apple-touch-icon.png&#10;/robots.txt">/favicon.ico</textarea>
+                    <small style="color:#666;">Request paths that should never count toward detection thresholds (404 noise filtering).</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- ─── Fleet Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-fleet" onchange="toggleSection('fleet')">
+                Manage Fleet Blocklist Settings
+            </label>
+            <div id="section-fleet" style="margin-top:0.75rem; display:none;">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label><input type="checkbox" id="fleet_blocklist_report_enabled" checked> Report blocks to fleet</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="fleet_blocklist_subscribe_enabled" checked> Subscribe to fleet blocklist</label>
+                    </div>
+                    <div class="form-group">
+                        <label for="fleet_block_ttl_seconds">Fleet Block TTL (seconds)</label>
+                        <input type="number" id="fleet_block_ttl_seconds" min="0" value="86400" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="fleet_local_allow_list_input">Fleet Allow List (one IP per line)</label>
+                        <textarea id="fleet_local_allow_list_input" rows="3" class="form-control" placeholder="IPs exempt from fleet blocks"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ─── Detection Rules Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-rules" onchange="toggleSection('rules')">
+                Manage Detection Rules
+            </label>
+            <small style="color:#666; display:block; margin-top:0.25rem;">
+                Profile rules are the baseline. Rules added via Security → Detection Rules layer on top.
+            </small>
+            <div id="section-rules" style="margin-top:0.75rem; display:none;">
+                <div class="form-group">
+                    <label>Brute Force Rules (JSON array)</label>
+                    <textarea id="brute_force_rules_input" rows="14" class="form-control" style="width:100%; font-family:monospace; font-size:0.85rem;">[
+  {"name": "ssh_fast_brute", "event_type": "SSH_BRUTE", "max_attempts": 5, "window_seconds": 60, "parser": "secure"},
+  {"name": "ssh_medium_brute", "event_type": "SSH_MEDIUM_BRUTE", "max_attempts": 4, "window_seconds": 600, "parser": "secure"},
+  {"name": "ssh_slow_brute", "event_type": "SSH_SLOW_BRUTE", "max_attempts": 5, "window_seconds": 21600, "parser": "secure"},
+  {"name": "http_auth_brute", "event_type": "HTTP_AUTH_BRUTE", "max_attempts": 20, "window_seconds": 600, "parser": "apache"}
+]</textarea>
+                    <small style="color:#666;">Each rule needs: name, event_type, max_attempts, window_seconds, parser</small>
+                </div>
+                <div class="form-group" style="margin-top:0.75rem;">
+                    <label>Custom Rules (JSON array)</label>
+                    <textarea id="custom_rules_input" rows="10" class="form-control" style="width:100%; font-family:monospace; font-size:0.85rem;">[]</textarea>
+                    <small style="color:#666;">Each rule needs: name, event_type, regex, log_sources, max_attempts, window_seconds</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- ─── Feeds Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-feeds" onchange="toggleSection('feeds')">
+                Manage Subscription Feeds
+            </label>
+            <small style="color:#666; display:block; margin-top:0.25rem;">
+                Profile feeds are the baseline. Feeds added via Security &rarr; Feeds layer on top.
+            </small>
+            <div id="section-feeds" style="margin-top:0.75rem; display:none;">
+                <p style="color:#666; font-size:0.85rem; margin-bottom:0.75rem;">Select which feeds to include in this profile. Nodes assigned this profile will subscribe to the checked feeds.</p>
+                {% if feed_catalog %}
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; max-height:300px; overflow-y:auto; padding:0.25rem;">
+                    {% for feed in feed_catalog %}
+                    <label style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.5rem; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;"
+                           title="{{ feed.description }}">
+                        <input type="checkbox" class="feed-catalog-checkbox"
+                               value="{{ feed.name }}"
+                               data-url="{{ feed.url }}"
+                               data-format="{{ feed.format }}"
+                               data-refresh="{{ feed.refresh_seconds }}"
+                               {{ 'checked' if feed.is_default }}>
+                        <span style="font-size:0.85rem;">
+                            <strong>{{ feed.name }}</strong>
+                            <br><small style="color:#666;">{{ feed.category }} &middot; {{ feed.format }} &middot; refresh {{ (feed.refresh_seconds / 3600) | round(1) }}h</small>
+                        </span>
+                    </label>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p style="color:#666; font-style:italic;">No feeds in catalog. Add feeds via Security &rarr; Feeds first.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- ─── Log Sources Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-logsources" onchange="toggleSection('logsources')">
+                Manage Log Sources
+            </label>
+            <small style="color:#666; display:block; margin-top:0.25rem;">
+                Agents auto-detect OS log paths (Debian, RedHat, SUSE). Sources listed here are
+                <strong>merged</strong> with the auto-detected defaults — use this to add app-specific logs.
+                If a path matches an auto-detected one, the profile entry wins.
+            </small>
+            <div id="section-logsources" style="margin-top:0.75rem; display:none;">
+                <div class="form-group">
+                    <label>Additional Log Sources (JSON array)</label>
+                    <textarea id="log_sources_input" rows="10" class="form-control" style="width:100%; font-family:monospace; font-size:0.85rem;">[
+  {"path": "/var/log/myapp/app.log", "parser": "secure"}
+]</textarea>
+                    <small style="color:#666;">
+                        Each source needs: <code>path</code> (file path on agent), <code>parser</code> ("secure", "messages", "apache").
+                        <br>These are merged with the agent's auto-detected OS defaults (e.g. <code>/var/log/auth.log</code> on Debian,
+                        <code>/var/log/secure</code> on RedHat). You only need to list extra sources here.
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- ─── Detection Packs Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-detection-packs" onchange="toggleSection('detection-packs')">
+                Manage Detection Pack Assignment
+            </label>
+            <small style="color:#666; display:block; margin-top:0.25rem;">
+                Control which detection packs are distributed to nodes using this profile.
+            </small>
+            <div id="section-detection-packs" style="margin-top:0.75rem; display:none;">
+                <div class="form-group">
+                    <label for="detection_pack_mode">Pack Mode</label>
+                    <select id="detection_pack_mode" class="form-control" onchange="togglePackSelector()">
+                        <option value="auto">Auto — match packs by log_sources</option>
+                        <option value="explicit">Explicit — only selected packs</option>
+                    </select>
+                    <small style="color:#666;">Auto: packs are matched based on the profile's log_sources. Explicit: only the packs you select below are distributed.</small>
+                </div>
+                <div id="detection-packs-selector" style="margin-top:0.75rem; display:none;">
+                    <label style="font-weight:600;">Select Detection Packs</label>
+                    <div style="margin-top:0.5rem; display:grid; grid-template-columns:1fr 1fr; gap:0.5rem;">
+                        {% for pack in available_packs %}
+                        <label style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem; border:1px solid #e2e8f0; border-radius:4px; cursor:pointer;">
+                            <input type="checkbox" class="detection-pack-checkbox" value="{{ pack.pack_name }}">
+                            <span>{{ pack.icon }} {{ pack.display_name }}</span>
+                            <small style="color:#666;">{{ pack.pack_name }}</small>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    {% if not available_packs %}
+                    <p style="color:#666; font-style:italic;">No detection packs available.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- ─── Auditd Monitoring Section ─── -->
+        <div class="card" style="margin-bottom:1rem; padding:1rem; border:1px solid #e2e8f0;">
+            <label style="font-weight:600; cursor:pointer;">
+                <input type="checkbox" id="manage-auditd" onchange="toggleSection('auditd')">
+                Manage Auditd Monitoring
+            </label>
+            <small style="color:#666; display:block; margin-top:0.25rem;">
+                Enable and configure the auditd host-based detection pipeline on assigned agents.
+            </small>
+            <div id="section-auditd" style="margin-top:0.75rem; display:none;">
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label><input type="checkbox" id="auditd_enabled" checked> Enabled</label>
+                    </div>
+                    <div class="form-group">
+                        <label for="auditd_mode">Mode</label>
+                        <select id="auditd_mode" class="form-control">
+                            <option value="learning" selected>Learning</option>
+                            <option value="detecting">Detecting</option>
+                            <option value="alerting">Alerting</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="auditd_log_path">Log Path</label>
+                        <input type="text" id="auditd_log_path" value="/var/log/audit/audit.log" class="form-control">
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                    <div class="form-group">
+                        <label for="auditd_learning_duration_hours">Learning Duration (hours)</label>
+                        <input type="number" id="auditd_learning_duration_hours" min="1" max="720" value="24" class="form-control">
+                        <small style="color:#666;">Auto-promote to detecting after this period (1–720).</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="auditd_scorer_threshold">Scorer Threshold</label>
+                        <input type="number" id="auditd_scorer_threshold" min="1" max="10000" value="100" class="form-control">
+                        <small style="color:#666;">Score above which alerts fire (1–10000).</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="auditd_alert_cooldown_seconds">Alert Cooldown (seconds)</label>
+                        <input type="number" id="auditd_alert_cooldown_seconds" min="0" max="86400" value="900" class="form-control">
+                        <small style="color:#666;">Min seconds between alerts for the same host (0–86400).</small>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                    <div class="form-group">
+                        <label for="auditd_scorer_half_life_seconds">Scorer Half-Life (seconds)</label>
+                        <input type="number" id="auditd_scorer_half_life_seconds" min="60" max="86400" value="1800" class="form-control">
+                        <small style="color:#666;">Score decay half-life (60–86400).</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="auditd_process_tree_ttl_seconds">Process Tree TTL (seconds)</label>
+                        <input type="number" id="auditd_process_tree_ttl_seconds" min="60" max="604800" value="3600" class="form-control">
+                        <small style="color:#666;">How long to track process ancestry (60–604800).</small>
+                    </div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:0.75rem;">
+                    <div class="form-group">
+                        <label for="auditd_exclude_uids_input">Exclude UIDs (one per line)</label>
+                        <textarea id="auditd_exclude_uids_input" rows="3" class="form-control" style="font-family:monospace; font-size:0.85rem;" placeholder="e.g. 0"></textarea>
+                        <small style="color:#666;">Numeric UIDs whose processes should be ignored.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="auditd_exclude_exe_prefixes_input">Exclude Exe Prefixes (one per line)</label>
+                        <textarea id="auditd_exclude_exe_prefixes_input" rows="7" class="form-control" style="font-family:monospace; font-size:0.85rem;">/usr/lib/dpkg
+/usr/bin/apt
+/usr/bin/rpm
+/usr/bin/dnf
+/usr/lib/systemd
+/opt/vespid
+/usr/bin/vespid
+/usr/bin/vespid-agent
+/usr/sbin/nft</textarea>
+                        <small style="color:#666;">Executables starting with these paths are ignored.</small>
+                    </div>
+                </div>
+                <div style="margin-top:0.75rem; padding:0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:4px;">
+                    <label style="font-weight:600; cursor:pointer;">
+                        <input type="checkbox" id="auditd_baseline_suppress" checked>
+                        Disable noisy baseline rules (6 rules)
+                    </label>
+                    <small style="color:#666; display:block; margin-top:0.25rem;">
+                        Disables 6 OS-level Sigma rules that fire frequently on normal system operations
+                        (script execution, shell pipes, network discovery, grep config, history reads, Python base64 patterns).
+                        These rules are merged into the Host Threats &rarr; Disabled Rules list.
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div style="display:flex; gap:1rem; align-items:center;">
+            <button type="submit" class="btn" onclick="return assembleSettings()">Create Profile</button>
+            <button type="button" class="btn btn-secondary" onclick="toggleRawJson()">Toggle Raw JSON</button>
+        </div>
+
+        <!-- Raw JSON view (hidden by default, for power users) -->
+        <div id="raw-json-panel" style="display:none; margin-top:1rem;">
+            <div class="form-group">
+                <label>Raw JSON (read-only preview of assembled settings)</label>
+                <textarea id="raw-json-preview" rows="12" class="form-control" readonly style="font-family:monospace; font-size:0.85rem; background:#f8f9fa;"></textarea>
+            </div>
+        </div>
+    </form>
+</div>
+</details>
+
+<script>
+function toggleSection(name) {
+    const section = document.getElementById('section-' + name);
+    const checkbox = document.getElementById('manage-' + name);
+    section.style.display = checkbox.checked ? 'block' : 'none';
+}
+
+function togglePackSelector() {
+    const mode = document.getElementById('detection_pack_mode').value;
+    const selector = document.getElementById('detection-packs-selector');
+    selector.style.display = mode === 'explicit' ? 'block' : 'none';
+}
+
+function toggleRawJson() {
+    const panel = document.getElementById('raw-json-panel');
+    if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        assembleSettings();
+        document.getElementById('raw-json-preview').value =
+            document.getElementById('assembled-settings').value;
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function parseLines(text) {
+    return text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+}
+
+function assembleSettings() {
+    const settings = {};
+    let hasAny = false;
+
+    // Telemetry
+    if (document.getElementById('manage-telemetry').checked) {
+        settings.flush_interval_seconds = parseInt(document.getElementById('flush_interval_seconds').value) || 5;
+        settings.flush_batch_size = parseInt(document.getElementById('flush_batch_size').value) || 100;
+        settings.heartbeat_interval_seconds = parseInt(document.getElementById('heartbeat_interval_seconds').value) || 300;
+        hasAny = true;
+    }
+
+    // Network
+    if (document.getElementById('manage-network').checked) {
+        settings.nft_local_block_ttl = parseInt(document.getElementById('nft_local_block_ttl').value) || 86400;
+
+        var excluded = parseLines(document.getElementById('excluded_http_paths_input').value);
+        if (excluded.length > 0) settings.excluded_http_paths = excluded;
+        hasAny = true;
+    }
+
+    // Fleet
+    if (document.getElementById('manage-fleet').checked) {
+        settings.fleet_blocklist_report_enabled = document.getElementById('fleet_blocklist_report_enabled').checked;
+        settings.fleet_blocklist_subscribe_enabled = document.getElementById('fleet_blocklist_subscribe_enabled').checked;
+        settings.fleet_block_ttl_seconds = parseInt(document.getElementById('fleet_block_ttl_seconds').value) || 86400;
+        const allowList = parseLines(document.getElementById('fleet_local_allow_list_input').value);
+        settings.fleet_local_allow_list = allowList;
+        hasAny = true;
+    }
+
+    // Detection Rules
+    if (document.getElementById('manage-rules').checked) {
+        try {
+            settings.brute_force_rules = JSON.parse(document.getElementById('brute_force_rules_input').value || '[]');
+        } catch(e) {
+            alert('Brute Force Rules: Invalid JSON — ' + e.message);
+            return false;
+        }
+        try {
+            settings.custom_rules = JSON.parse(document.getElementById('custom_rules_input').value || '[]');
+        } catch(e) {
+            alert('Custom Rules: Invalid JSON — ' + e.message);
+            return false;
+        }
+        hasAny = true;
+    }
+
+    // Feeds
+    if (document.getElementById('manage-feeds').checked) {
+        var feedCheckboxes = document.querySelectorAll('.feed-catalog-checkbox:checked');
+        var feeds = [];
+        feedCheckboxes.forEach(function(cb) {
+            feeds.push({
+                name: cb.value,
+                url: cb.getAttribute('data-url'),
+                format: cb.getAttribute('data-format'),
+                refresh_seconds: parseInt(cb.getAttribute('data-refresh')) || 3600,
+                enabled: true
+            });
+        });
+        settings.subscriptions = feeds;
+        hasAny = true;
+    }
+
+    // Log Sources
+    if (document.getElementById('manage-logsources').checked) {
+        try {
+            settings.log_sources = JSON.parse(document.getElementById('log_sources_input').value || '[]');
+        } catch(e) {
+            alert('Log Sources: Invalid JSON — ' + e.message);
+            return false;
+        }
+        hasAny = true;
+    }
+
+    // Detection Packs
+    if (document.getElementById('manage-detection-packs').checked) {
+        settings.detection_pack_mode = document.getElementById('detection_pack_mode').value;
+        if (settings.detection_pack_mode === 'explicit') {
+            const checkboxes = document.querySelectorAll('.detection-pack-checkbox:checked');
+            settings.detection_packs = Array.from(checkboxes).map(cb => cb.value);
+        } else {
+            settings.detection_packs = [];
+        }
+        hasAny = true;
+    }
+
+    // Auditd Monitoring
+    if (document.getElementById('manage-auditd').checked) {
+        var auditd = {
+            enabled: document.getElementById('auditd_enabled').checked,
+            log_path: document.getElementById('auditd_log_path').value || '/var/log/audit/audit.log',
+            mode: document.getElementById('auditd_mode').value,
+            learning_duration_hours: parseInt(document.getElementById('auditd_learning_duration_hours').value) || 24,
+            scorer_threshold: parseInt(document.getElementById('auditd_scorer_threshold').value) || 100,
+            alert_cooldown_seconds: parseInt(document.getElementById('auditd_alert_cooldown_seconds').value) || 900,
+            scorer_half_life_seconds: parseInt(document.getElementById('auditd_scorer_half_life_seconds').value) || 1800,
+            process_tree_ttl_seconds: parseInt(document.getElementById('auditd_process_tree_ttl_seconds').value) || 3600
+        };
+        var excludeUids = parseLines(document.getElementById('auditd_exclude_uids_input').value);
+        auditd.exclude_uids = excludeUids.map(function(s) { return parseInt(s); }).filter(function(n) { return !isNaN(n); });
+        auditd.exclude_exe_prefixes = parseLines(document.getElementById('auditd_exclude_exe_prefixes_input').value);
+        settings.auditd = auditd;
+        hasAny = true;
+    }
+
+    // Baseline suppression merge (auditd noisy rules → disabled_host_threat_rules)
+    var baselineCb = document.getElementById('auditd_baseline_suppress');
+    if (baselineCb && baselineCb.checked) {
+        var BASELINE_RULES = [
+            'sigma_execution_of_script_located_in_potentially_suspicious_direct',
+            'sigma_python_one-liners_with_base64_decoding_-_linux',
+            'sigma_linux_shell_pipe_to_shell',
+            'sigma_system_network_discovery_-_linux',
+            'sigma_os_architecture_discovery_via_grep',
+            'sigma_print_history_file_contents'
+        ];
+        var existing = settings.disabled_host_threat_rules || [];
+        var merged = existing.slice();
+        BASELINE_RULES.forEach(function(r) {
+            if (merged.indexOf(r) === -1) merged.push(r);
+        });
+        settings.disabled_host_threat_rules = merged;
+        hasAny = true;
+    }
+
+    if (!hasAny) {
+        alert('Please enable at least one section to manage.');
+        return false;
+    }
+
+    document.getElementById('assembled-settings').value = JSON.stringify(settings);
+
+    // Update raw preview if visible
+    const preview = document.getElementById('raw-json-preview');
+    if (preview) preview.value = JSON.stringify(settings, null, 2);
+
+    return true;
+}
+</script>
+
+<!-- Profile List and Detail Panel moved to top of profiles tab -->
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- GROUPS TAB -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div id="section-groups" style="display:none;">
+
+<!-- Create Group Form -->
+<div class="card">
+    <h2 class="card-title">Create Agent Group</h2>
+    <form method="POST" action="{{ url_for('config_dashboard.create_group') }}">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+            <div class="form-group">
+                <label for="group-name">Group Name</label>
+                <input type="text" id="group-name" name="name" required maxlength="128"
+                       placeholder="e.g. us-east-production" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="group-desc">Description</label>
+                <input type="text" id="group-desc" name="description" maxlength="512"
+                       placeholder="Optional description" class="form-control">
+            </div>
+        </div>
+        <button type="submit" class="btn">Create Group</button>
+    </form>
+</div>
+
+<!-- Group List -->
+<div class="card" id="group-list-card">
+    <h2 class="card-title">Agent Groups ({{ groups|length }})</h2>
+    {% if groups %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Members</th>
+                <th>Profile Assignment</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for group in groups %}
+            <tr>
+                <td><strong>{{ group.name }}</strong></td>
+                <td>{{ group.description or '—' }}</td>
+                <td>{{ group.member_count }}</td>
+                <td>
+                    {% if group.profile_assignment %}
+                    <span class="badge badge-active">{{ group.profile_assignment.profile_name }}</span>
+                    {% else %}
+                    <span class="badge badge-revoked">None</span>
+                    {% endif %}
+                </td>
+                <td><span data-ts="{{ group.created_at }}">{{ group.created_at }}</span></td>
+                <td>
+                    <button class="btn btn-sm"
+                            hx-get="{{ url_for('config_dashboard.fragment_group_detail', group_id=group.id) }}"
+                            hx-target="#group-detail-panel"
+                            hx-swap="innerHTML">Manage</button>
+                    <form method="POST" action="{{ url_for('config_dashboard.delete_group', group_id=group.id) }}" style="display:inline;">
+                        <button type="submit" class="btn btn-sm btn-danger"
+                                onclick="return confirm('Delete group \'{{ group.name }}\'? All memberships will be removed.')">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No agent groups yet. Create one above.</p>
+    {% endif %}
+</div>
+
+<!-- Group Detail Panel (loaded via HTMX) -->
+<div id="group-detail-panel"></div>
+
+</div>
+
+<script>
+function showTab(tab) {
+    document.getElementById('section-profiles').style.display = tab === 'profiles' ? 'block' : 'none';
+    document.getElementById('section-groups').style.display = tab === 'groups' ? 'block' : 'none';
+    document.getElementById('tab-profiles').className = tab === 'profiles' ? 'btn' : 'btn btn-secondary';
+    document.getElementById('tab-groups').className = tab === 'groups' ? 'btn' : 'btn btn-secondary';
+}
+</script>
+{% endblock %}

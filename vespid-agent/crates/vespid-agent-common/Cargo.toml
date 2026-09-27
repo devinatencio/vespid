@@ -1,0 +1,21 @@
+[package]
+name = "vespid-agent-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+bytes.workspace = true
+snap.workspace = true
+reqwest.workspace = true
+prost.workspace = true
+
+[build-dependencies]
+prost-build.workspace = true

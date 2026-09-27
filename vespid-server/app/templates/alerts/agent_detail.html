@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Agent Checks — Vespid{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1 id="agent-id">Loading…</h1>
+    <div class="page-actions">
+        <a id="back-link" class="btn btn-secondary" href="/alerts/hosts">Back to Hosts</a>
+    </div>
+</div>
+
+<div id="agent-hostname" class="text-muted" style="margin-bottom:1.5rem;font-size:0.9rem;"></div>
+<style>
+.label-more {
+    display:inline-block; font-size:0.7rem; padding:0.05rem 0.4rem;
+    background:var(--accent,#f59e0b); color:#000; border-radius:4px;
+    cursor:pointer; font-weight:600;
+}
+.label-more:hover { opacity:0.8; }
+.label-extra { display:none; }
+</style>
+
+<div class="card">
+    <div class="card-body">
+        <h3 class="card-title">
+            Checks Summary
+            <span id="checks-summary" style="font-weight:400;font-size:0.8rem;color:var(--text-muted);margin-left:0.5rem;"></span>
+        </h3>
+        <div id="checks-container">
+            <div class="loading">Loading checks…</div>
+        </div>
+    </div>
+</div>
+
+<script>
+var AGENT_ID = {{ agent_id|tojson }};
+var STATUS_CSS = {
+    ok: 'badge badge-healthy',
+    warning: 'badge badge-warning',
+    critical: 'badge badge-danger',
+    pending: 'badge badge-info',
+    silenced: 'badge badge-admin',
+    unknown: 'badge badge-viewer',
+};
+var STATUS_LABELS = {
+    ok: 'OK',
+    warning: 'WARN',
+    critical: 'CRIT',
+    pending: 'PEND',
+    silenced: 'SILENT',
+    unknown: '?',
+};
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function loadAgentChecks() {
+    document.getElementById('agent-id').textContent = AGENT_ID;
+    document.title = escapeHtml(AGENT_ID) + ' — Vespid';
+
+    fetch('/alerts/api/agents/' + encodeURIComponent(AGENT_ID))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var checks = data.checks || [];
+            var container = document.getElementById('checks-container');
+
+            if (!checks.length) {
+                container.innerHTML = '<div class="text-muted">No monitoring checks found for this agent. ' +
+                    'It may not belong to any active monitoring group yet.</div>';
+                return;
+            }
+
+            // Hostname
+            var hostname = checks[0].hostname || '';
+            document.getElementById('agent-hostname').textContent = hostname ? 'Hostname: ' + hostname : '';
+
+            // Summary counts
+            var totalOk = 0, totalWarn = 0, totalCrit = 0, totalUnknown = 0;
+            checks.forEach(function(c) {
+                var s = c.status || 'unknown';
+                if (s === 'ok') totalOk++;
+                else if (s === 'warning') totalWarn++;
+                else if (s === 'critical') totalCrit++;
+                else totalUnknown++;
+            });
+
+            var summaryHtml = '';
+            if (totalCrit > 0) summaryHtml += '<span style="color:var(--badge-clr,#f87171);font-weight:700;">' + totalCrit + ' critical</span> ';
+            if (totalWarn > 0) summaryHtml += '<span style="color:var(--badge-clr,#facc15);font-weight:700;">' + totalWarn + ' warning</span> ';
+            summaryHtml += '<span style="color:var(--text-muted);">' + totalOk + ' ok</span>';
+            if (totalUnknown > 0) summaryHtml += ' <span style="color:var(--text-muted);">' + totalUnknown + ' unknown</span>';
+            document.getElementById('checks-summary').innerHTML = summaryHtml;
+
+            // Group checks by group_name
+            var groups = {};
+            checks.forEach(function(c) {
+                var g = c.group_name || 'Ungrouped';
+                if (!groups[g]) groups[g] = [];
+                groups[g].push(c);
+            });
+
+            var html = '';
+            for (var groupName in groups) {
+                var groupChecks = groups[groupName];
+
+                // Count per-group
+                var gOk = 0, gWarn = 0, gCrit = 0, gUnk = 0;
+                groupChecks.forEach(function(c) {
+                    var s = c.status || 'unknown';
+                    if (s === 'ok') gOk++;
+                    else if (s === 'warning') gWarn++;
+                    else if (s === 'critical') gCrit++;
+                    else gUnk++;
+                });
+
+                var groupBadge = '';
+                if (gCrit > 0) groupBadge = '<span class="badge badge-danger">' + gCrit + ' critical</span>';
+                else if (gWarn > 0) groupBadge = '<span class="badge badge-warning">' + gWarn + ' warning</span>';
+                else groupBadge = '<span class="badge badge-healthy">All OK</span>';
+
+                html += '<h4 style="margin:1rem 0 0.5rem;">' + escapeHtml(groupName) + ' ' + groupBadge + '</h4>';
+                html += '<table class="data-table">' +
+                    '<thead><tr><th>Check</th><th>Type</th><th>Status</th><th>Value</th><th>Threshold</th><th>Last Eval</th></tr></thead><tbody>';
+
+                groupChecks.forEach(function(c) {
+                    var status = c.status || 'unknown';
+                    var badgeClass = STATUS_CSS[status] || 'badge badge-viewer';
+                    var label = STATUS_LABELS[status] || '?';
+                    var valueDisplay = (c.last_metric_value != null) ? Number(c.last_metric_value).toFixed(1) :
+                                      (c.last_value != null) ? Number(c.last_value).toFixed(1) : '—';
+                    var thresholdDisplay = escapeHtml(c.operator || '') + ' ' + (c.threshold != null ? c.threshold : '—');
+                    var lastEval = c.last_evaluated_at ? new Date(c.last_evaluated_at).toLocaleString() : '—';
+                    var lastEvalTitle = c.last_evaluated_at || '';
+
+                    // Show per-mountpoint breakdown for disk checks
+                    var valueWithDetail = valueDisplay;
+                    if (c.last_detail) {
+                        try {
+                            var detail = JSON.parse(c.last_detail);
+                            if (typeof detail === 'object') {
+                                var entries = [];
+                                var visibleCount = 0;
+                                var hiddenHtml = '';
+                                for (var mp in detail) {
+                                    var mv = Number(detail[mp]).toFixed(1);
+                                    var pct = parseFloat(mv);
+                                    entries.push({mount: mp, value: mv, pct: pct});
+                                }
+                                if (entries.length > 0) {
+                                    entries.sort(function(a, b) { return b.pct - a.pct; });
+                                    var worst = entries[0];
+                                    var worstColor = worst.pct >= 90 ? '#f87171' : worst.pct >= 80 ? '#facc15' : '#4ade80';
+                                    var barHtml = '';
+                                    entries.forEach(function(e) {
+                                        var isWorst = e === worst;
+                                        var barW = Math.min(e.pct, 100);
+                                        var color = e.pct >= 90 ? '#f87171' : e.pct >= 80 ? '#facc15' : '#4ade80';
+                                        var entryHtml = '<div style="display:flex;align-items:center;gap:0.4rem;font-size:0.68rem;line-height:1.6;">' +
+                                            '<span style="min-width:1.2rem;text-align:right;font-weight:' + (isWorst ? '700' : '400') + ';color:' + color + ';">' + e.value + '%</span>' +
+                                            '<div style="flex:1;max-width:120px;height:4px;background:rgba(148,163,184,0.15);border-radius:2px;overflow:hidden;">' +
+                                            '<div style="width:' + barW + '%;height:100%;background:' + color + ';border-radius:2px;"></div></div>' +
+                                            '<span style="color:var(--text-muted,#94a3b8);">' + escapeHtml(e.mount) + '</span></div>';
+                                        if (e.pct > 1) {
+                                            visibleCount++;
+                                            barHtml += entryHtml;
+                                        } else {
+                                            hiddenHtml += entryHtml;
+                                        }
+                                    });
+                                    var hiddenCount = entries.length - visibleCount;
+                                    valueWithDetail = '<div><span style="font-weight:600;color:' + worstColor + ';">' + worst.value + '%</span> <span style="font-size:0.68rem;color:var(--text-muted);">— ' + escapeHtml(worst.mount) + '</span></div>';
+                                    if (barHtml) {
+                                        valueWithDetail += '<div style="margin-top:0.3rem;border-top:1px solid var(--border,#334155);padding-top:0.3rem;">' + barHtml + '</div>';
+                                    }
+                                    if (hiddenCount > 0) {
+                                        var suffix = (visibleCount > 0) ? 'more' : 'all';
+                                        valueWithDetail += '<div style="margin-top:0.15rem;">' +
+                                            '<span class="label-more" onclick="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">+' + hiddenCount + ' ' + suffix + '</span>' +
+                                            '<div class="label-extra" style="display:none;margin-top:0.15rem;">' + hiddenHtml + '</div></div>';
+                                    }
+                                }
+                            }
+                        } catch(e) {}
+                    }
+
+                    html += '<tr>' +
+                        '<td><strong>' + escapeHtml(c.condition_name || c.condition_id) + '</strong></td>' +
+                        '<td>' + escapeHtml(c.metric_type || '—') + '</td>' +
+                        '<td><span class="' + badgeClass + '">' + label + '</span></td>' +
+                        '<td>' + valueWithDetail + '</td>' +
+                        '<td>' + thresholdDisplay + '</td>' +
+                        '<td title="' + escapeHtml(lastEvalTitle) + '">' + lastEval + '</td></tr>';
+                });
+
+                html += '</tbody></table>';
+            }
+
+            container.innerHTML = html;
+        })
+        .catch(function() {
+            document.getElementById('checks-container').innerHTML = '<div class="error">Failed to load checks for this agent.</div>';
+        });
+}
+
+document.addEventListener('DOMContentLoaded', loadAgentChecks);
+</script>
+{% endblock %}

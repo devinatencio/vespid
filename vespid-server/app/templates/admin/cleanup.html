@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Data Cleanup — Vespid Tower{% endblock %}
+{% block content %}
+{% include "admin/_admin_nav.html" %}
+<h1 class="page-title">Data Cleanup</h1>
+
+<div class="grid-2">
+    <div class="card">
+        <h2 class="card-title">Event Retention</h2>
+        <p class="text-muted" style="margin-bottom:1rem;">Events older than this many days are automatically purged once per day.</p>
+        <form method="POST" action="{{ url_for('admin.cleanup') }}" style="display:flex; gap:0.5rem; align-items:end;">
+            <input type="hidden" name="action" value="save_retention">
+            <input type="hidden" name="audit_retention_days" value="{{ audit_retention_days }}">
+            <div class="form-group" style="margin-bottom:0; flex:1;">
+                <label for="retention_days">Retention (days)</label>
+                <input type="number" id="retention_days" name="retention_days" value="{{ retention_days }}" min="1" max="3650" required>
+            </div>
+            <button type="submit" class="btn">Save</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Audit Log Retention</h2>
+        <p class="text-muted" style="margin-bottom:1rem;">Audit entries older than this many days are automatically purged once per day.</p>
+        <form method="POST" action="{{ url_for('admin.cleanup') }}" style="display:flex; gap:0.5rem; align-items:end;">
+            <input type="hidden" name="action" value="save_retention">
+            <input type="hidden" name="retention_days" value="{{ retention_days }}">
+            <div class="form-group" style="margin-bottom:0; flex:1;">
+                <label for="audit_retention_days">Retention (days)</label>
+                <input type="number" id="audit_retention_days" name="audit_retention_days" value="{{ audit_retention_days }}" min="1" max="3650" required>
+            </div>
+            <button type="submit" class="btn">Save</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Current Volume</h2>
+        <table>
+            <tr><td>Total events</td><td style="text-align:right;"><strong>{{ total_events }}</strong></td></tr>
+            <tr><td>Oldest event</td><td style="text-align:right;">{{ oldest_event or '—' }}</td></tr>
+            <tr><td>Newest event</td><td style="text-align:right;">{{ newest_event or '—' }}</td></tr>
+            <tr><td style="color:var(--danger);">Purgeable (older than {{ retention_days }}d)</td><td style="text-align:right;color:var(--danger);"><strong>{{ purgeable }}</strong></td></tr>
+            <tr><td style="border-top:2px solid var(--border);">Total audit entries</td><td style="text-align:right;border-top:2px solid var(--border);"><strong>{{ total_audit }}</strong></td></tr>
+            <tr><td>Oldest audit entry</td><td style="text-align:right;">{{ oldest_audit or '—' }}</td></tr>
+            <tr><td>Newest audit entry</td><td style="text-align:right;">{{ newest_audit or '—' }}</td></tr>
+            <tr><td style="color:var(--danger);">Audit purgeable (older than {{ audit_retention_days }}d)</td><td style="text-align:right;color:var(--danger);"><strong>{{ audit_purgeable }}</strong></td></tr>
+        </table>
+    </div>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+    <h2 class="card-title">Manual Purge</h2>
+    <p class="text-muted" style="margin-bottom:0.75rem;">
+        Permanently delete all events older than {{ retention_days }} days and all audit entries
+        older than {{ audit_retention_days }} days ({{ purgeable }} event rows, {{ audit_purgeable }} audit entries).
+        This runs automatically once per day — use only if you need to free space immediately.
+    </p>
+    <form method="POST" action="{{ url_for('admin.cleanup') }}" onsubmit="return confirm('Permanently delete {{ purgeable }} event rows older than {{ retention_days }} days and {{ audit_purgeable }} audit entries older than {{ audit_retention_days }} days?')">
+        <input type="hidden" name="action" value="purge_now">
+        <button type="submit" class="btn btn-danger">Purge Now</button>
+    </form>
+</div>
+{% endblock %}

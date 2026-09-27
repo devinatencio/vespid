@@ -1,0 +1,323 @@
+<!-- Score Sparkline Panel (HTMX fragment) -->
+<!-- Displays per-host effective threat score over the selected time window as a Chart.js line chart -->
+<!-- Hostname filtering is controlled by the global dashboard filter via hostname-filter-changed CustomEvent -->
+<!-- The time window is controlled by the global #global-time-window selector -->
+<div class="card" style="margin-bottom:0; flex:1; display:flex; flex-direction:column;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.75rem;">
+        <h2 class="card-title" style="margin:0;">Threat Score History</h2>
+        <span id="ss-active-host" style="font-size:0.75rem; color:var(--text-muted);">All Hosts</span>
+    </div>
+
+    <!-- HTMX data loader: fetches score history when triggered (parent pages auto-refresh every 60s) -->
+    <div id="ss-score-data"
+         hx-get="/admin/host-threats/score-history"
+         hx-trigger="refresh-sparkline"
+         hx-vals='{"hostname": "", "hours": 24}'
+         hx-swap="none"
+         hx-on::after-request="handleScoreSparklineResponse(event)">
+    </div>
+
+    <!-- Chart Canvas -->
+    <div style="position:relative; width:100%; flex:1; min-height:200px;">
+        <canvas id="ss-sparkline-chart"></canvas>
+    </div>
+
+    <!-- Info line -->
+    <div id="ss-info" style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-muted);">
+        <span>Select a host to view score history.</span>
+    </div>
+</div>
+
+<script>
+(function() {
+    var ssChart = null;
+    var lastData = null;
+
+    /* ── Window helpers ──────────────────────────────────────────
+       The time window is controlled by the global #global-time-window
+       selector, present on both the dashboard and the host detail page.
+       Falls back to 24h when absent. */
+    function ssGetHours() {
+        var el = document.getElementById('global-time-window');
+        if (el && el.value) return el.value;
+        return '24';
+    }
+
+    function ssSetAndLoad(hostname, hours) {
+        var el = document.getElementById('ss-score-data');
+        if (!el) return;
+        el.setAttribute('hx-vals', JSON.stringify({ hostname: hostname || '', hours: hours }));
+        htmx.trigger(el, 'refresh-sparkline');
+    }
+
+    /* Format a window size in hours as a short label (24h, 3d, 7d, ...) */
+    function ssWindowLabel(hours) {
+        var h = parseInt(hours, 10);
+        if (isNaN(h)) h = 24;
+        if (h >= 48 && h % 24 === 0) return (h / 24) + 'd';
+        return h + 'h';
+    }
+
+    /* X-axis title for the current window */
+    function ssXAxisTitle(hours) {
+        return 'Time (past ' + ssWindowLabel(hours) + ')';
+    }
+
+    /* ── Initialize Chart ─────────────────────────────────────── */
+    function initChart() {
+        var ctx = document.getElementById('ss-sparkline-chart');
+        if (!ctx) return;
+
+        var theme = window.getChartThemeColors();
+        var palette = window.getChartPalette();
+        var dangerColor = palette[1];
+
+        ssChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    /* Dataset 0: effective_score line */
+                    {
+                        label: 'Effective Score',
+                        data: [],
+                        borderColor: theme.chartLine,
+                        backgroundColor: colorWithAlpha(theme.chartLine, 0.08),
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 0,
+                        pointHoverRadius: 4
+                    },
+                    /* Dataset 1: threshold line (constant value, dashed red) */
+                    {
+                        label: 'Threshold',
+                        data: [],
+                        borderColor: dangerColor,
+                        borderWidth: 2,
+                        borderDash: [6, 4],
+                        fill: false,
+                        pointRadius: 0,
+                        pointHoverRadius: 0
+                    },
+                    /* Dataset 2: alert trigger points (red dots) */
+                    {
+                        label: 'Alerts',
+                        data: [],
+                        type: 'scatter',
+                        backgroundColor: dangerColor,
+                        borderColor: colorWithAlpha(dangerColor, 0.85),
+                        borderWidth: 1,
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        pointStyle: 'circle',
+                        showLine: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: {
+                            tooltipFormat: 'yyyy-MM-dd HH:mm',
+                            displayFormats: {
+                                minute: 'HH:mm',
+                                hour: 'HH:mm',
+                                day: 'MMM d'
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: ssXAxisTitle(24),
+                            color: theme.text,
+                            font: { size: 11 }
+                        },
+                        ticks: {
+                            color: theme.textMuted
+                        },
+                        grid: {
+                            color: theme.gridLine
+                        }
+                    },
+                    y: {
+                        min: 0,
+                        max: 200,  /* default 2× threshold (100), updated dynamically */
+                        title: {
+                            display: true,
+                            text: 'Score',
+                            color: theme.text,
+                            font: { size: 11 }
+                        },
+                        ticks: {
+                            color: theme.textMuted
+                        },
+                        grid: {
+                            color: theme.gridLine
+                        }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                if (context.datasetIndex === 0) {
+                                    return 'Score: ' + context.parsed.y.toFixed(1);
+                                } else if (context.datasetIndex === 1) {
+                                    return 'Threshold: ' + context.parsed.y;
+                                } else if (context.datasetIndex === 2) {
+                                    return 'Alert triggered';
+                                }
+                                return '';
+                            }
+                        }
+                    },
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: theme.text,
+                            boxWidth: 12,
+                            font: { size: 11 },
+                            usePointStyle: true
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /* ── Handle HTMX response with score data ─────────────────── */
+    window.handleScoreSparklineResponse = function(event) {
+        var xhr = event.detail.xhr;
+        if (!xhr || xhr.status !== 200) return;
+
+        try {
+            var data = JSON.parse(xhr.responseText);
+            updateChart(data);
+        } catch (e) {
+            console.error('Score Sparkline: failed to parse response', e);
+        }
+    };
+
+    /* ── Update chart with new data ───────────────────────────── */
+    function updateChart(data) {
+        lastData = data;
+        if (!ssChart) return;
+
+        /* Expected data format from /admin/host-threats/score-history:
+           {
+             "labels": ["2024-01-15T10:00:00Z", ...],   // 288 ISO-8601 timestamps (5-min intervals)
+             "scores": [0.0, 12.5, ...],                 // 288 effective_score values
+             "threshold": 100,                           // configured scorer_threshold
+             "hostname": "web-01",
+             "alerts": ["2024-01-15T14:30:00Z", ...]    // timestamps where alerts fired (optional)
+           }
+        */
+
+        var labels = data.labels || [];
+        var scores = data.scores || [];
+        var threshold = data.threshold || 100;
+        var alerts = data.alerts || [];
+
+        /* Update Y-axis max to accommodate actual data */
+        var maxScore = Math.max.apply(null, scores.length > 0 ? scores : [0]);
+        var yMax = Math.max(threshold * 2, Math.ceil(maxScore * 1.1));  /* 10% headroom above peak */
+        ssChart.options.scales.y.max = yMax;
+
+        /* Reflect the loaded window in the x-axis title */
+        ssChart.options.scales.x.title.text = ssXAxisTitle(data.hours);
+
+        /* Dataset 0: effective_score timeseries */
+        ssChart.data.labels = labels;
+        ssChart.data.datasets[0].data = scores;
+
+        /* Dataset 1: threshold horizontal line (constant across all labels) */
+        ssChart.data.datasets[1].data = labels.map(function() { return threshold; });
+
+        /* Dataset 2: alert trigger points (red dots at alert timestamps) */
+        var alertPoints = [];
+        alerts.forEach(function(alertTs) {
+            /* Find the closest label index for this alert timestamp */
+            var alertTime = new Date(alertTs).getTime();
+            var closestIdx = 0;
+            var closestDiff = Infinity;
+            for (var i = 0; i < labels.length; i++) {
+                var diff = Math.abs(new Date(labels[i]).getTime() - alertTime);
+                if (diff < closestDiff) {
+                    closestDiff = diff;
+                    closestIdx = i;
+                }
+            }
+            /* Place the alert dot at the score value for that time */
+            alertPoints.push({
+                x: alertTs,
+                y: scores[closestIdx] !== undefined ? scores[closestIdx] : threshold
+            });
+        });
+        ssChart.data.datasets[2].data = alertPoints;
+
+        ssChart.update('none');
+
+        /* Update info line with hostname, window and peak score */
+        var infoEl = document.getElementById('ss-info');
+        if (infoEl) {
+            if (!data.hostname || scores.length === 0) {
+                infoEl.innerHTML = '<span>Select a host to view score history.</span>';
+            } else {
+                var hostLabel = data.hostname;
+                var windowLabel = (data.hours ? data.hours + 'h' : '24h');
+                var peakLabel = maxScore > 0 ? ' &middot; Peak: ' + maxScore.toFixed(1) : '';
+                infoEl.innerHTML = '<span>' + hostLabel + ' &middot; ' + windowLabel + ' window &middot; Threshold: ' + threshold + peakLabel + '</span>';
+            }
+        }
+    }
+
+    /* ── Listen for global hostname filter changes ───────────── */
+    document.addEventListener('hostname-filter-changed', function(e) {
+        var hostname = e.detail.hostname || '';
+        ssSetAndLoad(hostname, ssGetHours());
+        /* Update the active host label */
+        var labelEl = document.getElementById('ss-active-host');
+        if (labelEl) {
+            labelEl.textContent = hostname ? hostname : 'All Hosts';
+        }
+    });
+
+    /* ── Listen for global time window changes ────────────────── */
+    document.addEventListener('time-window-changed', function(e) {
+        var hostname = window._kcHostnameFilter || '';
+        var hours = e.detail.hours || ssGetHours();
+        ssSetAndLoad(hostname, hours);
+    });
+
+    /* ── Manual reload (used by dashboard event bus as fallback) ── */
+    window.loadScoreSparklineData = function() {
+        var hostname = window._kcHostnameFilter || '';
+        ssSetAndLoad(hostname, ssGetHours());
+    };
+
+    /* ── Re-render when the theme changes ─────────────────────── */
+    document.body.addEventListener('vespid:themechange', function() {
+        if (ssChart) {
+            ssChart.destroy();
+            ssChart = null;
+        }
+        initChart();
+        if (lastData) updateChart(lastData);
+    });
+
+    /* ── Init on DOM ready ────────────────────────────────────── */
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initChart);
+    } else {
+        initChart();
+    }
+})();
+</script>

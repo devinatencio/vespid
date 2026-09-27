@@ -1,0 +1,19 @@
+<div id="event-feed">
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Node</th>
+                <th>Source IP</th>
+                <th>Action</th>
+                <th>Country</th>
+                <th class="col-asn">ASN / Org</th>
+            </tr>
+        </thead>
+        <tbody id="event-feed-body">
+            {% for event in events %}
+            {% include 'fragments/event_row.html' %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

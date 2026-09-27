@@ -1,0 +1,19 @@
+#!/bin/bash
+set -e
+
+STATE_DIR=/var/lib/vespid
+BACKUP_DIR=/var/lib/vespid-backup
+
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ] || [ "$1" = "purge" ]; then
+    systemctl stop vespid.service 2>/dev/null || true
+    systemctl disable vespid.service 2>/dev/null || true
+fi
+
+# Back up credentials and state files before removal/upgrade so a forced
+# reinstall can't accidentally lose them.
+if [ -d "$STATE_DIR" ] && ls "$STATE_DIR"/*.json >/dev/null 2>&1; then
+    mkdir -p "$BACKUP_DIR"
+    cp -a "$STATE_DIR"/*.json "$BACKUP_DIR/" 2>/dev/null || true
+fi
+
+exit 0

@@ -1,0 +1,31 @@
+# Vespid Sync Agent — config
+# Copy to /etc/vespid-sync/config.yaml
+
+sync:
+  # URL of the Vespid server (must match the server config)
+  server_url: "https://vespid.pabstatencio.com"
+  
+  # API key created in the Vespid dashboard (Admin → API Keys)
+  api_key: "ue_sync_agent_key_here"
+
+  # Cluster name — used for BELONGS_TO relationships on hypervisors
+  cluster: "homelab"
+
+  # Stale cycles — mark assets as 'stale' after N consecutive sync misses
+  stale_cycles: 3
+  # Gone hours — mark assets as 'gone' if not seen for N hours
+  gone_after_hours: 24
+
+providers:
+  - name: "homelab"
+    type: proxmox
+    # Proxmox PVE API endpoint
+    url: "https://pve.example.com:8006/api2/json"
+    # API token with read permissions
+    token_id: "vespid@pve!sync"
+    token_secret: "${PVE_TOKEN}"
+    verify_ssl: true
+    # Optional: only sync VMs in these resource pools
+    # pools:
+    #   - production
+    #   - staging

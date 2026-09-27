@@ -1,0 +1,78 @@
+# OpenSSH Attack Detection Pack
+# Targeted SSH rules beyond basic brute force detection.
+---
+pack_name: openssh-attacks
+display_name: OpenSSH Attack Detection Pack
+icon: "🔐"
+description: >
+  Targeted SSH rules beyond basic brute force: root login attempts,
+  username enumeration, public key probing, password spraying,
+  protocol violations, and PAM failures.
+prerequisite: >
+  Requires /var/log/secure (RHEL/CentOS) or /var/log/auth.log
+  (Debian/Ubuntu) configured in log_sources with parser "secure".
+  This is the default configuration.
+
+rules:
+  - name: ssh_root_brute
+    event_type: SSH_ROOT_BRUTE
+    regex: 'sshd.*?Failed password for root from (?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 3
+    window_seconds: 600
+
+  - name: ssh_invalid_user_enum
+    event_type: SSH_USER_ENUM
+    regex: 'sshd.*?Invalid user \S+ from (?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 4
+    window_seconds: 300
+
+  - name: ssh_pubkey_probe
+    event_type: SSH_PUBKEY_PROBE
+    regex: 'sshd.*?Failed publickey for .+ from (?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s+port\s+\d+'
+    log_sources: ["secure"]
+    max_attempts: 5
+    window_seconds: 600
+
+  - name: ssh_password_spray
+    event_type: SSH_PASSWORD_SPRAY
+    regex: 'sshd.*?Failed password for (?!root)\S+ from (?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 3
+    window_seconds: 120
+
+  - name: ssh_break_in_attempt
+    event_type: SSH_BREAK_IN
+    regex: 'sshd.*?(?:POSSIBLE BREAK-IN ATTEMPT|reverse mapping checking .* POSSIBLE BREAK).*?(?:from\s+|client\s+)(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 1
+    window_seconds: 60
+
+  - name: ssh_max_auth_exceeded
+    event_type: SSH_MAX_AUTH_EXCEEDED
+    regex: 'sshd.*?error: maximum authentication attempts exceeded for .+ from (?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 2
+    window_seconds: 300
+
+  - name: ssh_pam_auth_failure
+    event_type: SSH_PAM_FAILURE
+    regex: 'sshd.*?pam_unix\(sshd:auth\): authentication failure;.*?rhost=(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 5
+    window_seconds: 300
+
+  - name: ssh_bad_protocol_version
+    event_type: SSH_BAD_PROTOCOL
+    regex: 'sshd.*?Bad protocol version identification.*? from (?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 2
+    window_seconds: 3600
+
+  - name: ssh_did_not_receive_ident
+    event_type: SSH_NO_IDENT
+    regex: 'sshd.*?Did not receive identification string from (?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)'
+    log_sources: ["secure"]
+    max_attempts: 3
+    window_seconds: 3600

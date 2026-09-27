@@ -1,0 +1,138 @@
+{# Process tree fragment — loaded via HTMX or included directly #}
+<div class="pt-section">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; padding:0.5rem 0; margin-bottom:0.5rem; border-bottom:1px solid var(--border);">
+        <span style="font-size:0.9rem; font-weight:600;">
+            📂 <strong>{{ selected_hostname }}</strong> — {{ tree|length }} root process{{ 'es' if tree|length != 1 else '' }}
+        </span>
+        <span style="display:flex; align-items:center; gap:0.5rem;">
+            {% if truncated %}
+            <span class="badge badge-warn">Limited to 500 nodes</span>
+            {% endif %}
+            <span class="muted" style="font-size:0.72rem;">{{ node_count }} process{{ 'es' if node_count != 1 else '' }}</span>
+        </span>
+    </div>
+
+    {% if not tree %}
+    <div style="text-align:center; padding:2rem;">
+        <div style="font-size:2rem; margin-bottom:0.5rem;">🔍</div>
+        <h3>No process events found</h3>
+        <p class="muted">No host events recorded for {{ selected_hostname }}.</p>
+    </div>
+    {% else %}
+    <div class="pt-filters-bar">
+        <div class="search-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="pt-search" placeholder="Filter by PID, process name, or command…" autocomplete="off" oninput="filterProcessTree(this.value)">
+            <button class="search-clear" id="pt-search-clear" onclick="clearProcessTreeSearch()" style="display:none;">&times;</button>
+        </div>
+        <span id="pt-search-count" class="muted" style="font-size:0.72rem; display:none;"></span>
+    </div>
+
+    <div class="pt-tree" style="font-family:'JetBrains Mono','SF Mono','Fira Code',monospace; font-size:0.78rem; overflow-x:auto; line-height:1.6;">
+        {% macro render_node(node, prefix, is_last) %}
+            {% set connector = '└── ' if is_last else '├── ' %}
+            {% set child_prefix = prefix ~ ('&nbsp;&nbsp;&nbsp;&nbsp;' if is_last else '│&nbsp;&nbsp;&nbsp;') %}
+            {% set has_children = node.children and node.children|length > 0 %}
+            <details class="pt-node" {% if prefix == '' %}open{% endif %}>
+                <summary class="pt-node-summary" style="display:flex; align-items:baseline; gap:0.5rem; padding:0.15rem 0.25rem; border-radius:3px; cursor:pointer; list-style:none; white-space:nowrap;">
+                    <span class="pt-connector" style="color:var(--text-muted); flex-shrink:0; user-select:none;">{{ (prefix ~ connector) | safe }}</span>
+                    <a class="pt-pid" href="{{ url_for('host_threats.host_threats_page') }}?hostname={{ selected_hostname }}" title="View host {{ selected_hostname }} in dashboard" style="color:#3B82F6; font-weight:600; min-width:5rem; text-decoration:none;">{{ node.pid }}</a>
+                    <span class="pt-exe" title="{{ node.exe }}" style="color:#22c55e; min-width:10rem; max-width:20rem; overflow:hidden; text-overflow:ellipsis;">{{ node.exe }}</span>
+                    <span class="pt-ts" style="color:var(--text-muted); font-size:0.7rem; white-space:nowrap;">{{ node.timestamp[:19] }}</span>
+                    <span class="pt-cmd" title="{{ node.command_line }}" style="color:var(--text-muted); opacity:0.65; overflow:hidden; text-overflow:ellipsis; max-width:50rem;">{{ node.command_line[:80] }}{% if node.command_line|length > 80 %}…{% endif %}</span>
+                    {% if has_children %}
+                    <span class="pt-child-count" style="color:var(--text-muted); font-size:0.65rem; opacity:0.5;">({{ node.children|length }} child{{ 'ren' if node.children|length != 1 else '' }})</span>
+                    {% endif %}
+                </summary>
+                {% if has_children %}
+                    {% for child in node.children %}
+                        {{ render_node(child, child_prefix, loop.last) }}
+                    {% endfor %}
+                {% endif %}
+            </details>
+        {% endmacro %}
+
+        {% for root in tree %}
+            {{ render_node(root, '', False) }}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.pt-filters-bar { display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem; }
+.search-wrap { position:relative; flex:1; min-width:220px; }
+.search-wrap .search-icon { position:absolute; left:7px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--text-muted); pointer-events:none; }
+.search-wrap input { width:100%; padding:0.35rem 1.6rem 0.35rem 1.5rem; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:0.8rem; outline:none; }
+.search-wrap input:focus { border-color:var(--accent); }
+.search-wrap input::placeholder { color:var(--text-muted); }
+.search-clear { position:absolute; right:4px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); font-size:1rem; cursor:pointer; padding:0 4px; line-height:1; }
+.search-clear:hover { color:var(--text); }
+.pt-node-summary::-webkit-details-marker { display:none; }
+.pt-node-summary::marker { display:none; content:''; }
+.pt-node-summary:hover { background:rgba(128,128,128,0.04); }
+.pt-node-summary.pt-dimmed { opacity:0.2; transition:opacity 0.15s; }
+.pt-node-summary.pt-highlight { background:rgba(255,230,0,0.08); }
+.pt-node-summary.pt-highlight .pt-pid,
+.pt-node-summary.pt-highlight .pt-exe,
+.pt-node-summary.pt-highlight .pt-cmd { color:var(--text); }
+.badge { font-size:0.7rem; padding:0.12rem 0.4rem; border-radius:100px; font-weight:600; }
+.badge-warn { background:#EAB30820; color:#EAB308; border:1px solid #EAB30840; }
+.muted { color:var(--text-muted); }
+</style>
+
+<script>
+function filterProcessTree(query) {
+    var q = (query || '').toLowerCase().trim();
+    var details = document.querySelectorAll('#pt-tree-container .pt-node');
+    var countEl = document.getElementById('pt-search-count');
+    var clearBtn = document.getElementById('pt-search-clear');
+    var visible = 0;
+
+    details.forEach(function(node) {
+        var summary = node.querySelector('.pt-node-summary');
+        if (!summary) return;
+        var text = summary.textContent.toLowerCase();
+        var matches = !q || text.indexOf(q) !== -1;
+
+        if (matches) {
+            visible++;
+            summary.classList.remove('pt-dimmed');
+            summary.classList.add('pt-highlight');
+            var parent = node.parentElement;
+            while (parent && parent.tagName === 'DETAILS' && parent.classList.contains('pt-node')) {
+                parent.open = true;
+                parent = parent.parentElement;
+            }
+        } else {
+            summary.classList.add('pt-dimmed');
+            summary.classList.remove('pt-highlight');
+        }
+    });
+
+    if (clearBtn) clearBtn.style.display = q ? '' : 'none';
+
+    if (countEl) {
+        if (q && visible > 0) {
+            countEl.style.display = 'inline';
+            countEl.textContent = visible + ' matching process' + (visible !== 1 ? 'es' : '');
+        } else if (q) {
+            countEl.style.display = 'inline';
+            countEl.textContent = '0 matches';
+        } else {
+            countEl.style.display = 'none';
+            details.forEach(function(node) {
+                var summary = node.querySelector('.pt-node-summary');
+                if (summary) { summary.classList.remove('pt-dimmed','pt-highlight'); }
+            });
+        }
+    }
+}
+
+function clearProcessTreeSearch() {
+    var input = document.getElementById('pt-search');
+    if (input) { input.value = ''; }
+    filterProcessTree('');
+    if (input) input.focus();
+}
+</script>

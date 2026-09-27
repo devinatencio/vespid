@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Health Checks{% endblock %}
+{% block content %}
+<div class="page-container">
+
+{% set ns = namespace(total=0, ok=0, warn=0, crit=0, unk=0) %}
+{% for r in results %}
+{% set ns.total = ns.total + 1 %}
+{% if r.severity == 'ok' %}{% set ns.ok = ns.ok + 1 %}
+{% elif r.severity == 'warning' %}{% set ns.warn = ns.warn + 1 %}
+{% elif r.severity == 'critical' %}{% set ns.crit = ns.crit + 1 %}
+{% else %}{% set ns.unk = ns.unk + 1 %}
+{% endif %}
+{% endfor %}
+
+<div class="card" style="padding:1rem 1.25rem;margin-bottom:0.75rem;display:flex;align-items:center;gap:1rem;">
+    <div style="font-size:1.5rem;line-height:1;">🩺</div>
+    <div style="flex:1;min-width:0;">
+        <h1 style="margin:0;font-size:1.2rem;">Health Checks</h1>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.15rem;">
+            Agent-executed health check results
+        </div>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+        <div class="hc-stat"><span class="hc-stat-n">{{ ns.total }}</span> <span class="hc-stat-l">Total</span></div>
+        {% if ns.crit > 0 %}<div class="hc-stat hc-crit"><span class="hc-stat-n">{{ ns.crit }}</span> <span class="hc-stat-l">Critical</span></div>{% endif %}
+        {% if ns.warn > 0 %}<div class="hc-stat hc-warn"><span class="hc-stat-n">{{ ns.warn }}</span> <span class="hc-stat-l">Warning</span></div>{% endif %}
+        <div class="hc-stat hc-ok"><span class="hc-stat-n">{{ ns.ok }}</span> <span class="hc-stat-l">OK</span></div>
+        {% if ns.unk > 0 %}<div class="hc-stat"><span class="hc-stat-n">{{ ns.unk }}</span> <span class="hc-stat-l">Unknown</span></div>{% endif %}
+    </div>
+</div>
+
+    <div class="content-card">
+
+        {% if not results %}
+        <div class="empty-state">
+            <div class="empty-icon">✅</div>
+            <h3>No health checks configured</h3>
+            <p>Add <code>exec</code> collector scripts to your agent config to start running checks.</p>
+        </div>
+        {% else %}
+
+        <div class="checks-grid">
+        {% for result in results %}
+            <div class="check-card {% if result.severity == 'ok' %}check-ok{% elif result.severity == 'warning' %}check-warn{% elif result.severity == 'critical' %}check-crit{% else %}check-unknown{% endif %}">
+                <div class="check-header">
+                    <div class="check-name">{{ result.name }}</div>
+                    <div class="check-severity">
+                        {% if result.severity == 'ok' %}
+                        <span class="sev-badge sev-ok">OK</span>
+                        {% elif result.severity == 'warning' %}
+                        <span class="sev-badge sev-warn">WARNING</span>
+                        {% elif result.severity == 'critical' %}
+                        <span class="sev-badge sev-crit">CRITICAL</span>
+                        {% else %}
+                        <span class="sev-badge sev-unknown">UNKNOWN</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="check-meta">
+                    <span class="check-host">{{ result.hostname }}</span>
+                    <span class="check-time" title="{{ result.created_at }}">{{ result.created_at[:16] }}</span>
+                </div>
+                {% if result.output %}
+                <div class="check-output">{{ result.output }}</div>
+                {% endif %}
+            </div>
+        {% endfor %}
+        </div>
+
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.checks-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 0.75rem; }
+
+.check-card {
+    padding: 1rem 1.15rem; border-radius: 10px;
+    border: 1px solid var(--border-color);
+    border-left: 4px solid var(--border-color);
+    background: var(--bg-card);
+}
+.check-card.check-ok     { border-left-color: #22c55e; }
+.check-card.check-warn   { border-left-color: #eab308; }
+.check-card.check-crit   { border-left-color: #ef4444; }
+.check-card.check-unknown { border-left-color: #6b7280; }
+body.light-theme .check-card { background: #fff; }
+
+.check-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
+.check-name { font-weight: 600; font-size: 0.95rem; }
+.sev-badge { padding: 2px 10px; border-radius: 6px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; }
+.sev-ok { background: #22c55e20; color: #22c55e; }
+.sev-warn { background: #eab30820; color: #eab308; }
+.sev-crit { background: #ef444420; color: #ef4444; }
+.sev-unknown { background: #6b728020; color: #6b7280; }
+
+.check-meta { display: flex; gap: 1rem; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+.check-host { font-family: monospace; }
+.check-output {
+    font-size: 0.8rem; color: var(--text); padding: 0.5rem 0.75rem;
+    background: var(--bg-card); border-radius: 6px; font-family: monospace;
+    white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto;
+    margin-top: 0.25rem;
+}
+
+.empty-state { text-align: center; padding: 3rem 1rem; color: var(--text-muted); }
+.empty-icon { font-size: 3rem; margin-bottom: 0.5rem; }
+.empty-state h3 { font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--text); }
+.empty-state code { background: var(--bg-card); padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+
+.hc-stat { padding:0.35rem 0.7rem; border-radius:6px; border:1px solid var(--border,#334155); display:flex; align-items:center; gap:0.4rem; font-size:0.78rem; background:var(--bg-card,#1e293b); }
+.hc-stat .hc-stat-n { font-weight:700; font-size:0.95rem; line-height:1; }
+.hc-stat .hc-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+.hc-stat.hc-crit { border-color:rgba(248,113,113,0.3); }
+.hc-stat.hc-crit .hc-stat-n { color:#f87171; }
+.hc-stat.hc-warn { border-color:rgba(250,204,21,0.3); }
+.hc-stat.hc-warn .hc-stat-n { color:#facc15; }
+.hc-stat.hc-ok { border-color:rgba(74,222,128,0.3); }
+.hc-stat.hc-ok .hc-stat-n { color:#4ade80; }
+
+.mt-4 { margin-top: 1rem; }
+.mb-4 { margin-bottom: 1rem; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.btn {
+    padding: 0.3rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px;
+    background: var(--bg-card); color: var(--text); cursor: pointer; text-decoration: none;
+    font-size: 0.8rem; white-space: nowrap;
+}
+.btn:hover { border-color: var(--accent); }
+
+@media (max-width: 700px) {
+    .checks-grid { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,127 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["vespid", "vespid.*"]
+
+[tool.setuptools.package-data]
+vespid = ["py.typed"]
+
+[project]
+name = "vespid"
+version = "1.0.0"
+description = "Lightweight, high-performance security daemon for Linux systems running nftables"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.10"
+dependencies = [
+    "typer>=0.25.1,<1.0.0",
+    "rich>=14.3.0,<15.0.0",
+    "pyyaml>=6.0.0,<7.0.0",
+    "httpx>=0.28.0,<1.0.0",
+]
+
+[project.optional-dependencies]
+geo = ["maxminddb>=2.0.0"]
+inotify = ["inotify-simple>=1.3"]
+test = [
+    "pytest==8.3.4",
+    "hypothesis==6.122.3",
+]
+dev = [
+    "ruff>=0.9.0",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+vespid = "vespid.daemon:main"
+vespid-cli = "vespid.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+exclude = [
+    ".venv",
+    ".hypothesis",
+    ".kiro",
+    "build",
+    "dist",
+    "debian",
+    "website",
+    "logs",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+select = [
+    "F",    # pyflakes — catch errors
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "I",    # isort — import ordering
+    "N",    # pep8-naming — naming conventions
+    "UP",   # pyupgrade — modern Python idioms
+    "B",    # flake8-bugbear — bug detection
+]
+ignore = [
+    "E501",  # line too long — handled by line-length
+    "N818",  # allow custom exception suffixes other than "Error"
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["N802", "N803", "N806"]  # allow non-snake-case test names
+"vespid-server/gunicorn.conf.py" = ["I001", "E402"]  # monkey-patch must run before stdlib imports
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["vespid"]
+strict = false
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+check_untyped_defs = true
+warn_unreachable = true
+warn_redundant_casts = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = [
+    "inotify_simple",
+    "maxminddb",
+    "maxminddb.*",
+    "yaml",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "vespid.scripts.*",
+]
+# Utility scripts — not part of the runtime agent
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "vespid.cli.*",
+    "vespid.config_subscriber",
+    "vespid.databus",
+    "vespid.daemon",
+    "vespid.fleet_subscriber",
+]
+# These modules use untyped dict patterns from JSON API responses and
+# server protocol parsing. Suppressed error codes are intentional —
+# full typing would require Protocol/TypedDict wrappers for all JSON
+# payloads, which adds complexity without meaningful safety gains here.
+disable_error_code = ["arg-type", "assignment", "union-attr", "misc"]
+
+[[tool.mypy.overrides]]
+module = [
+    "vespid.nftables_allowlist",
+    "vespid.nftables_recidive",
+]
+# Mixin classes reference attributes defined by NFTablesManager.
+# mypy cannot resolve mixin attribute access without Protocol types.
+disable_error_code = ["attr-defined", "return-value"]

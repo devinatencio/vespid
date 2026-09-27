@@ -1,0 +1,17 @@
+Package: vespid-server
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.11), python3-venv, python3-pip
+Maintainer: Vespid Team <team@vespid.dev>
+Homepage: https://github.com/your-org/vespid
+Description: Vespid Server — centralized security event dashboard
+ Vespid Server is a Flask-based centralized management server for the
+ Vespid ecosystem. It receives SecurityEvent batches from distributed
+ Vespid daemon instances, persists them in SQLite (or MySQL), and
+ presents them through an HTMX-powered web dashboard.
+ .
+ Features include real-time SSE event streaming, whitelist/blacklist
+ management with command push to nodes, centralized threat intelligence
+ feed catalog, role-based access control, and geographic visualization.
