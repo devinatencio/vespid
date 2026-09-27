@@ -181,8 +181,11 @@ impl Collector for DiskCollector {
                     continue;
                 }
 
+                #[allow(clippy::useless_conversion)]
                 let total = u64::from(stat.f_blocks) * stat.f_frsize;
+                #[allow(clippy::useless_conversion)]
                 let available = u64::from(stat.f_bavail) * stat.f_frsize;
+                #[allow(clippy::useless_conversion)]
                 let used = total.saturating_sub(u64::from(stat.f_bfree) * stat.f_frsize);
                 let used_percent = if total > 0 {
                     (used as f64 / total as f64) * 100.0
