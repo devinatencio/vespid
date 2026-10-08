@@ -3,7 +3,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERSION="1.0.0"
+# Derive the version from the RPM spec so the source tarball name always
+# matches the spec's %{version}. Hardcoding it here previously drifted from
+# the spec and broke `make package` (rpmbuild extracts %{name}-%{version}.tar.gz).
+VERSION="$(awk '/^Version:/{print $2; exit}' "$SCRIPT_DIR/vespid-agent.spec")"
 PACKAGE="vespid-agent"
 
 ARCH="$(uname -m)"

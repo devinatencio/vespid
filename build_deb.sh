@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/dist/deb"
-VERSION="$(cat "${SCRIPT_DIR}/vespid-server/VERSION" 2>/dev/null || echo 1.0.0)"
+VERSION="$(cat "${SCRIPT_DIR}/vespid-server/VERSION" 2>/dev/null || echo 1.0.1)"
 TARGETS=()
 
 # ---------------------------------------------------------------------------

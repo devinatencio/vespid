@@ -3,7 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERSION="1.0.0"
+# Derive the version from the RPM spec so the source tarball name always
+# matches the spec's %{version}. Keep this in sync via the spec, not here.
+VERSION="$(awk '/^Version:/{print $2; exit}' "$SCRIPT_DIR/vespid-sync.spec")"
 PACKAGE="vespid-sync"
 
 ARCH="$(uname -m)"

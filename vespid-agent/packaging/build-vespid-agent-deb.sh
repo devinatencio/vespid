@@ -3,7 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-VERSION="1.0.0"
+# Derive the version from the component spec so the .deb version matches the
+# RPM/version source instead of drifting from a hardcoded literal.
+VERSION="$(awk '/^Version:/{print $2; exit}' "$SCRIPT_DIR/vespid-agent.spec")"
 PACKAGE="vespid-agent"
 ARCH="$(dpkg --print-architecture 2>/dev/null || echo "amd64")"
 DEB_NAME="${PACKAGE}_${VERSION}_${ARCH}.deb"
