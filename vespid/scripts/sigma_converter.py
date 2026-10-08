@@ -1193,6 +1193,9 @@ def convert_rule(rule: dict) -> tuple[ConvertedRule | None, str]:
     if not regex:
         return (None, "could not build regex")
 
+    # Normalise inline flags so the regex is valid on Python 3.11+.
+    regex = _hoist_inline_flags(regex)
+
     # Validate the regex compiles and has (?P<ip>...) — except for auditd rules (Req 6.6)
     try:
         compiled = re.compile(regex)
@@ -1324,6 +1327,28 @@ def _split_field_modifier(field: str) -> tuple[str, str | None]:
     """Split a Sigma field like 'cs-uri-query|contains' into (base, modifier)."""
     parts = field.split("|", 1)
     return parts[0], parts[1] if len(parts) > 1 else None
+
+
+# Global inline-flag groups such as (?i) must appear at the very start of a
+# Python 3.11+ regex. Sigma rules (especially ``|re`` values) sometimes embed
+# them mid-pattern, which compiles on older Pythons but raises re.error on
+# 3.11+. Hoist any such flags to the front so the generated regex is portable
+# and still case-insensitive where the author intended.
+_INLINE_FLAG_RE = re.compile(r"\(\?([aimsxu]+)\)")
+
+
+def _hoist_inline_flags(pattern: str) -> str:
+    """Move any global inline flags (e.g. ``(?i)``) to the start of the regex."""
+    found: set[str] = set()
+
+    def _collect(match: re.Match) -> str:
+        found.update(match.group(1))
+        return ""
+
+    body = _INLINE_FLAG_RE.sub(_collect, pattern)
+    if not found:
+        return pattern
+    return "(?" + "".join(sorted(found)) + ")" + body
 
 
 def _re_escape(pattern: str) -> str:

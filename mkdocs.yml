@@ -69,6 +69,7 @@ nav:
       - Fleet Blocklist: server/fleet.md
       - Auto-Enrollment: server/enrollment.md
       - Detection Rule Packs: server/rule-packs.md
+      - Rule Pack Updates: server/rule-pack-updates.md
       - Noise Suppression: server/noise-suppression.md
       - Inventory (CMDB): server/inventory.md
       - Deployment: server/deployment.md

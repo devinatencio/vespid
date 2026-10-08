@@ -77,8 +77,17 @@ class ConfigSubscriber:
         on_auth_failure: Callable[[], bool] | None = None,
         on_config_applied: Callable[[], None] | None = None,
         on_auditd_updated: Callable[[dict], dict] | None = None,
+        on_log_sources_updated: Callable[[list], None] | None = None,
     ) -> None:
         self.config = config
+        # Pristine local log_sources captured at startup, before any profile is
+        # applied.  Profiles mutate ``self.config`` in place, so without this a
+        # source added by one profile would look "local" on later applies and
+        # could never be removed by a subsequent profile.
+        try:
+            self._local_log_sources = list(self.config.to_dict().get("log_sources", []))
+        except Exception:
+            self._local_log_sources = []
         self._on_rules_updated = on_rules_updated
         self._subscription_manager = subscription_manager
         self._nft_manager = nft_manager
@@ -86,6 +95,7 @@ class ConfigSubscriber:
         self._on_auth_failure = on_auth_failure
         self._on_config_applied = on_config_applied
         self._on_auditd_updated = on_auditd_updated
+        self._on_log_sources_updated = on_log_sources_updated
 
         self._last_event_id: str | None = None
         self._stop = asyncio.Event()
@@ -703,8 +713,12 @@ class ConfigSubscriber:
         """
         from .config_conflict import resolve_local_wins, resolve_merge, resolve_server_wins
 
-        # Build local config dict for comparison
+        # Build local config dict for comparison.  Resolve log_sources against
+        # the pristine startup baseline rather than the in-memory config, which
+        # profiles mutate in place (otherwise a previously server-added source
+        # is treated as local and can never be removed).
         local_config = self.config.to_dict()
+        local_config["log_sources"] = self._local_log_sources
 
         if strategy == "server-wins":
             return resolve_server_wins(server_settings, local_config)
@@ -1089,6 +1103,13 @@ class ConfigSubscriber:
             LogSource(**ls) if isinstance(ls, dict) else ls for ls in settings["log_sources"]
         ]
         self.config.log_sources = new_log_sources
+        # Reconcile the running tailers so newly added sources are actually
+        # tailed (and removed ones stop) without needing a daemon restart.
+        if self._on_log_sources_updated:
+            try:
+                self._on_log_sources_updated(new_log_sources)
+            except Exception:
+                log.exception("on_log_sources_updated callback failed")
         log.debug("Applied log_sources update (%d sources)", len(new_log_sources))
 
     def _detect_excluded_http_paths_changes(self, settings: dict[str, Any]) -> bool:
@@ -1222,8 +1243,13 @@ class ConfigSubscriber:
         self.config.subscriptions = checkpoint["subscriptions"]
         self._subscription_manager.config.subscriptions = checkpoint["subscriptions"]
 
-        # Restore log_sources
+        # Restore log_sources and reconcile tailers back to the checkpoint set
         self.config.log_sources = checkpoint["log_sources"]
+        if self._on_log_sources_updated:
+            try:
+                self._on_log_sources_updated(checkpoint["log_sources"])
+            except Exception as exc:
+                log.error("Failed to rollback log_sources via callback: %s", exc)
 
         # Restore telemetry settings
         self.config.flush_interval_seconds = checkpoint["flush_interval_seconds"]

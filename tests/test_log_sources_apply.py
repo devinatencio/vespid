@@ -197,6 +197,70 @@ class TestLogSourcesApplication:
         """Should return False when log_sources key is absent from settings."""
         assert subscriber._detect_log_sources_changes({}) is False
 
+    def test_apply_log_sources_invokes_reconcile_callback(self, subscriber):
+        """Applying log_sources must notify the tailer reconcile callback."""
+        from vespid.config import LogSource
+
+        callback = MagicMock()
+        subscriber._on_log_sources_updated = callback
+
+        settings = {
+            "log_sources": [
+                {"path": "/var/log/haproxy/access.log", "parser": "haproxy"},
+            ]
+        }
+        subscriber._apply_log_sources(settings)
+
+        callback.assert_called_once()
+        passed = callback.call_args[0][0]
+        assert len(passed) == 1
+        assert isinstance(passed[0], LogSource)
+        assert passed[0].path == "/var/log/haproxy/access.log"
+        assert passed[0].parser == "haproxy"
+
+    def test_apply_log_sources_callback_failure_is_swallowed(self, subscriber):
+        """A failing reconcile callback must not break config application."""
+        subscriber._on_log_sources_updated = MagicMock(side_effect=RuntimeError("boom"))
+
+        subscriber._apply_log_sources(
+            {"log_sources": [{"path": "/var/log/secure", "parser": "secure"}]}
+        )
+
+        assert subscriber.config.log_sources[0].path == "/var/log/secure"
+
+    def test_local_log_sources_baseline_captured_at_init(self, subscriber):
+        """The pristine baseline reflects the startup config, not later edits."""
+        assert (
+            subscriber._local_log_sources == subscriber.config.to_dict.return_value["log_sources"]
+        )
+
+    def test_resolve_uses_pristine_log_sources_baseline(self, subscriber):
+        """Removing a source from the profile must remove a source the profile
+        previously added, even though the in-memory config now shows it as local."""
+        from vespid.config import LogSource
+
+        # Startup baseline: only the local default source.
+        subscriber._local_log_sources = [{"path": "/var/log/secure", "parser": "secure"}]
+        # In-memory config polluted by a previously-applied profile.
+        subscriber.config.log_sources = [
+            LogSource(path="/var/log/secure", parser="secure"),
+            LogSource(path="/var/log/vespid-server/access.log", parser="apache"),
+        ]
+        subscriber.config.to_dict.return_value = {
+            "management_mode": "server-managed",
+            "allowlist": ["127.0.0.1/32"],
+            "log_sources": [
+                {"path": "/var/log/secure", "parser": "secure"},
+                {"path": "/var/log/vespid-server/access.log", "parser": "apache"},
+            ],
+        }
+
+        resolved = subscriber._resolve_conflicts({"log_sources": []}, "server-wins")
+
+        paths = [ls["path"] if isinstance(ls, dict) else ls.path for ls in resolved["log_sources"]]
+        assert "/var/log/vespid-server/access.log" not in paths
+        assert "/var/log/secure" in paths
+
     def test_checkpoint_includes_log_sources(self, subscriber):
         """Rollback checkpoint should capture log_sources."""
         from vespid.config import LogSource

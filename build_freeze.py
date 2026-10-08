@@ -40,7 +40,7 @@ sys.path.insert(0, '{SRC}')
 from cx_Freeze import setup, Executable
 setup(
     name='vespid',
-    version='1.0.0',
+    version='1.0.1',
     options={{
         'build_exe': {{
             'build_exe': '{target_dir}',
@@ -66,7 +66,7 @@ sys.path.insert(0, '{SRC}')
 from cx_Freeze import setup, Executable
 setup(
     name='vespid-cli',
-    version='1.0.0',
+    version='1.0.1',
     options={{
         'build_exe': {{
             'build_exe': '{target_dir}',
@@ -92,7 +92,7 @@ sys.path.insert(0, '{SRC / "vespid-server"}')
 from cx_Freeze import setup, Executable
 setup(
     name='vespid-server',
-    version='1.0.0',
+    version='1.0.1',
     options={{
         'build_exe': {{
             'build_exe': '{target_dir}',

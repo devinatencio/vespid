@@ -8,7 +8,7 @@
 %global debug_package %{nil}
 
 Name:           vespid-agent
-Version:        1.0.0
+Version:        1.0.1
 Release:        1%{?dist}
 Summary:        Vespid Agent system metrics collection agent
 
@@ -179,6 +179,8 @@ fi
 %{_unitdir}/vespid-worker.service
 
 %changelog
+* Thu Oct 08 2026 Vespid Team <dev@vespid.io> - 1.0.1-1
+- Version bump to 1.0.1
 * Sat Jun  6 2026 Vespid Team <dev@vespid.io> - 1.0.0-1
 - Initial release
 - 5 collectors: CPU, memory, disk, network, systemd

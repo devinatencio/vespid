@@ -1,0 +1,19 @@
+{
+  "sigma_commit": "8a4813404ea3074890e0cda9272d4d1a8b2941d6",
+  "generated_at": "2026-10-08T16:59:07Z",
+  "rules_imported": 155,
+  "packs": {
+    "sigma-web-attacks.yaml": {
+      "sha256": "f34b2b8282d999462e6b9a94b501094dee1e6e78d349de644268e1dde62fe91e",
+      "rules": 38
+    },
+    "sigma-ssh-attacks.yaml": {
+      "sha256": "bade059cccd5e0244588db02a90d3504584747c5ac027abab17b4790ad84fcae",
+      "rules": 1
+    },
+    "sigma-host-threats.yaml": {
+      "sha256": "c3b573d8fe2113701d9886cbdd65493c35427a09fde44f3f429753ea088c12ca",
+      "rules": 116
+    }
+  }
+}

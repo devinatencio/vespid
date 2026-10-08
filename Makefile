@@ -1,11 +1,12 @@
 .PHONY: test dev rpm deb clean lint help install-deps test-deps syntax-check docs docs-serve \
-        sign-rpms package package-rpm package-deb package-deps package-docker package-clean
+        sign-rpms package package-rpm package-deb package-deps package-docker package-clean \
+        sigma-bundle
 
 PYTHON   ?= python3
 PYTEST   ?= python3 -m pytest
 PIP      ?= pip3
 NAME     := vespid
-VERSION  := 1.0.0
+VERSION  := 1.0.1
 # RPM signing — set SIGN_KEY to the GPG signing key ID/name
 #   gpg --gen-key           # one-time: create a signing key
 #   echo '%_gpg_name Vespid Security' >> ~/.rpmmacros
@@ -109,6 +110,16 @@ package-docker: ## Build both RPM and DEB in containers (works on any host)
 
 package-clean: ## Remove dist/ and generated rpmbuild trees
 	rm -rf "$(DIST_DIR)" rpmbuild vespid-server/rpmbuild
+
+# --- Sigma rule-pack bundle ------------------------------------------------
+# Sync the latest SigmaHQ rules, convert them to Vespid packs, and package a
+# distributable bundle (packs + manifest.json) for `vespid-server-admin rules
+# update`. Override the destination with SIGMA_BUNDLE=...
+SIGMA_BUNDLE ?= $(DIST_DIR)/sigma-packs.tar.gz
+
+sigma-bundle: ## Build a distributable Sigma rule-pack bundle (sync + convert + package)
+	python3 -m vespid.scripts.sigma_import --sync --bundle "$(SIGMA_BUNDLE)"
+	@echo "Sigma bundle written to $(SIGMA_BUNDLE)"
 
 clean: ## Remove build artifacts
 	rm -rf rpmbuild/ build/ dist/ *.egg-info

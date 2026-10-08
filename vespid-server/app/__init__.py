@@ -5,7 +5,7 @@ Flask-Login, database backend (SQLite or MariaDB/MySQL), SSE manager,
 rate limiter, and OpenAPI/Swagger documentation.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import logging
 import os

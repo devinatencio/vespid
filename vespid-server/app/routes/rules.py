@@ -205,6 +205,31 @@ def _deserialize_tags(raw: str | list | None) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _get_heartbeat_parsers(db, node_id: str) -> list[str]:
+    """Return the parsers the node last reported as active in its heartbeat.
+
+    These are the log sources the agent actually monitors locally (its
+    configured defaults), reported as ``last_host_info.active_parsers``.
+    """
+    node = db.execute("SELECT last_host_info FROM nodes WHERE node_id = ?", (node_id,)).fetchone()
+    if not node:
+        return []
+    try:
+        host_info = (
+            json.loads(node["last_host_info"])
+            if isinstance(node["last_host_info"], str)
+            else node["last_host_info"]
+        )
+    except (json.JSONDecodeError, TypeError):
+        return []
+    if not isinstance(host_info, dict):
+        return []
+    active_parsers = host_info.get("active_parsers")
+    if not isinstance(active_parsers, list):
+        return []
+    return [p for p in active_parsers if p]
+
+
 def _get_node_active_parsers(db, node_id: str) -> tuple[list[str] | None, str]:
     """Resolve active parsers for a node.
 
@@ -213,6 +238,8 @@ def _get_node_active_parsers(db, node_id: str) -> tuple[list[str] | None, str]:
     - "auto": filter by parser match
     - "all": no filtering (legacy/unknown node)
     """
+    heartbeat_parsers = _get_heartbeat_parsers(db, node_id)
+
     # 1. Check config profile for explicit assignment
     profile = resolve_effective_profile(db, node_id)
     if profile:
@@ -224,47 +251,32 @@ def _get_node_active_parsers(db, node_id: str) -> tuple[list[str] | None, str]:
         mode = settings.get("detection_pack_mode", "auto")
         if mode == "explicit":
             return settings.get("detection_packs", []), "explicit"
-        # Auto mode on managed node: derive from profile's log_sources
-        log_sources = settings.get("log_sources", [])
-        if log_sources:
-            parsers = list(set(ls.get("parser", "") for ls in log_sources if ls.get("parser")))
-            # Merge "auditd" if the profile has auditd enabled — auditd is
-            # configured via a separate config block, not log_sources, so it
-            # won't appear in the profile's log_sources list.
-            auditd_cfg = settings.get("auditd", {})
-            if isinstance(auditd_cfg, dict) and auditd_cfg.get("enabled"):
-                parsers = list(set(parsers) | {"auditd"})
-            else:
-                # Fall back to heartbeat-reported active_parsers for auditd
-                node = db.execute(
-                    "SELECT last_host_info FROM nodes WHERE node_id = ?", (node_id,)
-                ).fetchone()
-                if node:
-                    try:
-                        hi = (
-                            json.loads(node["last_host_info"])
-                            if isinstance(node["last_host_info"], str)
-                            else node["last_host_info"]
-                        )
-                        heartbeat_parsers = hi.get("active_parsers", []) if hi else []
-                        if isinstance(heartbeat_parsers, list) and "auditd" in heartbeat_parsers:
-                            parsers = list(set(parsers) | {"auditd"})
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-            if parsers:
-                return parsers, "auto"
 
-    # 2. Fall back to heartbeat-reported active_parsers
-    node = db.execute("SELECT last_host_info FROM nodes WHERE node_id = ?", (node_id,)).fetchone()
-    if node:
-        host_info = (
-            json.loads(node["last_host_info"])
-            if isinstance(node["last_host_info"], str)
-            else node["last_host_info"]
-        )
-        active_parsers = host_info.get("active_parsers")
-        if active_parsers and isinstance(active_parsers, list) and len(active_parsers) > 0:
-            return active_parsers, "auto"
+        # Auto mode on a managed node: the profile's log_sources only *add*
+        # sources to monitor, so merge them with the parsers the agent reports
+        # in its heartbeat (its defaults).  Replacing them would drop packs for
+        # every source the profile doesn't mention.
+        log_sources = settings.get("log_sources", [])
+        profile_parsers = [
+            ls.get("parser")
+            for ls in log_sources
+            if isinstance(ls, dict) and ls.get("parser")
+        ]
+
+        # auditd is configured via a separate config block, not log_sources,
+        # so it won't appear in the profile's log_sources list.
+        auditd_cfg = settings.get("auditd", {})
+        auditd_enabled = isinstance(auditd_cfg, dict) and auditd_cfg.get("enabled")
+        if auditd_enabled or "auditd" in heartbeat_parsers:
+            profile_parsers.append("auditd")
+
+        if profile_parsers:
+            merged = list(dict.fromkeys(profile_parsers + heartbeat_parsers))
+            return merged, "auto"
+
+    # 2. Fall back to heartbeat-reported active_parsers (the node's defaults)
+    if heartbeat_parsers:
+        return heartbeat_parsers, "auto"
 
     # 3. No info available — return all
     return None, "all"

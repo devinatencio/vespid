@@ -5,6 +5,56 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.0.1] - 2026-10-08
+
+### Added
+
+- **Runtime log-source reconciliation** — log sources added by a configuration
+  profile are tailed immediately, and sources removed by a profile have their
+  tailer stopped, without a daemon restart. The tailer set was previously built
+  once at startup, so profile-added sources were silently ignored until the
+  daemon was restarted.
+- **Detection rule pack update workflow** — `vespid-server-admin rules update`
+  validates, diffs and applies a pack bundle from a directory, a `.tar.gz`/`.zip`
+  archive, or an `http(s)://` URL. `rules export` builds distributable bundles
+  and `rules status` shows installed packs and their provenance. Applying a
+  bundle backs up the previous packs (`packs/.backups/<timestamp>/`) and
+  reconciles the database non-destructively. See the new *Rule Pack Updates*
+  documentation and the updated *Sigma Rule Integration* guide.
+- The Sigma importer now writes `packs/manifest.json` (source commit + per-file
+  SHA-256 + rule counts) and can build a distributable bundle in one step:
+  `python -m vespid.scripts.sigma_import --sync --bundle dist/sigma-packs.tar.gz`
+  (also supports `--output-dir DIR`). A `make sigma-bundle` target wraps this.
+
+### Changed
+
+- Pack reconcile now handles upstream rule **renames** by stable Sigma UUID
+  (renaming in place rather than creating a duplicate) and **retires** pristine
+  rules that a pack no longer ships. User-enabled and user-edited rules are
+  still preserved.
+
+### Fixed
+
+- The file tailer now survives `logrotate` **`copytruncate`** rotation and any
+  in-place truncation: it detects a shrunk file (same inode) and saved offsets
+  that point past EOF, and rewinds instead of stalling. HAProxy attack detection
+  was silently lost after the first rotation.
+- A configuration profile could not **remove** a log source it had added
+  previously: conflict resolution compared the profile against the
+  already-mutated in-memory configuration, so a server-added source looked
+  "local" and was never removed. Resolution now uses a pristine startup baseline.
+- Server: per-node active-parser resolution replaced the node's heartbeat
+  `active_parsers` with the profile's `log_sources`, so detection packs for
+  unlisted sources (e.g. HAProxy) stopped being distributed. It now unions the
+  profile parsers with the heartbeat parsers.
+- The Sigma importer imported every SSH rule twice because it scanned both
+  `rules/linux/builtin` and its child `rules/linux/builtin/sshd`.
+- Converted Sigma rules containing mid-pattern inline regex flags (e.g. `(?i)`)
+  compiled on older Pythons but failed on Python 3.11+; flags are now hoisted to
+  the start of the pattern.
+
 ## [1.0.0] - 2026-09-18
 
 Initial release. Vespid is a lightweight, high-performance security daemon for
@@ -54,4 +104,5 @@ Linux systems running nftables.
 - Ruff and mypy are clean across the Python agent; ruff is clean across the
   server.
 
+[1.0.1]: https://github.com/vespid/vespid/releases/tag/v1.0.1
 [1.0.0]: https://github.com/vespid/vespid/releases/tag/v1.0.0

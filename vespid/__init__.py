@@ -5,4 +5,4 @@ future central management server can be plugged in without redesigning the
 event pipeline.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

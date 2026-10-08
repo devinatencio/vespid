@@ -18,10 +18,14 @@ Sync state is stored in:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
+import shutil
 import subprocess
 import sys
+import tarfile
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,9 +56,11 @@ SIGMA_CLONE_DIR = CACHE_DIR / "sigma"
 STATE_FILE = CACHE_DIR / "sigma_state.json"
 
 # Sigma rule directories to scan (relative to repo root)
+# NOTE: rules/linux/builtin/sshd lives *under* rules/linux/builtin, so the
+# parent already covers it. Listing both caused every SSH rule to be imported
+# twice (and generated a pack with duplicate rule names). Keep only the parent.
 RULE_DIRS = [
     "rules/web",
-    "rules/linux/builtin/sshd",
     "rules/linux/process_creation",
     "rules/linux/builtin",
 ]
@@ -205,6 +211,7 @@ def _git_head_commit(repo_dir: Path) -> str:
 def discover_rules(repo_dir: Path, dirs: list[str]) -> list[dict]:
     """Discover and parse all Sigma YAML rules in the given directories."""
     rules: list[dict] = []
+    seen_ids: set[str] = set()
     for rule_dir in dirs:
         target = repo_dir / rule_dir
         if not target.exists():
@@ -215,6 +222,15 @@ def discover_rules(repo_dir: Path, dirs: list[str]) -> list[dict]:
                 text = yaml_file.read_text(encoding="utf-8")
                 rule = parse_sigma_rule(text)
                 if rule is not None:
+                    # Defensive dedup: overlapping scan directories (or future
+                    # upstream reorganisation) can surface the same rule more
+                    # than once. Sigma's UUID is the canonical identity.
+                    key = str(rule.get("id") or rule.get("title") or "")
+                    if key and key in seen_ids:
+                        log.debug("Skipping duplicate rule: %s", key)
+                        continue
+                    if key:
+                        seen_ids.add(key)
                     rules.append(rule)
                 else:
                     log.debug("Skipping non-rule file: %s", yaml_file)
@@ -250,7 +266,7 @@ def _save_state(state: dict) -> None:
 # ── Commands ────────────────────────────────────────────────────────────
 
 
-def cmd_init() -> int:
+def cmd_init(output_dir: Path, bundle_path: Path | None) -> int:
     """Initial import: clone + convert + generate packs."""
     repo_dir = _ensure_sigma_repo()
     if not repo_dir:
@@ -272,7 +288,7 @@ def cmd_init() -> int:
         report.skipped_unsupported,
     )
 
-    _write_packs(converted)
+    _write_packs(converted, output_dir)
 
     state = {
         "last_commit": commit,
@@ -282,6 +298,9 @@ def cmd_init() -> int:
     }
     _save_state(state)
     log.info("State saved to %s", STATE_FILE)
+    _write_manifest(commit, report.converted, output_dir)
+    if bundle_path:
+        _write_bundle(output_dir, bundle_path)
 
     return 0
 
@@ -328,7 +347,7 @@ def cmd_check() -> int:
         return 1
 
 
-def cmd_sync() -> int:
+def cmd_sync(output_dir: Path, bundle_path: Path | None) -> int:
     """Pull latest Sigma rules + re-convert + regenerate packs."""
     repo_dir = _ensure_sigma_repo()
     if not repo_dir:
@@ -343,8 +362,10 @@ def cmd_sync() -> int:
     new_commit = _git_head_commit(repo_dir)
 
     if old_commit and new_commit == old_commit:
-        log.info("No changes detected. Rules are up to date.")
-        return 0
+        if bundle_path is None:
+            log.info("No changes detected. Rules are up to date.")
+            return 0
+        log.info("No upstream changes, but rebuilding the bundle as requested.")
 
     # Re-convert
     all_rules = discover_rules(repo_dir, RULE_DIRS)
@@ -369,7 +390,7 @@ def cmd_sync() -> int:
     if removed:
         log.info("Removed rules: %d (%s)", len(removed), ", ".join(removed))
 
-    _write_packs(converted)
+    _write_packs(converted, output_dir)
 
     new_state = {
         "last_commit": new_commit,
@@ -379,11 +400,14 @@ def cmd_sync() -> int:
     }
     _save_state(new_state)
     log.info("State updated. %d rule(s) imported.", report.converted)
+    _write_manifest(new_commit, report.converted, output_dir)
+    if bundle_path:
+        _write_bundle(output_dir, bundle_path)
 
     return 0
 
 
-def cmd_report() -> int:
+def cmd_report(output_dir: Path) -> int:
     """Show current sync status."""
     state = _load_state()
     if not state.get("last_sync"):
@@ -396,7 +420,7 @@ def cmd_report() -> int:
 
     # Check if packs exist
     for pack_name in PACKS:
-        pack_file = PACKS_OUTPUT_DIR / f"{pack_name}.yaml"
+        pack_file = output_dir / f"{pack_name}.yaml"
         if pack_file.exists():
             # Count rules in the pack
             rule_count = 0
@@ -434,12 +458,24 @@ def cmd_report() -> int:
 # ── Pack output ─────────────────────────────────────────────────────────
 
 
-def _write_packs(rules: list[ConvertedRule]) -> None:
+def _write_packs(rules: list[ConvertedRule], output_dir: Path) -> None:
     """Write converted rules to pack YAML files, organized by category."""
     # Group rules by their target pack
     packs_rules: dict[str, list[ConvertedRule]] = {name: [] for name in PACKS}
+    seen_names: set[str] = set()
 
     for cr in rules:
+        # The DB keys rules by name, so a duplicate name would silently drop a
+        # rule. Warn and keep the first occurrence.
+        if cr.name in seen_names:
+            log.warning(
+                "Duplicate rule name '%s' (sigma_id=%s); keeping first occurrence",
+                cr.name,
+                cr.sigma_id,
+            )
+            continue
+        seen_names.add(cr.name)
+
         # Route to pack based on log_sources
         if "auditd" in cr.log_sources:
             packs_rules["sigma-host-threats"].append(cr)
@@ -448,7 +484,7 @@ def _write_packs(rules: list[ConvertedRule]) -> None:
         else:
             packs_rules["sigma-web-attacks"].append(cr)
 
-    PACKS_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     for pack_name, pack_rules in packs_rules.items():
         if not pack_rules:
@@ -465,13 +501,79 @@ def _write_packs(rules: list[ConvertedRule]) -> None:
             prerequisite=pack.get("prerequisite", ""),
         )
 
-        output_path = PACKS_OUTPUT_DIR / f"{pack_name}.yaml"
+        output_path = output_dir / f"{pack_name}.yaml"
         output_path.write_text(yaml_content, encoding="utf-8")
         log.info(
             "Wrote %d rules to %s",
             len(pack_rules),
             output_path,
         )
+
+
+def _write_manifest(commit: str, rules_imported: int, output_dir: Path) -> None:
+    """Write a manifest.json describing the generated Sigma packs.
+
+    The output directory then doubles as a self-describing *bundle* that the
+    server's ``rules update`` command can validate and apply.
+    """
+    packs: dict[str, dict] = {}
+    for pack_name in PACKS:
+        path = output_dir / f"{pack_name}.yaml"
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        rule_count = sum(1 for line in text.splitlines() if line.strip().startswith("- name: "))
+        packs[path.name] = {
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "rules": rule_count,
+        }
+
+    manifest = {
+        "sigma_commit": commit,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "rules_imported": rules_imported,
+        "packs": packs,
+    }
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    log.info("Wrote manifest to %s", manifest_path)
+
+
+def _write_bundle(output_dir: Path, bundle_path: Path) -> None:
+    """Package the generated Sigma packs + manifest into a distributable bundle.
+
+    ``bundle_path`` may be a directory, a ``.tar.gz``/``.tgz`` archive, or a
+    ``.zip`` archive — the same shapes the server's ``rules update`` accepts.
+    """
+    members = [output_dir / f"{name}.yaml" for name in PACKS]
+    members = [path for path in members if path.exists()]
+    manifest_path = output_dir / "manifest.json"
+    if manifest_path.exists():
+        members.append(manifest_path)
+
+    if not members:
+        log.warning("No packs to bundle in %s", output_dir)
+        return
+
+    bundle_path = Path(bundle_path)
+    if bundle_path.parent != Path(""):
+        bundle_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if bundle_path.name.endswith(".zip"):
+        with zipfile.ZipFile(bundle_path, "w", zipfile.ZIP_DEFLATED) as archive:
+            for path in members:
+                archive.write(path, path.name)
+    elif bundle_path.name.endswith((".tar.gz", ".tgz")):
+        with tarfile.open(bundle_path, "w:gz") as archive:
+            for path in members:
+                archive.add(path, arcname=path.name)
+    else:
+        bundle_path.mkdir(parents=True, exist_ok=True)
+        for path in members:
+            shutil.copy2(path, bundle_path / path.name)
+
+    pack_count = len(members) - (1 if manifest_path.exists() else 0)
+    log.info("Wrote bundle (%d pack(s) + manifest) to %s", pack_count, bundle_path)
 
 
 def _git_remote_head(repo_dir: Path) -> str:
@@ -517,17 +619,33 @@ def main() -> int:
         action="store_true",
         help="Show current sync status and rule counts",
     )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory to write generated packs (default: vespid-server/packs)",
+    )
+    parser.add_argument(
+        "--bundle",
+        default=None,
+        help=(
+            "Also package the generated Sigma packs + manifest into this path "
+            "(a directory, .tar.gz, or .zip) for distribution via 'rules update'"
+        ),
+    )
 
     args = parser.parse_args()
 
+    output_dir = Path(args.output_dir) if args.output_dir else PACKS_OUTPUT_DIR
+    bundle_path = Path(args.bundle) if args.bundle else None
+
     if args.init:
-        return cmd_init()
+        return cmd_init(output_dir, bundle_path)
     elif args.check:
         return cmd_check()
     elif args.sync:
-        return cmd_sync()
+        return cmd_sync(output_dir, bundle_path)
     elif args.report:
-        return cmd_report()
+        return cmd_report(output_dir)
 
     return 0
 

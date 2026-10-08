@@ -125,6 +125,7 @@ class Vespid:
                 on_auth_failure=self.handle_auth_failure,
                 on_config_applied=self.bus.trigger_heartbeat,
                 on_auditd_updated=self.logproc.update_auditd_config,
+                on_log_sources_updated=self.logproc.update_log_sources,
             )
             if self.config.management_mode == "server-managed"
             else None

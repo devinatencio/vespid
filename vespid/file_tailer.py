@@ -157,9 +157,22 @@ async def tail_file(
                     if saved is not None:
                         saved_inode = saved.get("inode")
                         saved_offset = int(str(saved.get("offset") or 0))
-                        if saved_inode == inode and saved_offset > 0:
+                        file_size = os.fstat(fh.fileno()).st_size
+                        if saved_inode == inode and 0 < saved_offset <= file_size:
                             fh.seek(saved_offset)
                             log.info("Resuming %s from offset %d", source.path, saved_offset)
+                        elif saved_inode == inode and saved_offset > file_size:
+                            # The file was truncated in place (e.g. logrotate
+                            # `copytruncate`) after the offset was persisted.
+                            # Seeking past EOF would stall the tailer forever,
+                            # so replay from the beginning instead.
+                            log.info(
+                                "Saved offset %d for %s is past EOF (size %d) — "
+                                "truncated, reading from beginning",
+                                saved_offset,
+                                source.path,
+                                file_size,
+                            )
                         else:
                             log.info(
                                 "Reading %s from beginning (inode changed or no prior offset)",
@@ -194,7 +207,28 @@ async def tail_file(
                         line_queue.put(("EOF", current_pos[0]))
                         _notify_async()
 
+                    # In-place truncation check (logrotate `copytruncate` and
+                    # similar): the file keeps its inode but shrinks below our
+                    # read position, so the inode check below can't catch it.
+                    # Rewind to the start rather than blocking forever at EOF.
+                    try:
+                        st = os.stat(source.path)
+                        if st.st_size < current_pos[0]:
+                            log.info(
+                                "Log file %s truncated in place (%d -> %d bytes), "
+                                "rewinding to start",
+                                source.path,
+                                current_pos[0],
+                                st.st_size,
+                            )
+                            fh.seek(0)
+                            current_pos[0] = 0
+                            continue
+                    except FileNotFoundError:
+                        pass
+
                     # --- Wait for new data ---
+                    truncated = False
                     if watcher_local._use_inotify and watcher_local._inotify_fd is not None:
                         import select
 
@@ -208,11 +242,14 @@ async def tail_file(
                                     break
                                 if changed:
                                     break
-                            # Stat-based rotation check
+                            # Stat-based rotation/truncation check
                             try:
                                 st = os.stat(source.path)
                                 if inode is not None and st.st_ino != inode:
                                     need_reopen = True
+                                    break
+                                if st.st_size < current_pos[0]:
+                                    truncated = True
                                     break
                             except FileNotFoundError:
                                 need_reopen = True
@@ -226,6 +263,8 @@ async def tail_file(
                             st = os.stat(source.path)
                             if inode is not None and st.st_ino != inode:
                                 need_reopen = True
+                            elif st.st_size < current_pos[0]:
+                                truncated = True
                         except FileNotFoundError:
                             need_reopen = True
 
@@ -234,6 +273,16 @@ async def tail_file(
                         line_queue.put(_SENTINEL_ROTATE)
                         _notify_async()
                         break
+
+                    if truncated:
+                        log.info(
+                            "Log file %s truncated in place (%d bytes now), rewinding to start",
+                            source.path,
+                            st.st_size,
+                        )
+                        fh.seek(0)
+                        current_pos[0] = 0
+                        continue
 
                 # Close file and watcher for this iteration
                 try:

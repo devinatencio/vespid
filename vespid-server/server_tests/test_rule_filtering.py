@@ -136,39 +136,88 @@ class TestGetNodeActiveParsers:
         assert mode == "explicit"
         assert set(parsers) == {"apache-attacks", "postfix-attacks"}
 
-    def test_auto_profile_with_log_sources(self, app, db):
-        """Node with auto mode profile derives parsers from profile log_sources."""
-        # Create a profile with auto mode and log_sources
+    def _assign_auto_profile(self, db, profile_name, node_id, profile_settings):
         db.execute(
             "INSERT INTO config_profiles (name, name_lower, settings, created_by) "
             "VALUES (?, ?, ?, ?)",
-            ("auto-profile", "auto-profile", json.dumps({
+            (profile_name, profile_name, json.dumps(profile_settings), "admin"),
+        )
+        profile_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        db.execute(
+            "INSERT INTO config_assignments (node_id, profile_id, assigned_by) "
+            "VALUES (?, ?, ?)",
+            (node_id, profile_id, "admin"),
+        )
+        db.commit()
+
+    def test_auto_profile_merges_with_heartbeat_defaults(self, app, db):
+        """Profile log_sources are merged with the node's heartbeat parsers.
+
+        The profile only adds sources to monitor; it must not drop the parsers
+        the agent reports, otherwise packs for those sources stop distributing.
+        """
+        db.execute(
+            "INSERT INTO nodes (node_id, last_host_info) VALUES (?, ?)",
+            ("node-auto", json.dumps({"active_parsers": ["postfix", "haproxy"]})),
+        )
+        self._assign_auto_profile(
+            db,
+            "auto-profile",
+            "node-auto",
+            {
                 "detection_pack_mode": "auto",
                 "log_sources": [
                     {"path": "/var/log/secure", "parser": "secure"},
                     {"path": "/var/log/apache2/access.log", "parser": "apache"},
                 ],
-            }), "admin"),
+            },
         )
-        profile_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-        # Create a node
-        db.execute(
-            "INSERT INTO nodes (node_id, last_host_info) VALUES (?, ?)",
-            ("node-auto", json.dumps({"active_parsers": ["postfix"]})),
-        )
-
-        # Assign profile to node
-        db.execute(
-            "INSERT INTO config_assignments (node_id, profile_id, assigned_by) "
-            "VALUES (?, ?, ?)",
-            ("node-auto", profile_id, "admin"),
-        )
-        db.commit()
 
         parsers, mode = _get_node_active_parsers(db, "node-auto")
         assert mode == "auto"
-        assert set(parsers) == {"secure", "apache"}
+        # profile parsers {secure, apache} ∪ heartbeat defaults {postfix, haproxy}
+        assert set(parsers) == {"secure", "apache", "postfix", "haproxy"}
+
+    def test_auto_profile_dedupes_overlapping_parsers(self, app, db):
+        """Parsers declared in both the profile and heartbeat appear once."""
+        db.execute(
+            "INSERT INTO nodes (node_id, last_host_info) VALUES (?, ?)",
+            ("node-auto-dedup", json.dumps({"active_parsers": ["secure", "haproxy"]})),
+        )
+        self._assign_auto_profile(
+            db,
+            "auto-profile-dedup",
+            "node-auto-dedup",
+            {
+                "detection_pack_mode": "auto",
+                "log_sources": [
+                    {"path": "/var/log/secure", "parser": "secure"},
+                    {"path": "/var/log/apache2/access.log", "parser": "apache"},
+                ],
+            },
+        )
+
+        parsers, mode = _get_node_active_parsers(db, "node-auto-dedup")
+        assert mode == "auto"
+        assert parsers.count("secure") == 1
+        assert set(parsers) == {"secure", "apache", "haproxy"}
+
+    def test_auto_profile_empty_log_sources_uses_heartbeat_defaults(self, app, db):
+        """When the profile declares no log_sources, heartbeat parsers are used."""
+        db.execute(
+            "INSERT INTO nodes (node_id, last_host_info) VALUES (?, ?)",
+            ("node-auto-empty", json.dumps({"active_parsers": ["secure", "haproxy"]})),
+        )
+        self._assign_auto_profile(
+            db,
+            "auto-profile-empty",
+            "node-auto-empty",
+            {"detection_pack_mode": "auto", "log_sources": []},
+        )
+
+        parsers, mode = _get_node_active_parsers(db, "node-auto-empty")
+        assert mode == "auto"
+        assert set(parsers) == {"secure", "haproxy"}
 
     def test_heartbeat_only_fallback(self, app, db):
         """Node with no profile falls back to heartbeat active_parsers."""

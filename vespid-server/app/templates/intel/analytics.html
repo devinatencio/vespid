@@ -1,16 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Threat Metrics — Vespid Server{% endblock %}
 {% block content %}
-<section class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem;">
+<section class="page-header">
     <h1 style="margin-bottom:0;">🔬 Threat Metrics</h1>
-    <div class="form-group" style="margin-bottom:0;">
-        <label for="interval-select" style="margin-right:0.4rem;">Time Range</label>
-        <select id="interval-select" name="interval" aria-label="Select time interval for charts" onchange="loadAnalyticsData()">
-            <option value="7d">Last 7 Days</option>
-            <option value="30d" selected>Last 30 Days</option>
-            <option value="90d">Last 90 Days</option>
-        </select>
-    </div>
 </section>
 
 <!-- IP Version & Event Breakdown Mini Cards -->
@@ -63,7 +55,19 @@
 
 <!-- Charts Section -->
 <section aria-label="Trend charts">
-    <div class="grid-2">
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-bottom:0.75rem;">
+        <h2 style="margin:0;">Trends</h2>
+        <div class="form-group" style="margin-bottom:0;">
+            <label for="interval-select" style="margin-right:0.4rem;">Trend Range</label>
+            <select id="interval-select" name="interval" aria-label="Select time range for trend charts" title="Applies to the trend charts below" onchange="loadAnalyticsData()">
+                <option value="7d">Last 7 Days</option>
+                <option value="30d" selected>Last 30 Days</option>
+                <option value="60d">Last 60 Days</option>
+                <option value="90d">Last 90 Days</option>
+            </select>
+        </div>
+    </div>
+    <div class="grid-2" style="grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));">
         <div class="card">
             <h2 class="card-title">New IPs Per Day</h2>
             <div class="chart-container" style="position:relative; height:280px;">
@@ -76,12 +80,6 @@
                 <canvas id="sightingsChart" aria-label="Line chart showing sighting events per day"></canvas>
             </div>
         </div>
-        <div class="card" id="hourly-chart-card">
-            <h2 class="card-title">Activity by Hour (UTC)</h2>
-            <div class="chart-container" style="position:relative; height:280px;">
-                <canvas id="hourlyChart" aria-label="Bar chart showing event distribution by hour of day"></canvas>
-            </div>
-        </div>
     </div>
 
     <div class="card">
@@ -89,6 +87,29 @@
         <div class="chart-container" style="position:relative; height:280px;">
             <canvas id="blocklistChart" aria-label="Line chart showing cumulative blocklist growth over time"></canvas>
         </div>
+    </div>
+</section>
+
+<!-- Activity by Hour Section -->
+<section aria-label="Activity by hour of day">
+    <div class="card">
+        <h2 class="card-title">Activity by Hour of Day (UTC)</h2>
+        <p class="text-muted" id="hourly-range-label" style="margin-top:-0.5rem; margin-bottom:0.75rem; font-size:0.85rem;">Time-of-day distribution of events — Last 30 Days</p>
+        <div class="chart-container" style="position:relative; height:280px;">
+            <canvas id="hourlyChart" aria-label="Line chart showing event distribution by hour of day"></canvas>
+        </div>
+    </div>
+</section>
+
+<!-- Attack Frequency Section (all time) -->
+<section aria-label="Attack frequency distribution">
+    <div class="card">
+        <h2 class="card-title">Attack Frequency Distribution</h2>
+        <p class="text-muted" style="margin-top:-0.5rem; margin-bottom:0.75rem; font-size:0.85rem;">IPs grouped by number of times blocked — all time, not affected by the trend range</p>
+        <div class="chart-container" id="attack-freq-container" style="position:relative; height:280px;">
+            <canvas id="attackFreqChart" aria-label="Bar chart showing number of IPs by number of times blocked"></canvas>
+        </div>
+        <p class="text-muted" id="attack-freq-empty" style="text-align:center; padding:2rem; display:none;">No attacking IPs recorded yet.</p>
     </div>
 </section>
 
@@ -182,10 +203,12 @@
     var sightingsChart = null;
     var blocklistChart = null;
     var hourlyChart = null;
+    var attackFreqChart = null;
 
     /* ── Cached chart data for re-rendering on theme change ──── */
     var lastChartData = null;
     var lastHourlyData = null;
+    var lastAttackFreqData = null;
 
     /* ── Chart.js shared config ──────────────────────────────── */
     function getCommonScales() {
@@ -581,10 +604,17 @@
             });
 
         loadHourlyChart();
+        loadAttackFreqChart();
     };
 
     function loadHourlyChart() {
-        fetch('{{ url_for("intel_dashboard.analytics_hourly_distribution") }}')
+        var sel = document.getElementById('interval-select');
+        var interval = sel.value;
+        var rangeLabel = document.getElementById('hourly-range-label');
+        if (rangeLabel && sel.selectedIndex >= 0) {
+            rangeLabel.textContent = 'Time-of-day distribution of events — ' + sel.options[sel.selectedIndex].textContent;
+        }
+        fetch('{{ url_for("intel_dashboard.analytics_hourly_distribution") }}?interval=' + interval)
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.error) return;
@@ -603,23 +633,130 @@
         }
 
         var palette = window.getChartPalette();
-        var color = palette[11];
+        var color = palette[1];
         var ctx = document.getElementById('hourlyChart').getContext('2d');
         if (hourlyChart) hourlyChart.destroy();
+        var options = getCommonOptions();
+        options.scales.x.title = {
+            display: true,
+            text: 'Hour of day (UTC)',
+            color: window.getChartThemeColors().textMuted
+        };
         hourlyChart = new Chart(ctx, {
-            type: 'bar',
+            type: 'line',
             data: {
                 labels: labels,
                 datasets: [{
                     label: 'Events',
                     data: data,
+                    borderColor: color,
+                    backgroundColor: window.colorWithAlpha(color, 0.1),
+                    tension: 0.3,
+                    pointRadius: 3,
+                    borderWidth: 2,
+                    fill: true
+                }]
+            },
+            options: options
+        });
+    }
+
+    function loadAttackFreqChart() {
+        fetch('{{ url_for("intel_dashboard.analytics_attack_frequency") }}')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) return;
+                lastAttackFreqData = data;
+                renderAttackFreqChart(data);
+            })
+            .catch(function(err) {
+                console.error('Failed to load attack frequency data:', err);
+            });
+    }
+
+    function renderAttackFreqChart(data) {
+        var container = document.getElementById('attack-freq-container');
+        var emptyMsg = document.getElementById('attack-freq-empty');
+        if (attackFreqChart) { attackFreqChart.destroy(); attackFreqChart = null; }
+
+        var shown = (data || []).filter(function(d) { return (d.ip_count || 0) > 0; });
+        if (!shown.length) {
+            container.style.display = 'none';
+            emptyMsg.style.display = '';
+            return;
+        }
+        container.style.display = '';
+        emptyMsg.style.display = 'none';
+        container.style.height = Math.max(160, Math.min(280, shown.length * 46)) + 'px';
+
+        var labels = shown.map(function(d) { return d.label; });
+        var counts = shown.map(function(d) { return d.ip_count; });
+        var percentages = shown.map(function(d) { return d.percentage; });
+
+        var theme = window.getChartThemeColors();
+        var palette = window.getChartPalette();
+        var color = palette[9];
+        var ctx = document.getElementById('attackFreqChart').getContext('2d');
+        var options = getCommonOptions();
+        options.indexAxis = 'y';
+        options.layout = { padding: { right: 90 } };
+        options.scales = {
+            x: {
+                type: 'logarithmic',
+                min: 1,
+                ticks: { color: theme.textMuted },
+                grid: { color: theme.gridLine }
+            },
+            y: {
+                ticks: { color: theme.textMuted, font: { weight: '600' } },
+                grid: { display: false }
+            }
+        };
+        options.plugins.tooltip = {
+            callbacks: {
+                label: function(item) {
+                    var d = shown[item.dataIndex] || {};
+                    return (d.ip_count || 0).toLocaleString() + ' IPs (' + (d.percentage || 0).toFixed(1) + '%)';
+                }
+            }
+        };
+        var valueLabels = {
+            id: 'attackFreqValueLabels',
+            afterDatasetsDraw: function(chart) {
+                var c = chart.ctx;
+                var meta = chart.getDatasetMeta(0);
+                var vals = chart.data.datasets[0].data;
+                var pcts = chart.data.datasets[0].percentages || [];
+                c.save();
+                c.font = '600 11px -apple-system, "Segoe UI", sans-serif';
+                c.fillStyle = theme.textMuted;
+                c.textAlign = 'left';
+                c.textBaseline = 'middle';
+                meta.data.forEach(function(el, i) {
+                    var v = vals[i] || 0;
+                    if (v <= 0) return;
+                    var pos = el.tooltipPosition();
+                    c.fillText(v.toLocaleString() + ' (' + (pcts[i] || 0).toFixed(1) + '%)', pos.x + 6, pos.y);
+                });
+                c.restore();
+            }
+        };
+        attackFreqChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'IPs',
+                    data: counts,
+                    percentages: percentages,
                     backgroundColor: window.colorWithAlpha(color, 0.4),
                     borderColor: color,
                     borderWidth: 1,
                     borderRadius: 4
                 }]
             },
-            options: getCommonOptions()
+            options: options,
+            plugins: [valueLabels]
         });
     }
 
@@ -740,6 +877,7 @@
     document.body.addEventListener('vespid:themechange', function() {
         if (lastChartData) renderCharts(lastChartData);
         if (lastHourlyData) renderHourlyChart(lastHourlyData);
+        if (lastAttackFreqData) renderAttackFreqChart(lastAttackFreqData);
     });
 })();
 </script>

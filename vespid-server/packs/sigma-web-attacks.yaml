@@ -45,7 +45,7 @@ rules:
     tags: ["attack.command-and-control", "attack.t1105", "attack.t1568"]
     sigma_id: 195c1119-ef07-4909-bb12-e66f5e07bf3c
     sigma_status: test
-  - name: sigma_download_from_suspicious_tld_-_blocklist
+  - name: sigma_download_from_suspicious_tld_-_blacklist
     event_type: SIGMA_DETECTION
     regex: >-
       (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.exe\b|\.vbs\b|\.bat\b|\.rar\b|\.ps1\b|\.doc\b|\.docm\b|\.xls\b|\.xlsm\b|\.pptm\b|\.rtf\b|\.hta\b|\.dll\b|\.ws\b|\.wsf\b|\.sct\b|\.zip\b)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
@@ -55,7 +55,7 @@ rules:
     tags: ["attack.initial-access", "attack.t1566", "attack.execution", "attack.t1203", "attack.t1204.002"]
     sigma_id: 00d0b5ab-1f55-4120-8e83-487c0a7baf19
     sigma_status: test
-  - name: sigma_download_from_suspicious_tld_-_allowlist
+  - name: sigma_download_from_suspicious_tld_-_whitelist
     event_type: SIGMA_DETECTION
     regex: >-
       (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:\.exe\b|\.vbs\b|\.bat\b|\.rar\b|\.ps1\b|\.doc\b|\.docm\b|\.xls\b|\.xlsm\b|\.pptm\b|\.rtf\b|\.hta\b|\.dll\b|\.ws\b|\.wsf\b|\.sct\b|\.zip\b)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
@@ -144,6 +144,16 @@ rules:
     window_seconds: 120
     tags: ["attack.command-and-control", "attack.t1071.001", "attack.t1102.001", "attack.t1102.003"]
     sigma_id: 5468045b-4fcc-4d1a-973c-c9c9578edacb
+    sigma_status: test
+  - name: sigma_suspicious_network_communication_with_ipfs
+    event_type: SIGMA_DETECTION
+    regex: >-
+      (?i)(?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?(?:(ipfs\.io/|ipfs\.io\s).+\..+@.+\.[a-z]+)[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"[^"]*"
+    log_sources: ["apache"]
+    max_attempts: 5
+    window_seconds: 600
+    tags: ["attack.collection", "attack.credential-access", "attack.t1056"]
+    sigma_id: eb6c2004-1cef-427f-8885-9042974e5eb6
     sigma_status: test
   - name: sigma_apt_user_agent
     event_type: SIGMA_WEB_SUSP_UA
@@ -338,7 +348,7 @@ rules:
   - name: sigma_suspicious_user-agents_related_to_recon_tools
     event_type: SIGMA_WEB_SUSP_UA
     regex: >-
-      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:Wfuzz/|WPScan v|Recon-ng/v|GIS - AppSec Team - Project Vision)[^"]*)"
+      (?P<ip>\S+)\s+\S+\s+\S+\s+\[[^\]]*\]\s+"\S+\s+[^"]*?[^"]*?"\s+\d+\s+\S+\s+"[^"]*"\s+"(?:[^"]*?(?:commix/|feroxbuster/|Fuzz Faster U Fool|GIS - AppSec Team - Project Vision|gobuster/|Nikto/|Nmap Scripting Engine|Recon-ng/v|sqlmap/|WhatWeb/|Wfuzz/|WPScan v|zgrab/)[^"]*)"
     log_sources: ["apache"]
     max_attempts: 3
     window_seconds: 300

@@ -1,5 +1,5 @@
 %define name        vespid
-%define version     1.0.0
+%define version     1.0.1
 %define release     1%{?dist}
 %define install_dir /opt/vespid
 %define config_dir  /etc/vespid
@@ -248,6 +248,10 @@ fi
 %license LICENSE
 
 %changelog
+* Thu Oct 08 2026 Vespid Team <team@vespid.dev> - 1.0.1-1
+- Runtime log-source reconciliation (profile-added sources are tailed without a restart)
+- File tailer survives logrotate copytruncate / in-place truncation
+- Configuration profiles can remove previously-added log sources
 * %(date "+%%a %%b %%d %%Y") Vespid Team <team@vespid.dev> - 1.0.0-1
 - Version 1.0.0 release
 - Server-to-node command channel (allowlist, block, feed management)

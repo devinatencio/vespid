@@ -27,11 +27,11 @@ that run through the existing sliding-window detection engine.
 | Sigma source | Rules | Vespid parser | Example detections |
 |---|---|---|---|
 | `rules/web/webserver_generic/` | ~13 | `apache` | SQL injection, XSS, path traversal, JNDI/Log4Shell, SSTI, webshells |
-| `rules/web/proxy_generic/` | ~21 | `apache` | Suspicious user agents, C2 tools, download cradles, scanner UA |
-| `rules/linux/builtin/sshd/` | ~1 | `secure` | SSHD exploitation errors (buffer overflow, CRC32, bad DH, corrupted MAC) |
-| `rules/linux/process_creation/` + `rules/linux/builtin/` | ~115 | `auditd` | Reverse shells, privilege escalation, credential dumping, C2, defense evasion (via execve events) |
+| `rules/web/proxy_generic/` | ~25 | `apache` | Suspicious user agents, C2 tools, download cradles, scanner UA, IPFS credential harvesting |
+| `rules/linux/builtin/sshd/` | 1 | `secure` | SSHD exploitation errors (buffer overflow, CRC32, bad DH, corrupted MAC) |
+| `rules/linux/process_creation/` + `rules/linux/builtin/` | ~116 | `auditd` | Reverse shells, privilege escalation, credential dumping, C2, defense evasion (via execve events) |
 
-**Total imported: ~150 rules** (34 web + 1 SSH + 115 host-threat/auditd) as of the current Sigma release.
+**Total imported: ~155 rules** (38 web + 1 SSH + 116 host-threat/auditd) as of the current Sigma release.
 
 ### What is NOT imported (and why)
 
@@ -64,8 +64,8 @@ SigmaHQ/sigma                   Converter                     Vespid
     │                          (sync tracking)          (loads packs → DB)
     │                                                       │
     ▼                                                       ▼
-  git shallow clone                            POST /api/v1/rules/sigma/sync
-  (~/.cache/vespid/sigma/)                  (admin endpoint)
+  git shallow clone                     vespid-server-admin rules update
+  (~/.cache/vespid/sigma/)              (applies pack bundles / manifest)
 ```
 
 ### Conversion pipeline
@@ -111,6 +111,7 @@ This will:
 - Sparse-checkout the `rules/web/`, `rules/linux/builtin/`, and `rules/linux/process_creation/` directories
 - Convert all compatible rules into Vespid pack YAMLs
 - Write output to `vespid-server/packs/sigma-web-attacks.yaml`, `sigma-ssh-attacks.yaml`, and `sigma-host-threats.yaml`
+- Write `vespid-server/packs/manifest.json` recording the source Sigma commit and a SHA-256 per pack — making the output directory a ready-to-ship **bundle**
 - Save sync state to `~/.cache/vespid/sigma_state.json`
 
 ### 2. Restart the server
@@ -181,6 +182,14 @@ python -m vespid.scripts.sigma_import --sync
 Output includes the number of new, removed, and unchanged rules. The sync
 state file is updated so the next `--check` won't re-trigger.
 
+Both `--init` and `--sync` accept:
+
+- `--bundle PATH` — also package the generated Sigma packs + `manifest.json`
+  into `PATH` (a directory, `.tar.gz`/`.tgz`, or `.zip`) for distribution via
+  `vespid-server-admin rules update`.
+- `--output-dir DIR` — write the generated packs somewhere other than the
+  default `vespid-server/packs/`.
+
 ### `--report`
 
 Show the current sync status, imported rule count, and whether upstream updates
@@ -193,52 +202,42 @@ python -m vespid.scripts.sigma_import --report
 Example output:
 
 ```
-Last sync:     2026-06-07T12:00:00Z
-Sigma commit:  994da1665119
-Rules imported: 150
-  sigma-web-attacks: 34 rules (.../packs/sigma-web-attacks.yaml)
+Last sync:     2026-10-08T16:59:07Z
+Sigma commit:  8a4813404ea3
+Rules imported: 155
+  sigma-web-attacks: 38 rules (.../packs/sigma-web-attacks.yaml)
   sigma-ssh-attacks: 1 rules (.../packs/sigma-ssh-attacks.yaml)
-  sigma-host-threats: 115 rules (.../packs/sigma-host-threats.yaml)
+  sigma-host-threats: 116 rules (.../packs/sigma-host-threats.yaml)
 
-Up to date (HEAD: 994da1665119)
+Up to date (HEAD: 8a4813404ea3)
 ```
 
 ---
 
-## Server Sync Endpoint
+## Applying Updates on a Server
 
-Admins can trigger a sync from the server API without SSH access to the host:
+Once you have a bundle (the `packs/` directory produced by `--init`/`--sync`,
+optionally packaged as a `.tar.gz`/`.zip`), apply it on each installation with
+the server CLI:
 
-```
-POST /api/v1/rules/sigma/sync
-Authorization: Bearer <api-key>
-```
-
-**Response (200):**
-
-```json
-{
-  "ok": true,
-  "inserted": 2,
-  "updated": 0,
-  "output": "...",
-  "stderr": ""
-}
+```bash
+vespid-server-admin rules status
+vespid-server-admin rules update --from https://packs.example.com/sigma-packs.tar.gz --check
+vespid-server-admin rules update --from https://packs.example.com/sigma-packs.tar.gz --yes
+sudo systemctl restart vespid-server
 ```
 
-If packs changed during the sync, the detection rules revision is bumped
-automatically, causing all connected agents to fetch the updated rule set on
-their next poll.
+`rules update` validates every rule, backs up the previous packs, installs the
+new ones, and reconciles the database non-destructively (user-enabled rules and
+edits are preserved; upstream renames are applied in place; pristine removed
+rules are retired). The detection-rules revision is bumped so agents re-pull.
 
-**Response (304 / no changes):**
+See [Rule Pack Updates](server/rule-pack-updates.md) for the full workflow.
 
-```json
-{
-  "ok": true,
-  "returncode": 0,
-  "message": "No pack changes detected"
-}
-```
+!!! note "Legacy endpoint"
+    The old `POST /api/v1/rules/sigma/sync` admin endpoint shells out to the
+    source-tree importer and is **not available in packaged installs**. Use the
+    `rules update` command instead.
 
 ---
 
@@ -300,19 +299,24 @@ engine. They are populated by the converter and preserved across syncs.
 
 ## Auto-Sync (Cron)
 
-For fully automated updates, add a daily cron job that checks for new Sigma
-releases and syncs if needed:
+For fully automated updates, host a bundle and let each server check/apply it
+daily:
 
-```bash
-# /etc/cron.d/vespid-sigma-sync
-0 6 * * * vespid cd /opt/vespid && python -m vespid.scripts.sigma_import --check || (python -m vespid.scripts.sigma_import --sync && sudo systemctl reload vespid-server)
+```cron
+# /etc/cron.d/vespid-rule-updates
+0 5 * * * root vespid-server-admin rules update \
+  --from https://packs.example.com/sigma-packs.tar.gz --check && \
+  (vespid-server-admin rules update \
+     --from https://packs.example.com/sigma-packs.tar.gz --yes && \
+   systemctl reload vespid-server)
 ```
 
-Or use the server sync endpoint from a monitoring tool:
+On a build host, regenerate and publish the bundle in one step:
 
 ```bash
-curl -X POST https://server.example.com/api/v1/rules/sigma/sync \
-  -H "Authorization: Bearer $ADMIN_API_KEY"
+cd /opt/vespid
+python -m vespid.scripts.sigma_import --sync \
+  --bundle /srv/www/sigma-packs.tar.gz
 ```
 
 ---

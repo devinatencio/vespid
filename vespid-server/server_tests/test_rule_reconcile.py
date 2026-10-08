@@ -185,3 +185,118 @@ def test_genuine_user_edit_is_preserved():
     regex, _, user_modified, _ = _fetch(conn)
     assert regex == "my-custom"
     assert user_modified == 1
+
+
+SIGMA_RULE_NAME = "sigma_suspicious_openssh_daemon_error"
+
+
+def _insert_template_row(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    regex: str,
+    pack_name: str,
+    sigma_id: str = "",
+    enabled: int = 1,
+    user_modified: int = 0,
+) -> None:
+    conn.execute(
+        "INSERT INTO detection_rules_custom "
+        "(name, event_type, regex, log_sources, max_attempts, window_seconds, "
+        "enabled, is_template, pack_name, tags, sigma_id, sigma_status, "
+        "content_hash, user_modified) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, '', ?)",
+        (
+            name,
+            "SIGMA_TEST",
+            regex,
+            '["apache"]',
+            3,
+            300,
+            enabled,
+            pack_name,
+            "[]",
+            sigma_id,
+            "test",
+            user_modified,
+        ),
+    )
+    conn.commit()
+
+
+def test_renamed_pack_rule_is_renamed_not_duplicated():
+    """A rule renamed upstream (same Sigma UUID, new name) is renamed in place,
+    preserving enabled state and leaving no duplicate."""
+    rule = _pack_rule(SIGMA_RULE_NAME)
+    assert rule.get("sigma_id")
+    conn = _make_conn()
+    old_name = rule["name"] + "_old"
+    _insert_template_row(
+        conn,
+        name=old_name,
+        regex="old-regex",
+        pack_name=rule["pack_name"],
+        sigma_id=rule["sigma_id"],
+        enabled=1,
+    )
+
+    _seed_apache_attack_templates(conn, "sqlite")
+
+    rows = conn.execute(
+        "SELECT name, regex, enabled FROM detection_rules_custom WHERE sigma_id = ?",
+        (rule["sigma_id"],),
+    ).fetchall()
+    assert len(rows) == 1
+    name, regex, enabled = rows[0]
+    assert name == rule["name"]
+    assert regex == rule["regex"]
+    assert enabled == 1
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM detection_rules_custom WHERE name = ?", (old_name,)
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_stale_pristine_pack_rule_is_retired():
+    conn = _make_conn()
+    _insert_template_row(
+        conn,
+        name="sigma_no_longer_shipped",
+        regex=r"(?P<ip>\S+)",
+        pack_name="sigma-web-attacks",
+        sigma_id="deadbeef",
+        user_modified=0,
+    )
+
+    _seed_apache_attack_templates(conn, "sqlite")
+
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM detection_rules_custom WHERE name = 'sigma_no_longer_shipped'"
+        ).fetchone()[0]
+        == 0
+    )
+
+
+def test_stale_user_modified_pack_rule_is_kept():
+    conn = _make_conn()
+    _insert_template_row(
+        conn,
+        name="sigma_no_longer_shipped_but_edited",
+        regex=r"(?P<ip>\S+)",
+        pack_name="sigma-web-attacks",
+        sigma_id="deadbeef",
+        user_modified=1,
+    )
+
+    _seed_apache_attack_templates(conn, "sqlite")
+
+    assert (
+        conn.execute(
+            "SELECT COUNT(*) FROM detection_rules_custom "
+            "WHERE name = 'sigma_no_longer_shipped_but_edited'"
+        ).fetchone()[0]
+        == 1
+    )

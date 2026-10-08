@@ -9,7 +9,12 @@ them as parse failures (self-tailing feedback loop).
 
 from __future__ import annotations
 
-from vespid.file_tailer import _is_self_log_line
+import asyncio
+import os
+
+from vespid.config import LogSource
+from vespid.file_tailer import _is_self_log_line, tail_file
+from vespid.log_offset_store import OffsetStore
 
 
 class TestIsSelfLogLine:
@@ -90,3 +95,84 @@ class TestIsSelfLogLine:
             '"GET /wp-login.php HTTP/1.1" 404 489 "-" "-"'
         )
         assert _is_self_log_line(line) is False
+
+
+def _firewall_line(i: int) -> str:
+    return (
+        f"Sep 21 12:00:{i:02d} host kernel: DROP IN=eth0 OUT= "
+        f"SRC=198.51.100.{i} DST=192.0.2.1 PROTO=TCP SPT=4444 DPT=22 DROP\n"
+    )
+
+
+async def _wait_for(predicate, timeout: float = 5.0) -> bool:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if predicate():
+            return True
+        await asyncio.sleep(0.02)
+    return False
+
+
+class TestInPlaceTruncation:
+    """The tailer must survive logrotate `copytruncate` (same inode, shrunk)."""
+
+    def test_truncation_in_place_is_followed(self, tmp_path):
+        log_path = tmp_path / "app.log"
+        # Seed larger than the replacement so the size shrink is observable.
+        log_path.write_text("".join(_firewall_line(i) for i in range(1, 21)))
+
+        seen: list[str] = []
+
+        async def scenario():
+            async def on_line(parsed):
+                seen.append(parsed.raw)
+
+            stop = asyncio.Event()
+            source = LogSource(path=str(log_path), parser="messages")
+            task = asyncio.create_task(tail_file(source, on_line, stop, offsets=None, catchup=True))
+            try:
+                assert await _wait_for(lambda: len(seen) >= 20), "initial read failed"
+
+                # Simulate copytruncate: truncate in place then append new data.
+                inode_before = os.stat(log_path).st_ino
+                log_path.write_text(_firewall_line(99))
+                assert os.stat(log_path).st_ino == inode_before, "inode must not change"
+
+                assert await _wait_for(lambda: any("198.51.100.99" in raw for raw in seen)), (
+                    "post-truncation line was not read"
+                )
+            finally:
+                stop.set()
+                await task
+
+        asyncio.run(scenario())
+
+    def test_saved_offset_past_eof_reads_from_beginning(self, tmp_path):
+        log_path = tmp_path / "app.log"
+        log_path.write_text(_firewall_line(1))
+        inode = os.stat(log_path).st_ino
+
+        offsets = OffsetStore(str(tmp_path / "offsets.json"))
+        offsets.save(f"{log_path}:messages", inode, 10_000_000)
+
+        seen: list[str] = []
+
+        async def scenario():
+            async def on_line(parsed):
+                seen.append(parsed.raw)
+
+            stop = asyncio.Event()
+            source = LogSource(path=str(log_path), parser="messages")
+            task = asyncio.create_task(
+                tail_file(source, on_line, stop, offsets=offsets, catchup=True)
+            )
+            try:
+                assert await _wait_for(lambda: any("198.51.100.1" in raw for raw in seen)), (
+                    "tailer stalled on a stale past-EOF offset"
+                )
+            finally:
+                stop.set()
+                await task
+
+        asyncio.run(scenario())

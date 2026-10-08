@@ -112,7 +112,9 @@ def _seed_detection_rules(conn, db_type: str = "sqlite") -> None:
     conn.commit()
 
 
-def _seed_apache_attack_templates(conn, db_type: str = "sqlite") -> None:
+def _seed_apache_attack_templates(
+    conn, db_type: str = "sqlite", packs_dir: str | None = None
+) -> None:
     """Reconcile pack template rules from YAML into the database.
 
     Non-destructive, version-aware merge (safe to run on every startup):
@@ -136,12 +138,51 @@ def _seed_apache_attack_templates(conn, db_type: str = "sqlite") -> None:
     """
     from app.pack_loader import get_pack_rules, load_packs, rule_content_hash
 
-    packs = load_packs()
+    packs = load_packs(packs_dir)
+    if not packs:
+        # Never reconcile (or retire) when packs could not be loaded — e.g. a
+        # missing PyYAML dependency would otherwise wipe every pack template.
+        return
     pack_rules = get_pack_rules(packs)
     ignore = _insert_ignore(db_type)
     now = _utcnow_iso()
     changed = 0
     touched = False
+
+    shipped_names = {r["name"] for r in pack_rules}
+
+    # ── Rename pass ──────────────────────────────────────────────────────
+    # Upstream sometimes renames a rule while keeping its stable Sigma UUID
+    # (e.g. blocklist -> blacklist). Renaming the pristine existing row keeps
+    # the user's enabled state and avoids a duplicate, simultaneously-active
+    # rule. Rows the user modified are never renamed.
+    existing_by_name: dict[str, tuple] = {}
+    existing_by_sigma: dict[str, list[tuple]] = {}
+    for row in conn.execute(
+        "SELECT id, name, sigma_id, user_modified FROM detection_rules_custom "
+        "WHERE pack_name != '' AND is_template = 1"
+    ).fetchall():
+        existing_by_name[row[1]] = row
+        if row[2]:
+            existing_by_sigma.setdefault(row[2], []).append(row)
+
+    for rule in pack_rules:
+        name = rule["name"]
+        sigma_id = rule.get("sigma_id") or ""
+        if name in existing_by_name or not sigma_id:
+            continue
+        for cand in existing_by_sigma.get(sigma_id, []):
+            cand_name, cand_user_modified = cand[1], int(cand[3] or 0)
+            if cand_name in shipped_names or cand_user_modified:
+                continue
+            conn.execute(
+                "UPDATE detection_rules_custom SET name = ?, updated_at = ? WHERE id = ?",
+                (name, now, cand[0]),
+            )
+            existing_by_name.pop(cand_name, None)
+            existing_by_name[name] = (cand[0], name, sigma_id, 0)
+            touched = True
+            break
 
     for rule in pack_rules:
         yaml_hash = rule.get("content_hash") or rule_content_hash(
@@ -280,17 +321,31 @@ def _seed_apache_attack_templates(conn, db_type: str = "sqlite") -> None:
             )
             changed += 1
 
-    if changed:
+    # ── Retire pass ──────────────────────────────────────────────────────
+    # Pristine pack templates that the pack no longer ships are removed so they
+    # don't linger as stale, duplicate detections. User-modified rows are kept.
+    retired = 0
+    for row in conn.execute(
+        "SELECT id, name FROM detection_rules_custom "
+        "WHERE pack_name != '' AND is_template = 1 AND user_modified = 0"
+    ).fetchall():
+        if row[1] not in shipped_names:
+            conn.execute("DELETE FROM detection_rules_custom WHERE id = ?", (row[0],))
+            retired += 1
+
+    if changed or retired:
         conn.execute(
             "UPDATE detection_rules_revision SET revision = revision + 1, "
             "updated_at = ? WHERE id = 1",
             (now,),
         )
 
-    if changed or touched:
+    if changed or touched or retired:
         conn.commit()
         if changed:
             logger.info("Reconciled pack templates: %d rule(s) inserted/refreshed", changed)
+        if retired:
+            logger.info("Retired %d stale pack template(s)", retired)
 
 
 def _seed_default_noise_suppression(conn) -> None:

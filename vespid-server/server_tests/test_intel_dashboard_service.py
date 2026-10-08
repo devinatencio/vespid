@@ -2,10 +2,16 @@
 
 import json
 import sqlite3
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from app.intel_dashboard_service import execute_search, parse_search_query
+from app.intel_dashboard_service import (
+    execute_search,
+    get_attack_frequency_distribution,
+    get_hourly_distribution,
+    parse_search_query,
+)
 from app.intel_models import init_intel_db
 
 
@@ -333,3 +339,91 @@ class TestExecuteSearch:
         _insert_ip_record(intel_db, "192.168.1.1", repeat_offender=1)
         results, total = execute_search(intel_db, "192.168.1.1")
         assert results[0]["repeat_offender"] is True
+
+
+# ── get_attack_frequency_distribution tests ──────────────────────────────
+
+
+class TestAttackFrequencyDistribution:
+    """Tests for get_attack_frequency_distribution bucketing."""
+
+    def test_empty_db_returns_zeroed_buckets(self, intel_db):
+        dist = get_attack_frequency_distribution(intel_db)
+        assert [d["label"] for d in dist] == [
+            "1", "2", "3", "4", "5–9", "10–24", "25–99", "100+",
+        ]
+        assert all(d["ip_count"] == 0 for d in dist)
+        assert all(d["percentage"] == 0.0 for d in dist)
+
+    def test_ips_with_zero_blocks_excluded(self, intel_db):
+        _insert_ip_record(intel_db, "10.0.0.1", total_times_blocked=0)
+        _insert_ip_record(intel_db, "10.0.0.2", total_times_blocked=1)
+        dist = {d["label"]: d for d in get_attack_frequency_distribution(intel_db)}
+        assert dist["1"]["ip_count"] == 1
+        assert dist["1"]["percentage"] == 100.0
+
+    def test_bucket_aggregation_and_percentages(self, intel_db):
+        for i in range(50):
+            _insert_ip_record(intel_db, f"10.1.0.{i}", total_times_blocked=1)
+        for i in range(20):
+            _insert_ip_record(intel_db, f"10.2.0.{i}", total_times_blocked=2)
+        for i in range(5):
+            _insert_ip_record(intel_db, f"10.3.0.{i}", total_times_blocked=3)
+        for i in range(3):
+            _insert_ip_record(intel_db, f"10.4.0.{i}", total_times_blocked=7)
+        _insert_ip_record(intel_db, "10.5.0.1", total_times_blocked=50)
+        _insert_ip_record(intel_db, "10.6.0.1", total_times_blocked=500)
+
+        dist = {d["label"]: d for d in get_attack_frequency_distribution(intel_db)}
+        assert dist["1"]["ip_count"] == 50
+        assert dist["2"]["ip_count"] == 20
+        assert dist["3"]["ip_count"] == 5
+        assert dist["4"]["ip_count"] == 0
+        assert dist["5–9"]["ip_count"] == 3
+        assert dist["10–24"]["ip_count"] == 0
+        assert dist["25–99"]["ip_count"] == 1
+        assert dist["100+"]["ip_count"] == 1
+        assert round(sum(d["percentage"] for d in dist.values()), 1) == 100.0
+
+
+# ── get_hourly_distribution tests ────────────────────────────────────────
+
+
+def _insert_intel_event(conn, timestamp):
+    conn.execute(
+        "INSERT INTO ip_intel_events (ip_address, node_id, event_type, event_kind, timestamp) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("10.0.0.1", "node-1", "BRUTE_FORCE", "block", timestamp),
+    )
+    conn.commit()
+
+
+class TestHourlyDistribution:
+    """Tests for get_hourly_distribution interval filtering."""
+
+    def test_empty_db_returns_24_zeros(self, intel_db):
+        dist = get_hourly_distribution(intel_db)
+        assert dist == [0] * 24
+
+    def test_interval_filters_by_timestamp(self, intel_db):
+        now = datetime.now(UTC)
+        _insert_intel_event(intel_db, now.strftime("%Y-%m-%dT%H:%M:%S"))
+        for _ in range(2):
+            _insert_intel_event(
+                intel_db, (now - timedelta(days=20)).strftime("%Y-%m-%dT%H:%M:%S")
+            )
+        _insert_intel_event(
+            intel_db, (now - timedelta(days=45)).strftime("%Y-%m-%dT%H:%M:%S")
+        )
+        _insert_intel_event(
+            intel_db, (now - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%S")
+        )
+
+        assert sum(get_hourly_distribution(intel_db, "7d")) == 1
+        assert sum(get_hourly_distribution(intel_db, "30d")) == 3
+        assert sum(get_hourly_distribution(intel_db, "60d")) == 4
+        assert sum(get_hourly_distribution(intel_db, "90d")) == 5
+
+    def test_invalid_interval_raises(self, intel_db):
+        with pytest.raises(ValueError):
+            get_hourly_distribution(intel_db, "bogus")

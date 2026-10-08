@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+## 1.0.1 — 2026-10-08
+
+### Added
+- `vespid-server-admin rules` CLI:
+  - `rules update` — validate, diff and apply a rule pack bundle from a directory,
+    a `.tar.gz`/`.zip` archive, or an `http(s)://` URL, with a confirmation
+    prompt, `--check`, `--dry-run`, and `--yes` modes
+  - `rules export` — build a distributable pack bundle (directory or archive) with
+    a `manifest.json`
+  - `rules status` — list installed packs, rule counts, and bundle provenance
+- Bundle validation before applying anything: regexes must compile on the
+  server's Python, log-based rules must include a `(?P<ip>…)` group, rule names
+  must be unique, and thresholds must be sane
+- Automatic backup of the previous packs to `packs/.backups/<timestamp>/` on
+  every apply
+- `manifest.json` provenance (source commit + per-file SHA-256 + rule counts),
+  written by the Sigma importer and carried through `rules export`
+
+### Changed
+- Pack reconcile is now **rename-aware** — a rule renamed upstream (same Sigma
+  UUID, new name) is renamed in place instead of inserting a duplicate, and
+  pristine pack rules that a pack no longer ships are **retired**
+- User-edited (`user_modified`) rules are still never touched by reconcile
+- `_seed_apache_attack_templates` (the pack reconcile) accepts an explicit packs
+  directory, used by the update command
+
+### Fixed
+- Per-node active-parser resolution replaced the node's heartbeat
+  `active_parsers` with the profile's `log_sources`, so detection packs for
+  sources the profile didn't list (e.g. HAProxy) stopped being distributed.
+  It now unions the profile parsers with the heartbeat parsers.
+- Sigma importer double-counted every SSH rule because `rules/linux/builtin/sshd`
+  and its parent `rules/linux/builtin` were both scanned; the importer now
+  deduplicates by Sigma UUID and by rule name
+- Converted Sigma regexes containing mid-pattern inline flags (e.g. `(?i)`)
+  compiled on older Pythons but raised `re.error` on Python 3.11+; flags are now
+  hoisted to the start of the pattern
+
 ## 1.0.0 — 2026-08-02
 
 ### Initial Release

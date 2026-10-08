@@ -824,6 +824,55 @@ def get_repeat_offender_block_distribution(conn) -> dict:
     return dist
 
 
+def get_attack_frequency_distribution(conn) -> list[dict]:
+    """Return the distribution of attacking IPs by number of times blocked.
+
+    Buckets every IP with at least one block by its total_times_blocked
+    count, mirroring common long-tail attack-frequency views (most IPs
+    attack once, a small minority attack many times).
+
+    Args:
+        conn: Database connection (sqlite3.Connection or MySQLConnectionWrapper).
+
+    Returns:
+        List of dicts, ordered from low to high, each with keys:
+        label (bucket label), ip_count, percentage (of all attacking IPs).
+    """
+    # (lower bound, upper bound or None for open-ended, display label)
+    buckets = [
+        (1, 1, "1"),
+        (2, 2, "2"),
+        (3, 3, "3"),
+        (4, 4, "4"),
+        (5, 9, "5–9"),
+        (10, 24, "10–24"),
+        (25, 99, "25–99"),
+        (100, None, "100+"),
+    ]
+    counts = {label: 0 for _, _, label in buckets}
+
+    cursor = conn.execute(
+        "SELECT total_times_blocked, COUNT(*) FROM ip_intel "
+        "WHERE total_times_blocked >= 1 GROUP BY total_times_blocked"
+    )
+    for row in cursor.fetchall():
+        block_count = row[0] or 0
+        ip_count = row[1] or 0
+        for low, high, label in buckets:
+            if block_count >= low and (high is None or block_count <= high):
+                counts[label] += ip_count
+                break
+
+    total_ips = sum(counts.values())
+    results = []
+    for _, _, label in buckets:
+        ip_count = counts[label]
+        percentage = round((ip_count / total_ips) * 100, 2) if total_ips else 0.0
+        results.append({"label": label, "ip_count": ip_count, "percentage": percentage})
+
+    return results
+
+
 def get_top_offenders(conn, limit: int = 10) -> list[dict]:
     """Return top N IPs by total_times_seen descending.
 
@@ -950,19 +999,19 @@ def get_chart_data(conn, interval: str) -> dict:
 
     Args:
         conn: Database connection.
-        interval: Time interval - "7d", "30d", or "90d".
+        interval: Time interval - "7d", "30d", "60d", or "90d".
 
     Returns:
         dict with keys: labels, datasets (containing new_ips, sightings,
         blocklist_growth arrays)
 
     Raises:
-        ValueError: If interval is not one of "7d", "30d", "90d".
+        ValueError: If interval is not one of "7d", "30d", "60d", "90d".
     """
     # Parse interval to number of days
     interval_days = _parse_interval(interval)
     if interval_days is None:
-        raise ValueError("Invalid interval. Accepted values: 7d, 30d, 90d")
+        raise ValueError("Invalid interval. Accepted values: 7d, 30d, 60d, 90d")
 
     now = datetime.now(UTC)
     # Start date is interval_days ago (inclusive)
@@ -1053,12 +1102,12 @@ def _parse_interval(interval: str) -> int | None:
     """Parse an interval string to number of days.
 
     Args:
-        interval: One of "7d", "30d", "90d".
+        interval: One of "7d", "30d", "60d", "90d".
 
     Returns:
         Number of days as int, or None if invalid.
     """
-    valid_intervals = {"7d": 7, "30d": 30, "90d": 90}
+    valid_intervals = {"7d": 7, "30d": 30, "60d": 60, "90d": 90}
     return valid_intervals.get(interval)
 
 
@@ -1188,18 +1237,29 @@ def get_threat_tag_distribution(conn, limit: int = 10) -> list[dict]:
     return [{"tag": tag, "ip_count": count} for tag, count in sorted_tags]
 
 
-def get_hourly_distribution(conn) -> list[int]:
+def get_hourly_distribution(conn, interval: str = "30d") -> list[int]:
     """Return event distribution by hour of day (0-23).
 
     Counts events in ip_intel_events grouped by the hour extracted
-    from the timestamp.
+    from the timestamp, limited to the given interval.
 
     Args:
         conn: Database connection.
+        interval: Time interval — "7d", "30d", "60d", or "90d" (default "30d").
 
     Returns:
         List of 24 integers representing event counts for hours 0-23.
+
+    Raises:
+        ValueError: If interval is not one of "7d", "30d", "60d", "90d".
     """
+    interval_days = _parse_interval(interval)
+    if interval_days is None:
+        raise ValueError("Invalid interval. Accepted values: 7d, 30d, 60d, 90d")
+
+    start_date = (datetime.now(UTC) - timedelta(days=interval_days - 1)).date()
+    start_str = start_date.strftime("%Y-%m-%d")
+
     # Initialize all hours to 0
     hourly_counts = [0] * 24
 
@@ -1209,13 +1269,15 @@ def get_hourly_distribution(conn) -> list[int]:
     try:
         cursor = conn.execute(
             "SELECT CAST(strftime('%H', timestamp) AS INTEGER) as hour, COUNT(*) "
-            "FROM ip_intel_events GROUP BY hour ORDER BY hour"
+            "FROM ip_intel_events WHERE DATE(timestamp) >= ? GROUP BY hour ORDER BY hour",
+            (start_str,),
         )
     except Exception:
         # MySQL/MariaDB syntax
         cursor = conn.execute(
             "SELECT HOUR(timestamp) as hour, COUNT(*) "
-            "FROM ip_intel_events GROUP BY hour ORDER BY hour"
+            "FROM ip_intel_events WHERE DATE(timestamp) >= ? GROUP BY hour ORDER BY hour",
+            (start_str,),
         )
 
     for row in cursor.fetchall():

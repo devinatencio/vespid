@@ -74,6 +74,9 @@ class LogProcessor:
         self._on_observed = on_observed
         self._stop = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
+        # Maps "path:parser" -> tailer task so log_sources can be reconciled
+        # at runtime (profile-added sources otherwise never get a tailer).
+        self._source_tasks: dict[str, asyncio.Task] = {}
         self._offsets = OffsetStore(self.config.offsets_path)
         self._line_buffer: deque[dict] = deque(maxlen=2000)
 
@@ -501,6 +504,80 @@ class LogProcessor:
                 except Exception as exc:  # pragma: no cover
                     log.exception("on_block handler failed (correlation): %s", exc)
 
+    def _start_source(
+        self, loop: asyncio.AbstractEventLoop, source: LogSource, catchup: bool
+    ) -> asyncio.Task:
+        """Create (or return an existing live) tailer task for *source*."""
+        key = f"{source.path}:{source.parser}"
+        existing = self._source_tasks.get(key)
+        if existing is not None and not existing.done():
+            return existing
+        task = loop.create_task(
+            tail_file(
+                source,
+                self._on_line,
+                self._stop,
+                offsets=self._offsets,
+                catchup=catchup,
+            )
+        )
+        self._source_tasks[key] = task
+        self._tasks.append(task)
+        return task
+
+    def _on_tailer_done(self, task: asyncio.Task) -> None:
+        """Surface crashes of runtime-added tailers (initial ones logged in run())."""
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            log.error("Tailer task crashed: %s", exc)
+
+    def update_log_sources(self, sources: list[LogSource], catchup: bool | None = None) -> None:
+        """Reconcile the running tailers with a new set of log sources.
+
+        Safe to call from any thread.  New sources get a tailer; sources no
+        longer present have their tailer cancelled.  If the processor has not
+        started yet the sources are stored on the config and picked up by
+        ``run()``.  Runtime-added sources default to ``catchup=False`` so a
+        newly monitored file is tailed from its current end rather than
+        replaying its entire history.
+        """
+        sources = list(sources)
+        self.config.log_sources = sources
+
+        loop = self._loop
+        if loop is None or not loop.is_running():
+            return
+        loop.call_soon_threadsafe(self._reconcile_log_sources, sources, catchup)
+
+    def _reconcile_log_sources(self, sources: list[LogSource], catchup: bool | None = None) -> None:
+        """Apply a log_sources change to the running tailer set (loop thread)."""
+        loop = self._loop
+        if loop is None:
+            return
+        if catchup is None:
+            catchup = False
+
+        desired = {f"{s.path}:{s.parser}": s for s in sources}
+
+        for key in list(self._source_tasks):
+            if key not in desired:
+                task = self._source_tasks.pop(key)
+                if not task.done():
+                    task.cancel()
+                log.info("Stopped tailer for %s (log source removed)", key)
+
+        for key, src in desired.items():
+            existing = self._source_tasks.get(key)
+            if existing is not None and not existing.done():
+                continue
+            task = self._start_source(loop, src, catchup=bool(catchup))
+            task.add_done_callback(self._on_tailer_done)
+            log.info("Spawned tailer for %s (log source added)", key)
+
+        self.config.log_sources = sources
+
     async def run(self) -> None:
         log.info("LogProcessor starting: sources=%d", len(self.config.log_sources))
         self._stop.clear()
@@ -509,17 +586,7 @@ class LogProcessor:
         self._loop = loop
 
         for src in self.config.log_sources:
-            self._tasks.append(
-                loop.create_task(
-                    tail_file(
-                        src,
-                        self._on_line,
-                        self._stop,
-                        offsets=self._offsets,
-                        catchup=catchup,
-                    )
-                )
-            )
+            self._start_source(loop, src, catchup)
 
         # Spawn auditd tailer when enabled and rules are loaded
         if self._auditd_enabled:
@@ -554,6 +621,14 @@ class LogProcessor:
                     )
                     log.error("Tailer for %s crashed: %s", src_label, result)
         finally:
+            # Cancel and reap any tailers spawned after startup (log sources
+            # added at runtime), then flush offsets.
+            for task in list(self._source_tasks.values()):
+                if not task.done():
+                    task.cancel()
+            if self._source_tasks:
+                await asyncio.gather(*self._source_tasks.values(), return_exceptions=True)
+            self._source_tasks.clear()
             self._offsets.flush()
             self._tasks.clear()
 

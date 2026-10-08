@@ -15,6 +15,7 @@ import getpass
 import logging
 import os
 import sys
+import tempfile
 from datetime import UTC
 
 from app import create_app
@@ -42,6 +43,14 @@ def _build_mysql_config(config):
         "DATABASE_USER": config["DATABASE_USER"],
         "DATABASE_PASSWORD": config["DATABASE_PASSWORD"],
     }
+
+
+def _resolve_db_config(config):
+    """Return ``(db_type, db_config)`` — a path for SQLite, a dict for MySQL."""
+    db_type = config.get("DATABASE_TYPE", "sqlite").lower()
+    if db_type == "sqlite":
+        return db_type, config["DATABASE_PATH"]
+    return db_type, _build_mysql_config(config)
 
 
 def cmd_init_db(args):
@@ -146,6 +155,171 @@ def cmd_run_server(args):
     app.run(host=host, port=port, debug=debug)
 
 
+def _packs_dir() -> "os.PathLike[str]":
+    """Return the installed packs directory for this server install."""
+    from pathlib import Path
+
+    return Path(__file__).resolve().parent / "packs"
+
+
+def cmd_rules(args):
+    """Dispatch rule-pack subcommands."""
+    if args.rules_command == "status":
+        _rules_status()
+    elif args.rules_command == "export":
+        _rules_export(args)
+    elif args.rules_command == "update":
+        config = load_config(args.config)
+        db_type, db_config = _resolve_db_config(config)
+        _rules_update(args, db_type, db_config)
+    else:
+        print("No rules subcommand given. Use 'update', 'export' or 'status'.", file=sys.stderr)
+        sys.exit(2)
+
+
+def _rules_status():
+    """Print installed packs, their rule counts, and bundle provenance."""
+    from app.pack_loader import get_pack_metadata, load_packs
+    from app.pack_update import manifest_sigma_commit, read_manifest
+
+    packs_dir = _packs_dir()
+    packs = load_packs(str(packs_dir))
+    if not packs:
+        print(f"No packs found in {packs_dir}")
+        return
+    print(f"Installed packs in {packs_dir}:")
+    for meta in get_pack_metadata(packs):
+        print(f"  {meta['pack_name']:<24} {meta['rule_count']:>4} rules")
+    print(f"  {'TOTAL':<24} {sum(m['rule_count'] for m in get_pack_metadata(packs)):>4} rules")
+
+    manifest = read_manifest(packs_dir)
+    if manifest:
+        commit = manifest_sigma_commit(manifest)
+        print("\nBundle provenance:")
+        if commit:
+            print(f"  source commit: {commit}")
+        if manifest.get("generated_at"):
+            print(f"  generated:     {manifest['generated_at']}")
+
+
+def _rules_export(args):
+    """Create a distributable pack bundle from installed (or given) packs."""
+    from pathlib import Path
+
+    from app.pack_update import export_bundle
+
+    packs_dir = Path(args.from_dir) if getattr(args, "from_dir", None) else _packs_dir()
+    pack_names = args.packs.split(",") if getattr(args, "packs", None) else None
+
+    try:
+        exported = export_bundle(packs_dir, args.to, pack_names)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Exported {len(exported)} pack(s) from {packs_dir} to {args.to}")
+    for name in exported:
+        print(f"  {name}")
+
+
+def _print_diff(diff):
+    """Render a pack diff report to stdout."""
+    print(
+        f"Rules: {diff['current_rule_count']} installed -> {diff['incoming_rule_count']} in bundle"
+    )
+    for label, key, sym in (
+        ("Added", "added", "+"),
+        ("Removed", "removed", "-"),
+        ("Changed", "changed", "~"),
+    ):
+        names = diff[key]
+        print(f"  {label}: {len(names)}")
+        for name in names:
+            print(f"    {sym} {name}")
+
+
+def _rules_update(args, db_type, db_config):
+    """Validate, diff and apply a rule pack bundle.
+
+    ``--from`` accepts a directory, a local ``.tar.gz``/``.zip`` archive, or an
+    ``http(s)://`` URL pointing at such an archive.
+    """
+    from app.models import get_db
+    from app.pack_loader import get_pack_rules, load_packs
+    from app.pack_update import (
+        apply_bundle,
+        diff_packs,
+        manifest_sigma_commit,
+        read_manifest,
+        resolve_bundle,
+        validate_packs,
+    )
+
+    packs_dir = _packs_dir()
+    installed_manifest = read_manifest(packs_dir)
+
+    with tempfile.TemporaryDirectory(prefix="vespid-bundle-") as tmp:
+        try:
+            bundle_dir = resolve_bundle(args.source, tmp)
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        incoming = load_packs(str(bundle_dir))
+        if not incoming:
+            print(f"Error: no pack YAML files found in {args.source}", file=sys.stderr)
+            sys.exit(1)
+
+        errors = validate_packs(incoming)
+        if errors:
+            print("Validation FAILED:", file=sys.stderr)
+            for err in errors:
+                print(f"  - {err}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Validation OK: {len(get_pack_rules(incoming))} rules in {len(incoming)} pack(s)")
+
+        bundle_manifest = read_manifest(bundle_dir)
+        installed_commit = manifest_sigma_commit(installed_manifest)
+        bundle_commit = manifest_sigma_commit(bundle_manifest)
+        if bundle_commit:
+            print(f"Bundle source commit:  {bundle_commit}")
+        if installed_commit:
+            print(f"Installed source commit: {installed_commit}")
+
+        diff = diff_packs(load_packs(str(packs_dir)), incoming)
+        _print_diff(diff)
+        has_diff = bool(diff["added"] or diff["removed"] or diff["changed"])
+
+        if args.check:
+            print("Updates available." if has_diff else "Already up to date.")
+            sys.exit(1 if has_diff else 0)
+
+        if args.dry_run:
+            print("Dry run — no changes applied.")
+            return
+
+        if not has_diff:
+            print("Already up to date; nothing to do.")
+            return
+
+        if not args.yes:
+            response = input("Apply these changes? [y/N] ").strip().lower()
+            if response not in ("y", "yes"):
+                print("Aborted.")
+                return
+
+        db = get_db(db_config)
+        try:
+            report = apply_bundle(bundle_dir, packs_dir, db, db_type)
+        finally:
+            db.close()
+
+    print(f"Applied. Installed {len(report['installed'])} pack file(s).")
+    if report.get("backup_dir"):
+        print(f"Backup of previous packs: {report['backup_dir']}")
+    print("Restart vespid-server to expose the new packs to the running process.")
+
+
 def build_parser():
     """Build and return the argument parser."""
     parser = argparse.ArgumentParser(
@@ -224,6 +398,66 @@ def build_parser():
     alerts_subparsers.add_parser(
         "channels",
         help="List notification channels",
+    )
+
+    # ── Rule pack management commands ────────────────────────────────────
+    rules_parser = subparsers.add_parser(
+        "rules",
+        help="Rule pack management (update, status)",
+    )
+    rules_subparsers = rules_parser.add_subparsers(dest="rules_command")
+
+    rules_update = rules_subparsers.add_parser(
+        "update",
+        help="Validate, diff and apply a rule pack bundle",
+    )
+    rules_update.add_argument(
+        "--from",
+        dest="source",
+        required=True,
+        help="Pack bundle: a directory, .tar.gz/.zip archive, or http(s) URL to one",
+    )
+    rules_update.add_argument(
+        "--check",
+        action="store_true",
+        help="Report differences and exit (status 1 if updates are available)",
+    )
+    rules_update.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and show the diff without applying anything",
+    )
+    rules_update.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        help="Apply without prompting for confirmation",
+    )
+
+    rules_export = rules_subparsers.add_parser(
+        "export",
+        help="Create a distributable pack bundle from installed packs",
+    )
+    rules_export.add_argument(
+        "--to",
+        required=True,
+        help="Destination directory, .tar.gz, or .zip archive",
+    )
+    rules_export.add_argument(
+        "--from",
+        dest="from_dir",
+        default=None,
+        help="Source packs directory (default: the server's installed packs)",
+    )
+    rules_export.add_argument(
+        "--packs",
+        default=None,
+        help="Comma-separated pack names to include (default: all installed packs)",
+    )
+
+    rules_subparsers.add_parser(
+        "status",
+        help="List installed packs and their rule counts",
     )
 
     return parser
@@ -513,6 +747,8 @@ def main(argv=None):
         cmd_create_admin(args)
     elif args.command == "alerts":
         cmd_alerts(args)
+    elif args.command == "rules":
+        cmd_rules(args)
     else:
         # No subcommand — start the Flask dev server
         cmd_run_server(args)

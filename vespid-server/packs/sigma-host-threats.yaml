@@ -1,0 +1,1167 @@
+pack_name: sigma-host-threats
+display_name: Sigma Host Threat Detection (Auditd)
+icon: 🐧
+description: >
+  Host-based process creation detection rules imported from SigmaHQ/sigma. Covers reverse shells, privilege escalation, persistence, defense evasion, credential dumping, lateral movement, C2, and exfiltration via Linux auditd process monitoring. Auto-generated from the Sigma community rule repository.
+prerequisite: Requires auditd configured with execve audit rules.
+rules:
+  - name: sigma_shell_invocation_via_apt_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/apt(?:\x1e|$)|exe=.*/apt-get(?:\x1e|$)))(?=.*cmdline=.*APT::Update::Pre-Invoke::=)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: bb382fd5-b454-47ea-a264-1828e4c766d6
+    sigma_status: test
+  - name: sigma_scheduled_taskjob_at
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/at(?:\x1e|$)|exe=.*/atd(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.execution", "attack.persistence", "attack.t1053.002"]
+    sigma_id: d2d642d7-b393-43fe-bae4-e81ed5915c4b
+    sigma_status: stable
+  - name: sigma_audit_rules_deleted_via_auditctl
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/auditctl(?:\x1e|$))(?=.*cmdline=.*-D)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1685.004"]
+    sigma_id: bed26dea-4525-47f4-b24a-76e30e44ffb0
+    sigma_status: experimental
+  - name: sigma_kaspersky_endpoint_security_stopped_via_commandline_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/systemctl(?:\x1e|$)|exe=.*/bash(?:\x1e|$)|exe=.*/sh(?:\x1e|$)))(?=.*(?:(?:^|\x1e)cmdline=stop(?:\x1e|$)|(?:^|\x1e)cmdline=kesl(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.defense-impairment", "attack.t1685"]
+    sigma_id: 36388120-b3f1-4ce9-b50b-280d9a7f4c04
+    sigma_status: experimental
+  - name: sigma_suspicious_invocation_of_shell_via_awk_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/awk(?:\x1e|$)|exe=.*/gawk(?:\x1e|$)|exe=.*/mawk(?:\x1e|$)|exe=.*/nawk(?:\x1e|$)))(?=.*cmdline=.*BEGIN \{system)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: 8c1a5675-cb85-452f-a298-b01b22a51856
+    sigma_status: test
+  - name: sigma_decode_base64_encoded_text
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/base64(?:\x1e|$))(?=.*cmdline=.*-d)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1027"]
+    sigma_id: e2072cab-8c9a-459b-b63c-40ae79e27031
+    sigma_status: test
+  - name: sigma_linux_base64_encoded_pipe_to_shell
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      cmdline=.*base64 
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1140"]
+    sigma_id: ba592c6d-6888-43c3-b8c6-689b8fe47337
+    sigma_status: test
+  - name: sigma_linux_base64_encoded_shebang_in_cli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:cmdline=.*IyEvYmluL2Jhc2|cmdline=.*IyEvYmluL2Rhc2|cmdline=.*IyEvYmluL3pza|cmdline=.*IyEvYmluL2Zpc2|cmdline=.*IyEvYmluL3No)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1140"]
+    sigma_id: fe2f9663-41cb-47e2-b954-8a228f3b9dff
+    sigma_status: test
+  - name: sigma_bash_interactive_shell
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/bash(?:\x1e|$))(?=.*cmdline=.* -i )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 6104e693-a7d6-4891-86cb-49a258523559
+    sigma_status: test
+  - name: sigma_enable_bpf_kprobes_tracing
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:(?:^|\x1e)cmdline=echo 1 >(?:\x1e|$)|(?:^|\x1e)cmdline=/sys/kernel/debug/tracing/events/kprobes/(?:\x1e|$)))(?=.*(?:cmdline=.*/myprobe/enable|cmdline=.*/myretprobe/enable))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.stealth"]
+    sigma_id: 7692f583-bd30-4008-8615-75dab3f08a99
+    sigma_status: test
+  - name: sigma_bpftrace_unsafe_option_usage
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*bpftrace(?:\x1e|$))(?=.*cmdline=.*--unsafe)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059.004"]
+    sigma_id: f8341cb2-ee25-43fa-a975-d8a5a9714b39
+    sigma_status: test
+  - name: sigma_linux_setgid_capability_set_on_a_binary_via_setcap_utility
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/setcap(?:\x1e|$))(?=.*cmdline=.*cap_setgid)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.persistence", "attack.t1548", "attack.t1554"]
+    sigma_id: 3a716279-c18c-4488-83be-f9ececbfb9fc
+    sigma_status: experimental
+  - name: sigma_linux_setuid_capability_set_on_a_binary_via_setcap_utility
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/setcap(?:\x1e|$))(?=.*cmdline=.*cap_setuid)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.persistence", "attack.t1548", "attack.t1554"]
+    sigma_id: ed447910-bc30-4575-a598-3a2e49516a7a
+    sigma_status: experimental
+  - name: sigma_capabilities_discovery_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/getcap(?:\x1e|$))(?=.*cmdline=.* -r )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: d8d97d51-122d-4cdd-9e2f-01b4b4933530
+    sigma_status: test
+  - name: sigma_capsh_shell_invocation_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/capsh(?:\x1e|$))(?=.*cmdline=.* --(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: db1ac3be-f606-4e3a-89e0-9607cbe6b98a
+    sigma_status: test
+  - name: sigma_remove_immutable_file_attribute
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/chattr(?:\x1e|$))(?=.*cmdline=.* -i )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1222.002"]
+    sigma_id: 34979410-e4b5-4e5d-8cfb-389fdff05c12
+    sigma_status: test
+  - name: sigma_chmod_targeting_sensitive_directories
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/chmod(?:\x1e|$))(?=.*(?:cmdline=.*/tmp/|cmdline=.*/\.Library/|cmdline=.*/etc/|cmdline=.*/opt/))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1222.002"]
+    sigma_id: 6419afd1-3742-47a5-a7e6-b50386cd15f8
+    sigma_status: test
+  - name: sigma_linux_sudo_chroot_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/sudo(?:\x1e|$))(?=.*(?:cmdline=.* --chroot |cmdline=.*sudo -R ))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.t1068"]
+    sigma_id: f2bed782-994e-4f40-9cd5-518198cb3fba
+    sigma_status: experimental
+  - name: sigma_linux_logs_clearing_attempts
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/rm(?:\x1e|$)|exe=.*/rmdir(?:\x1e|$)|exe=.*/shred(?:\x1e|$)|exe=.*/unlink(?:\x1e|$)))(?=.*(?:cmdline=.*/var/log|cmdline=.*/var/spool/mail))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1685.006"]
+    sigma_id: 80915f59-9b56-4616-9de0-fd0dea6c12fe
+    sigma_status: stable
+  - name: sigma_clipboard_collection_with_xclip_tool
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*xclip)(?=.*(?:(?:^|\x1e)cmdline=-sel(?:\x1e|$)|(?:^|\x1e)cmdline=clip(?:\x1e|$)|(?:^|\x1e)cmdline=-o(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.collection", "attack.t1115"]
+    sigma_id: ec127035-a636-4b9a-8555-0efd4e59f316
+    sigma_status: test
+  - name: sigma_copy_passwd_or_shadow_from_tmp_path
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/cp(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.credential-access", "attack.t1552.001"]
+    sigma_id: fa4aaed5-4fe0-498d-bbc0-08e3346387ba
+    sigma_status: test
+  - name: sigma_crontab_enumeration
+    event_type: SIGMA_WEB_ENUM
+    regex: >-
+      (?=.*exe=.*/crontab(?:\x1e|$))(?=.*cmdline=.* -l)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1007"]
+    sigma_id: 403ed92c-b7ec-4edd-9947-5b535ee12d46
+    sigma_status: test
+  - name: sigma_remove_scheduled_cron_taskjob
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*crontab(?:\x1e|$))(?=.*cmdline=.* -r)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth"]
+    sigma_id: c2e234de-03a3-41e1-b39a-1e56dc17ba67
+    sigma_status: test
+  - name: sigma_linux_crypto_mining_indicators
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:cmdline=.* --cpu-priority=|cmdline=.*--donate-level=0|cmdline=.* -o pool\.|cmdline=.* --nicehash|cmdline=.* --algo=rx/0 |cmdline=.*stratum\+tcp://|cmdline=.*stratum\+udp://|cmdline=.*sh -c /sbin/modprobe msr allow_writes=on|cmdline=.*LS1kb25hdGUtbGV2ZWw9|cmdline=.*0tZG9uYXRlLWxldmVsP|cmdline=.*tLWRvbmF0ZS1sZXZlbD|cmdline=.*c3RyYXR1bSt0Y3A6Ly|cmdline=.*N0cmF0dW0rdGNwOi8v|cmdline=.*zdHJhdHVtK3RjcDovL|cmdline=.*c3RyYXR1bSt1ZHA6Ly|cmdline=.*N0cmF0dW0rdWRwOi8v|cmdline=.*zdHJhdHVtK3VkcDovL)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.impact", "attack.t1496"]
+    sigma_id: 9069ea3c-b213-4c52-be13-86506a227ab1
+    sigma_status: test
+  - name: sigma_curl_usage_on_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/curl(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.command-and-control", "attack.t1105"]
+    sigma_id: ea34fb97-e2c4-4afb-810f-785e4459b194
+    sigma_status: test
+  - name: sigma_suspicious_download_and_execute_pattern_via_curlwget
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:cmdline=.*/curl|cmdline=.*/wget)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059.004", "attack.t1203"]
+    sigma_id: a2d9e2f3-0f43-4c7a-bcd9-9acfc0d723aa
+    sigma_status: experimental
+  - name: sigma_dd_file_overwrite
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:(?:^|\x1e)exe=/bin/dd(?:\x1e|$)|(?:^|\x1e)exe=/usr/bin/dd(?:\x1e|$)))(?=.*cmdline=.*of=)(?=.*(?:cmdline=.*if=/dev/zero|cmdline=.*if=/dev/null))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.impact", "attack.t1485"]
+    sigma_id: 2953194b-e33c-4859-b9e8-05948c167447
+    sigma_status: test
+  - name: sigma_potential_linux_process_code_injection_via_dd_utility
+    event_type: SIGMA_WEB_RCE
+    regex: >-
+      (?=.*exe=.*/dd(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=of=(?:\x1e|$)|(?:^|\x1e)cmdline=/proc/(?:\x1e|$)|(?:^|\x1e)cmdline=/mem(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.stealth", "attack.t1055.009"]
+    sigma_id: 4cad6c64-d6df-42d6-8dae-eb78defdc415
+    sigma_status: test
+  - name: sigma_ufw_disable_attempt
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/ufw-init(?:\x1e|$))(?=.*(?:cmdline=.* force-stop|cmdline=.* stop|cmdline=.* flush))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1686"]
+    sigma_id: 84c9e83c-599a-458a-a0cb-0ecce44e807a
+    sigma_status: test
+  - name: sigma_linux_doas_tool_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/doas(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.t1548"]
+    sigma_id: 067d8238-7127-451c-a9ec-fa78045b618b
+    sigma_status: stable
+  - name: sigma_shell_invocation_via_env_command_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/env(?:\x1e|$))(?=.*(?:cmdline=.*/bin/bash|cmdline=.*/bin/dash|cmdline=.*/bin/fish|cmdline=.*/bin/sh|cmdline=.*/bin/zsh))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059.004"]
+    sigma_id: bed978f8-7f3a-432b-82c5-9286a9b3031a
+    sigma_status: test
+  - name: sigma_esxi_network_configuration_discovery_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*cmdline=.*network)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.execution", "attack.t1033", "attack.t1007", "attack.t1059.012"]
+    sigma_id: 33e814e0-1f00-4e43-9c34-31fb7ae2b174
+    sigma_status: test
+  - name: sigma_esxi_admin_permission_assigned_to_account_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*cmdline=.*system)(?=.*(?:(?:^|\x1e)cmdline= permission (?:\x1e|$)|(?:^|\x1e)cmdline= set(?:\x1e|$)|(?:^|\x1e)cmdline=Admin(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.persistence", "attack.execution", "attack.privilege-escalation", "attack.t1059.012", "attack.t1098"]
+    sigma_id: 9691f58d-92c1-4416-8bf3-2edd753ec9cf
+    sigma_status: test
+  - name: sigma_esxi_storage_information_discovery_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*cmdline=.*storage)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.execution", "attack.t1033", "attack.t1007", "attack.t1059.012"]
+    sigma_id: f41dada5-3f56-4232-8503-3fb7f9cf2d60
+    sigma_status: test
+  - name: sigma_esxi_syslog_configuration_change_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=system(?:\x1e|$)|(?:^|\x1e)cmdline=syslog(?:\x1e|$)|(?:^|\x1e)cmdline=config(?:\x1e|$)))(?=.*cmdline=.* set)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.defense-impairment", "attack.t1685", "attack.t1690", "attack.t1059.012"]
+    sigma_id: 38eb1dbb-011f-40b1-a126-cf03a0210563
+    sigma_status: test
+  - name: sigma_esxi_system_information_discovery_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*cmdline=.*system)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.execution", "attack.t1033", "attack.t1007", "attack.t1059.012"]
+    sigma_id: e80273e1-9faf-40bc-bd85-dbaff104c4e9
+    sigma_status: test
+  - name: sigma_esxi_account_creation_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=system (?:\x1e|$)|(?:^|\x1e)cmdline=account (?:\x1e|$)|(?:^|\x1e)cmdline=add (?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.persistence", "attack.execution", "attack.t1136", "attack.t1059.012"]
+    sigma_id: b28e4eb3-8bbc-4f0c-819f-edfe8e2f25db
+    sigma_status: test
+  - name: sigma_esxi_vm_list_discovery_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*cmdline=.*vm process)(?=.*cmdline=.* list(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.execution", "attack.t1033", "attack.t1007", "attack.t1059.012"]
+    sigma_id: 5f1573a7-363b-4114-9208-ad7a61de46eb
+    sigma_status: test
+  - name: sigma_esxi_vm_kill_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=vm process(?:\x1e|$)|(?:^|\x1e)cmdline=kill(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.impact", "attack.t1059.012", "attack.t1529"]
+    sigma_id: 2992ac4d-31e9-4325-99f2-b18a73221bb2
+    sigma_status: test
+  - name: sigma_esxi_vsan_information_discovery_via_esxcli
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/esxcli(?:\x1e|$))(?=.*cmdline=.*vsan)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.execution", "attack.t1033", "attack.t1007", "attack.t1059.012"]
+    sigma_id: d54c2f06-aca9-4e2b-81c9-5317858f4b79
+    sigma_status: test
+  - name: sigma_file_and_directory_discovery_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/file(?:\x1e|$))(?=.*cmdline=.*(.){200,})
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: d3feb4ee-ff1d-4d3d-bd10-5b28a238cc72
+    sigma_status: test
+  - name: sigma_file_deletion
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/rm(?:\x1e|$)|exe=.*/shred(?:\x1e|$)|exe=.*/unlink(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1070.004"]
+    sigma_id: 30aed7b6-d2c1-4eaf-9382-b6bc43e50c57
+    sigma_status: stable
+  - name: sigma_shell_execution_via_find_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/find(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline= \. (?:\x1e|$)|(?:^|\x1e)cmdline=-exec(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: 6adfbf8f-52be-4444-9bac-81b539624146
+    sigma_status: test
+  - name: sigma_shell_execution_via_flock_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/flock(?:\x1e|$))(?=.*cmdline=.* -u )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: 4b09c71e-4269-4111-9cdd-107d8867f0cc
+    sigma_status: test
+  - name: sigma_shell_execution_gcc_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/c89(?:\x1e|$)|exe=.*/c99(?:\x1e|$)|exe=.*/gcc(?:\x1e|$)))(?=.*cmdline=.*-wrapper)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: 9b5de532-a757-4d70-946c-1f3e44f48b4d
+    sigma_status: test
+  - name: sigma_shell_execution_via_git_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*parent_exe=.*/git(?:\x1e|$))(?=.*(?:(?:^|\x1e)parent_cmdline= -p (?:\x1e|$)|(?:^|\x1e)parent_cmdline=help(?:\x1e|$)))(?=.*(?:cmdline=.*bash 0<&1|cmdline=.*dash 0<&1|cmdline=.*sh 0<&1))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: 47b3bbd4-1bf7-48cc-84ab-995362aaa75a
+    sigma_status: test
+  - name: sigma_os_architecture_discovery_via_grep
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/grep(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1082"]
+    sigma_id: d27ab432-2199-483f-a297-03633c05bae6
+    sigma_status: test
+  - name: sigma_group_has_been_deleted_via_groupdel
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/groupdel(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.impact", "attack.t1531"]
+    sigma_id: 8a46f16c-8c4c-82d1-b121-0fdd3ba70a84
+    sigma_status: test
+  - name: sigma_install_root_certificate
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/update-ca-certificates(?:\x1e|$)|exe=.*/update-ca-trust(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1553.004"]
+    sigma_id: 78a80655-a51e-4669-bc6b-e9d206a462ee
+    sigma_status: test
+  - name: sigma_suspicious_package_installed_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/apt(?:\x1e|$)|exe=.*/apt-get(?:\x1e|$)))(?=.*cmdline=.*install)(?=.*(?:cmdline=.*nmap|cmdline=.* nc|cmdline=.*netcat|cmdline=.*wireshark|cmdline=.*tshark|cmdline=.*openconnect|cmdline=.*proxychains|cmdline=.*socat))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1553.004"]
+    sigma_id: 700fb7e8-2981-401c-8430-be58e189e741
+    sigma_status: test
+  - name: sigma_flush_iptables_ufw_chain
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/iptables(?:\x1e|$)|exe=.*/xtables-legacy-multi(?:\x1e|$)|exe=.*/iptables-legacy-multi(?:\x1e|$)|exe=.*/ip6tables(?:\x1e|$)|exe=.*/ip6tables-legacy-multi(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1686"]
+    sigma_id: 3be619f4-d9ec-4ea8-a173-18fdd01996ab
+    sigma_status: test
+  - name: sigma_local_system_accounts_discovery_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/lastlog(?:\x1e|$)|cmdline=.*'x:0:'|(?=.*(?:exe=.*/cat(?:\x1e|$)|exe=.*/ed(?:\x1e|$)|exe=.*/head(?:\x1e|$)|exe=.*/more(?:\x1e|$)|exe=.*/nano(?:\x1e|$)|exe=.*/tail(?:\x1e|$)|exe=.*/vi(?:\x1e|$)|exe=.*/vim(?:\x1e|$)|exe=.*/less(?:\x1e|$)|exe=.*/emacs(?:\x1e|$)|exe=.*/sqlite3(?:\x1e|$)|exe=.*/makemap(?:\x1e|$)))(?=.*(?:cmdline=.*/etc/passwd|cmdline=.*/etc/shadow|cmdline=.*/etc/sudoers|cmdline=.*/etc/spwd\.db|cmdline=.*/etc/pwd\.db|cmdline=.*/etc/master\.passwd))|exe=.*/id(?:\x1e|$)|(?=.*exe=.*/lsof(?:\x1e|$))(?=.*cmdline=.*-u))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1087.001"]
+    sigma_id: b45e3d6f-42c6-47d8-a478-df6bd6cf534c
+    sigma_status: test
+  - name: sigma_local_groups_discovery_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/groups(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1069.001"]
+    sigma_id: 676381a6-15ca-4d73-a9c8-6a22e970b90d
+    sigma_status: test
+  - name: sigma_potential_gobrat_file_discovery_via_grep
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/grep(?:\x1e|$))(?=.*(?:cmdline=.*apached|cmdline=.*frpc|cmdline=.*sshd\.sh|cmdline=.*zone\.arm))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1082"]
+    sigma_id: e34cfa0c-0a50-4210-9cb3-5632d08eb041
+    sigma_status: test
+  - name: sigma_named_pipe_created_via_mkfifo
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/mkfifo(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 9d779ce8-5256-4b13-8b6f-b91c602b43f4
+    sigma_status: test
+  - name: sigma_potentially_suspicious_named_pipe_created_via_mkfifo
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/mkfifo(?:\x1e|$))(?=.*cmdline=.* /tmp/)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 999c3b12-0a8c-40b6-8e13-dd7d62b75c7a
+    sigma_status: test
+  - name: sigma_mount_execution_with_hidepid_parameter
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/mount(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=hidepid=2(?:\x1e|$)|(?:^|\x1e)cmdline= -o (?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.credential-access", "attack.stealth", "attack.t1564"]
+    sigma_id: ec52985a-d024-41e3-8ff6-14169039a0b3
+    sigma_status: test
+  - name: sigma_potential_netcat_reverse_shell_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/nc\.openbsd(?:\x1e|$)|exe=.*/nc\.traditional(?:\x1e|$)|exe=.*/nc(?:\x1e|$)|exe=.*/ncat(?:\x1e|$)|exe=.*/netcat\.openbsd(?:\x1e|$)|exe=.*/netcat\.traditional(?:\x1e|$)|exe=.*/netcat(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: 7f734ed0-4f47-46c0-837f-6ee62505abd9
+    sigma_status: test
+  - name: sigma_shell_execution_via_nice_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/nice(?:\x1e|$))(?=.*(?:cmdline=.*/bin/bash(?:\x1e|$)|cmdline=.*/bin/dash(?:\x1e|$)|cmdline=.*/bin/fish(?:\x1e|$)|cmdline=.*/bin/sh(?:\x1e|$)|cmdline=.*/bin/zsh(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: 093d68c7-762a-42f4-9f46-95e79142571a
+    sigma_status: test
+  - name: sigma_nohup_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/nohup(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059.004"]
+    sigma_id: e4ffe466-6ff8-48d4-94bd-e32d1a6061e2
+    sigma_status: test
+  - name: sigma_suspicious_nohup_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/nohup(?:\x1e|$))(?=.*cmdline=.*/tmp/)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 457df417-8b9d-4912-85f3-9dbda39c3645
+    sigma_status: test
+  - name: sigma_potential_perl_reverse_shell_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/perl(?:\x1e|$))(?=.*cmdline=.* -e )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 259df6bc-003f-4306-9f54-4ff1a08fa38e
+    sigma_status: test
+  - name: sigma_potential_php_reverse_shell
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/php)(?=.*(?:(?:^|\x1e)cmdline= -r (?:\x1e|$)|(?:^|\x1e)cmdline=fsockopen(?:\x1e|$)))(?=.*(?:cmdline=.*ash|cmdline=.*bash|cmdline=.*bsh|cmdline=.*csh|cmdline=.*ksh|cmdline=.*pdksh|cmdline=.*sh|cmdline=.*tcsh|cmdline=.*zsh))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: c6714a24-d7d5-4283-a36b-3ffd091d5f7e
+    sigma_status: test
+  - name: sigma_pnscan_binary_data_transmission_activity
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      cmdline=.*-(W|R)\s?(\s|"|')([0-9a-fA-F]{2}\s?){2,20}(\s|"|')
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1046"]
+    sigma_id: 97de11cd-4b67-4abf-9a8b-1020e670aa9e
+    sigma_status: test
+  - name: sigma_connection_proxy
+    event_type: SIGMA_WEB_PROXY
+    regex: >-
+      (?:cmdline=.*http_proxy=|cmdline=.*https_proxy=)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.command-and-control", "attack.t1090"]
+    sigma_id: 72f4ab3f-787d-495d-a55d-68c2ff46cf4c
+    sigma_status: test
+  - name: sigma_pua_-_trufflehog_execution_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/trufflehog(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.credential-access", "attack.t1083", "attack.t1552.001"]
+    sigma_id: d7a650c4-226c-451e-948f-cc490db506aa
+    sigma_status: experimental
+  - name: sigma_python_one-liners_with_base64_decoding_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/python
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.stealth", "attack.t1059.006", "attack.t1027.010"]
+    sigma_id: 55e862a8-dd9c-4651-807a-f21fcad56716
+    sigma_status: experimental
+  - name: sigma_python_reverse_shell_execution_via_pty_and_socket_modules
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*python)(?=.*(?:(?:^|\x1e)cmdline= -c (?:\x1e|$)|(?:^|\x1e)cmdline=import(?:\x1e|$)|(?:^|\x1e)cmdline=pty(?:\x1e|$)|(?:^|\x1e)cmdline=socket(?:\x1e|$)|(?:^|\x1e)cmdline=spawn(?:\x1e|$)|(?:^|\x1e)cmdline=\.connect(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 32e62bc7-3de0-4bb1-90af-532978fe42c0
+    sigma_status: test
+  - name: sigma_remote_access_tool_-_team_viewer_session_started_on_linux_ho
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*parent_exe=.*/TeamViewer_Service(?:\x1e|$))(?=.*exe=.*/TeamViewer_Desktop(?:\x1e|$))(?=.*cmdline=.*/TeamViewer_Desktop --IPCport 5939 --Module 1(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.persistence", "attack.initial-access", "attack.t1133"]
+    sigma_id: 1f6b8cd4-3e60-47cc-b282-5aa1cbc9182d
+    sigma_status: test
+  - name: sigma_linux_remote_system_discovery
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:(?=.*exe=.*/arp(?:\x1e|$))(?=.*cmdline=.*-a)|(?=.*exe=.*/ping(?:\x1e|$))(?=.*(?:cmdline=.* 10\.|cmdline=.* 192\.168\.|cmdline=.* 172\.16\.|cmdline=.* 172\.17\.|cmdline=.* 172\.18\.|cmdline=.* 172\.19\.|cmdline=.* 172\.20\.|cmdline=.* 172\.21\.|cmdline=.* 172\.22\.|cmdline=.* 172\.23\.|cmdline=.* 172\.24\.|cmdline=.* 172\.25\.|cmdline=.* 172\.26\.|cmdline=.* 172\.27\.|cmdline=.* 172\.28\.|cmdline=.* 172\.29\.|cmdline=.* 172\.30\.|cmdline=.* 172\.31\.|cmdline=.* 127\.|cmdline=.* 169\.254\.)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1018"]
+    sigma_id: 11063ec2-de63-4153-935e-b1a8b9e616f1
+    sigma_status: test
+  - name: sigma_linux_package_uninstall
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/yum(?:\x1e|$))(?=.*(?:cmdline=.*erase|cmdline=.*remove))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1070"]
+    sigma_id: 95d61234-7f56-465c-6f2d-b562c6fedbc4
+    sigma_status: test
+  - name: sigma_shell_execution_via_rsync_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/rsync(?:\x1e|$)|exe=.*/rsyncd(?:\x1e|$)))(?=.*cmdline=.* -e )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: e2326866-609f-4015-aea9-7ec634e8aa04
+    sigma_status: experimental
+  - name: sigma_suspicious_invocation_of_shell_via_rsync
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:parent_exe=.*/rsync(?:\x1e|$)|parent_exe=.*/rsyncd(?:\x1e|$)))(?=.*(?:exe=.*/ash(?:\x1e|$)|exe=.*/bash(?:\x1e|$)|exe=.*/csh(?:\x1e|$)|exe=.*/dash(?:\x1e|$)|exe=.*/ksh(?:\x1e|$)|exe=.*/sh(?:\x1e|$)|exe=.*/tcsh(?:\x1e|$)|exe=.*/zsh(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059", "attack.t1203"]
+    sigma_id: 297241f3-8108-4b3a-8c15-2dda9f844594
+    sigma_status: experimental
+  - name: sigma_potential_ruby_reverse_shell
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*ruby)(?=.*(?:(?:^|\x1e)cmdline= -e(?:\x1e|$)|(?:^|\x1e)cmdline=rsocket(?:\x1e|$)|(?:^|\x1e)cmdline=TCPSocket(?:\x1e|$)))(?=.*(?:cmdline=.* ash|cmdline=.* bash|cmdline=.* bsh|cmdline=.* csh|cmdline=.* ksh|cmdline=.* pdksh|cmdline=.* sh|cmdline=.* tcsh))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: b8bdac18-c06e-4016-ac30-221553e74f59
+    sigma_status: test
+  - name: sigma_scheduled_cron_taskjob_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*crontab(?:\x1e|$))(?=.*cmdline=.*/tmp/)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.persistence", "attack.privilege-escalation", "attack.t1053.003"]
+    sigma_id: 6b14bac8-3e3a-4324-8109-42f0546a347f
+    sigma_status: test
+  - name: sigma_security_software_discovery_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/grep(?:\x1e|$)|exe=.*/egrep(?:\x1e|$)))(?=.*(?:cmdline=.*nessusd|cmdline=.*td-agent|cmdline=.*packetbeat|cmdline=.*filebeat|cmdline=.*auditbeat|cmdline=.*osqueryd|cmdline=.*cbagentd|cmdline=.*falcond))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1518.001"]
+    sigma_id: c9d8b7fd-78e4-44fe-88f6-599135d46d60
+    sigma_status: test
+  - name: sigma_disabling_security_tools
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:(?=.*exe=.*/service(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=iptables(?:\x1e|$)|(?:^|\x1e)cmdline=stop(?:\x1e|$)))|(?=.*exe=.*/service(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=ip6tables(?:\x1e|$)|(?:^|\x1e)cmdline=stop(?:\x1e|$)))|(?=.*exe=.*/chkconfig(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=iptables(?:\x1e|$)|(?:^|\x1e)cmdline=stop(?:\x1e|$)))|(?=.*exe=.*/chkconfig(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=ip6tables(?:\x1e|$)|(?:^|\x1e)cmdline=stop(?:\x1e|$)))|(?=.*exe=.*/systemctl(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=firewalld(?:\x1e|$)|(?:^|\x1e)cmdline=stop(?:\x1e|$)))|(?=.*exe=.*/systemctl(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=firewalld(?:\x1e|$)|(?:^|\x1e)cmdline=disable(?:\x1e|$)))|(?=.*exe=.*/service(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=cbdaemon(?:\x1e|$)|(?:^|\x1e)cmdline=stop(?:\x1e|$)))|(?=.*exe=.*/chkconfig(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=cbdaemon(?:\x1e|$)|(?:^|\x1e)cmdline=off(?:\x1e|$)))|(?=.*exe=.*/systemctl(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=cbdaemon(?:\x1e|$)|(?:^|\x1e)cmdline=stop(?:\x1e|$)))|(?=.*exe=.*/systemctl(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=cbdaemon(?:\x1e|$)|(?:^|\x1e)cmdline=disable(?:\x1e|$)))|(?=.*exe=.*/setenforce(?:\x1e|$))(?=.*cmdline=.*0)|(?=.*exe=.*/systemctl(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=stop(?:\x1e|$)|(?:^|\x1e)cmdline=falcon-sensor(?:\x1e|$)))|(?=.*exe=.*/systemctl(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=disable(?:\x1e|$)|(?:^|\x1e)cmdline=falcon-sensor(?:\x1e|$))))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1686"]
+    sigma_id: e3a8a052-111f-4606-9aee-f28ebeb76776
+    sigma_status: test
+  - name: sigma_disable_or_stop_services
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/service(?:\x1e|$)|exe=.*/systemctl(?:\x1e|$)|exe=.*/chkconfig(?:\x1e|$)))(?=.*(?:cmdline=.* stop |cmdline=.* disable ))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.defense-impairment", "attack.t1685", "attack.impact", "attack.t1489"]
+    sigma_id: de25eeb8-3655-4643-ac3a-b662d3f26b6b
+    sigma_status: test
+  - name: sigma_setuid_and_setgid
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      cmdline=.*chown root
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.persistence", "attack.privilege-escalation", "attack.t1548.001"]
+    sigma_id: c21c4eaa-ba2e-419a-92b2-8371703cbe21
+    sigma_status: test
+  - name: sigma_shell_invocation_via_ssh_-_linux
+    event_type: SIGMA_SSH_SHELL_EXEC
+    regex: >-
+      (?=.*exe=.*/ssh(?:\x1e|$))(?=.*(?:cmdline=.*ProxyCommand=;|cmdline=.*permitlocalcommand=yes|cmdline=.*localhost))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: 8737b7f6-8df3-4bb7-b1da-06019b99b687
+    sigma_status: test
+  - name: sigma_potential_linux_amazon_ssm_agent_hijacking
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/amazon-ssm-agent(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline=-register (?:\x1e|$)|(?:^|\x1e)cmdline=-code (?:\x1e|$)|(?:^|\x1e)cmdline=-id (?:\x1e|$)|(?:^|\x1e)cmdline=-region (?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.command-and-control", "attack.persistence", "attack.t1219.002"]
+    sigma_id: f9b3edc5-3322-4fc7-8aa3-245d646cc4b7
+    sigma_status: test
+  - name: sigma_container_residence_discovery_via_proc_virtual_fs
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*awk(?:\x1e|$)|exe=.*/cat(?:\x1e|$)|exe=.*grep(?:\x1e|$)|exe=.*/head(?:\x1e|$)|exe=.*/less(?:\x1e|$)|exe=.*/more(?:\x1e|$)|exe=.*/nl(?:\x1e|$)|exe=.*/tail(?:\x1e|$)))(?=.*cmdline=.*/proc/2/)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1082"]
+    sigma_id: 746c86fb-ccda-4816-8997-01386263acc4
+    sigma_status: test
+  - name: sigma_suspicious_curl_file_upload_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/curl(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.exfiltration", "attack.command-and-control", "attack.t1567", "attack.t1105"]
+    sigma_id: 00b90cc1-17ec-402c-96ad-3a8117d7a582
+    sigma_status: test
+  - name: sigma_suspicious_curl_change_user_agents_-_linux
+    event_type: SIGMA_WEB_SUSP_UA
+    regex: >-
+      (?=.*exe=.*/curl(?:\x1e|$))(?=.*(?:cmdline=.* -A |cmdline=.* --user-agent ))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.command-and-control", "attack.t1071.001"]
+    sigma_id: b86d356d-6093-443d-971c-9b07db583c68
+    sigma_status: test
+  - name: sigma_docker_container_discovery_via_dockerenv_listing
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/cat(?:\x1e|$)|exe=.*/dir(?:\x1e|$)|exe=.*/find(?:\x1e|$)|exe=.*/ls(?:\x1e|$)|exe=.*/stat(?:\x1e|$)|exe=.*/test(?:\x1e|$)|exe=.*grep(?:\x1e|$)))(?=.*cmdline=.*\.dockerenv(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1082"]
+    sigma_id: 11701de9-d5a5-44aa-8238-84252f131895
+    sigma_status: test
+  - name: sigma_process_execution_from_shared_memory_directory
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=/dev/shm/
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.execution", "attack.t1027.011"]
+    sigma_id: 5cd16c8f-44a6-4654-81e7-a84d6db507d4
+    sigma_status: experimental
+  - name: sigma_potentially_suspicious_execution_from_tmp_folder
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=/tmp/
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1036"]
+    sigma_id: 312b42b1-bded-4441-8b58-163a3af58775
+    sigma_status: test
+  - name: sigma_potential_discovery_activity_using_find_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/find(?:\x1e|$))(?=.*(?:cmdline=.*-perm -4000|cmdline=.*-perm -2000|cmdline=.*-perm 0777|cmdline=.*-perm -222|cmdline=.*-perm -o w|cmdline=.*-perm -o x|cmdline=.*-perm -u=s|cmdline=.*-perm -g=s))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1083"]
+    sigma_id: 8344c0e5-5783-47cc-9cf9-a0f7fd03e6cf
+    sigma_status: test
+  - name: sigma_suspicious_git_clone_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/git(?:\x1e|$))(?=.*cmdline=.* clone )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.reconnaissance", "attack.t1593.003"]
+    sigma_id: cfec9d29-64ec-4a0f-9ffe-0fdb856d5446
+    sigma_status: test
+  - name: sigma_history_file_deletion
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/rm(?:\x1e|$)|exe=.*/unlink(?:\x1e|$)|exe=.*/shred(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.impact", "attack.t1565.001"]
+    sigma_id: 1182f3b3-e716-4efa-99ab-d2685d04360f
+    sigma_status: test
+  - name: sigma_print_history_file_contents
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/cat(?:\x1e|$)|exe=.*/head(?:\x1e|$)|exe=.*/tail(?:\x1e|$)|exe=.*/more(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.reconnaissance", "attack.t1592.004"]
+    sigma_id: d7821ff1-4527-4e33-9f84-d0d57fa2fb66
+    sigma_status: test
+  - name: sigma_linux_hacktool_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/crackmapexec(?:\x1e|$)|exe=.*/havoc(?:\x1e|$)|exe=.*/merlin-agent(?:\x1e|$)|exe=.*/merlinServer-Linux-x64(?:\x1e|$)|exe=.*/msfconsole(?:\x1e|$)|exe=.*/msfvenom(?:\x1e|$)|exe=.*/ps-empire server(?:\x1e|$)|exe=.*/ps-empire(?:\x1e|$)|exe=.*/sliver-client(?:\x1e|$)|exe=.*/sliver-server(?:\x1e|$)|exe=.*/Villain\.py(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.resource-development", "attack.t1587"]
+    sigma_id: a015e032-146d-4717-8944-7a1884122111
+    sigma_status: test
+  - name: sigma_potential_container_discovery_via_inodes_listing
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/ls(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1082"]
+    sigma_id: 43e26eb5-cd58-48d1-8ce9-a273f5d298d8
+    sigma_status: test
+  - name: sigma_interactive_bash_suspicious_children
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:^|\x1e)parent_cmdline=bash -i(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.stealth", "attack.t1059.004", "attack.t1036"]
+    sigma_id: ea3ecad2-db86-4a89-ad0b-132a10d2db55
+    sigma_status: test
+  - name: sigma_suspicious_java_children_processes
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*parent_exe=.*/java(?:\x1e|$))(?=.*(?:cmdline=.*/bin/sh|cmdline=.*bash|cmdline=.*dash|cmdline=.*ksh|cmdline=.*zsh|cmdline=.*csh|cmdline=.*fish|cmdline=.*curl|cmdline=.*wget|cmdline=.*python))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: d292e0af-9a18-420c-9525-ec0ac3936892
+    sigma_status: test
+  - name: sigma_linux_network_service_scanning_tools_execution
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:(?:exe=.*/autorecon(?:\x1e|$)|exe=.*/hping(?:\x1e|$)|exe=.*/hping2(?:\x1e|$)|exe=.*/hping3(?:\x1e|$)|exe=.*/naabu(?:\x1e|$)|exe=.*/nmap(?:\x1e|$)|exe=.*/nping(?:\x1e|$)|exe=.*/telnet(?:\x1e|$)|exe=.*/zenmap(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1046"]
+    sigma_id: 3e102cd9-a70d-4a7a-9508-403963092f31
+    sigma_status: test
+  - name: sigma_linux_shell_pipe_to_shell
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:cmdline=sh -c |cmdline=bash -c ))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1140"]
+    sigma_id: 880973f3-9708-491c-a77b-2a35a1921158
+    sigma_status: test
+  - name: sigma_access_of_sudoers_file_content
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/cat(?:\x1e|$)|exe=.*/ed(?:\x1e|$)|exe=.*/egrep(?:\x1e|$)|exe=.*/emacs(?:\x1e|$)|exe=.*/fgrep(?:\x1e|$)|exe=.*/grep(?:\x1e|$)|exe=.*/head(?:\x1e|$)|exe=.*/less(?:\x1e|$)|exe=.*/more(?:\x1e|$)|exe=.*/nano(?:\x1e|$)|exe=.*/tail(?:\x1e|$)))(?=.*cmdline=.* /etc/sudoers)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.reconnaissance", "attack.t1592.004"]
+    sigma_id: 0f79c4d2-4e1f-4683-9c36-b5469a665e06
+    sigma_status: test
+  - name: sigma_linux_recon_indicators
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:cmdline=.* -name \.htpasswd|cmdline=.* -perm -4000 )
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.reconnaissance", "attack.t1592.004", "attack.credential-access", "attack.t1552.001"]
+    sigma_id: 0cf7a157-8879-41a2-8f55-388dd23746b7
+    sigma_status: test
+  - name: sigma_script_interpreter_spawning_credential_scanner_-_linux
+    event_type: SIGMA_WEB_SCANNER
+    regex: >-
+      (?:parent_exe=.*/node(?:\x1e|$)|parent_exe=.*/bun(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.credential-access", "attack.t1552", "attack.execution", "attack.collection", "attack.t1005", "attack.t1059.004"]
+    sigma_id: f0025a69-e1b7-4dda-a53c-db21fa2d4071
+    sigma_status: experimental
+  - name: sigma_potential_suspicious_change_to_sensitivecritical_files
+    event_type: SIGMA_WEB_SENSITIVE_FILE
+    regex: >-
+      (?=.*(?:exe=.*/cat(?:\x1e|$)|exe=.*/echo(?:\x1e|$)|exe=.*/grep(?:\x1e|$)|exe=.*/head(?:\x1e|$)|exe=.*/more(?:\x1e|$)|exe=.*/tail(?:\x1e|$)))(?=.*cmdline=.*>)(?=.*(?:cmdline=.*/bin/login|cmdline=.*/bin/passwd|cmdline=.*/boot/|cmdline=.*/etc/\*\.conf|cmdline=.*/etc/cron\.|cmdline=.*/etc/crontab|cmdline=.*/etc/hosts|cmdline=.*/etc/init\.d|cmdline=.*/etc/sudoers|cmdline=.*/opt/bin/|cmdline=.*/sbin|cmdline=.*/usr/bin/|cmdline=.*/usr/local/bin/))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.impact", "attack.t1565.001"]
+    sigma_id: 86157017-c2b1-4d4a-8c33-93b8e67e4af4
+    sigma_status: test
+  - name: sigma_shell_execution_of_process_located_in_tmp_directory
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*parent_exe=/tmp/)(?=.*(?:exe=.*/bash(?:\x1e|$)|exe=.*/csh(?:\x1e|$)|exe=.*/dash(?:\x1e|$)|exe=.*/fish(?:\x1e|$)|exe=.*/ksh(?:\x1e|$)|exe=.*/sh(?:\x1e|$)|exe=.*/zsh(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 2fade0b6-7423-4835-9d4f-335b39b83867
+    sigma_status: test
+  - name: sigma_execution_of_script_located_in_potentially_suspicious_direct
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/bash(?:\x1e|$)|exe=.*/csh(?:\x1e|$)|exe=.*/dash(?:\x1e|$)|exe=.*/fish(?:\x1e|$)|exe=.*/ksh(?:\x1e|$)|exe=.*/sh(?:\x1e|$)|exe=.*/zsh(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution"]
+    sigma_id: 30bcce26-51c5-49f2-99c8-7b59e3af36c7
+    sigma_status: test
+  - name: sigma_system_information_discovery
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/uname(?:\x1e|$)|exe=.*/hostname(?:\x1e|$)|exe=.*/uptime(?:\x1e|$)|exe=.*/lspci(?:\x1e|$)|exe=.*/dmidecode(?:\x1e|$)|exe=.*/lscpu(?:\x1e|$)|exe=.*/lsmod(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1082"]
+    sigma_id: 42df45e7-e6e9-43b5-8f26-bec5b39cc239
+    sigma_status: stable
+  - name: sigma_system_network_connections_discovery_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/who(?:\x1e|$)|exe=.*/w(?:\x1e|$)|exe=.*/last(?:\x1e|$)|exe=.*/lsof(?:\x1e|$)|exe=.*/netstat(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1049"]
+    sigma_id: 4c519226-f0cd-4471-bd2f-6fbb2bb68a79
+    sigma_status: test
+  - name: sigma_system_network_discovery_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?:exe=.*/firewall-cmd(?:\x1e|$)|exe=.*/ufw(?:\x1e|$)|exe=.*/iptables(?:\x1e|$)|exe=.*/netstat(?:\x1e|$)|exe=.*/ss(?:\x1e|$)|exe=.*/ip(?:\x1e|$)|exe=.*/ifconfig(?:\x1e|$)|exe=.*/systemd-resolve(?:\x1e|$)|exe=.*/route(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.discovery", "attack.t1016"]
+    sigma_id: e7bd1cfa-b446-4c88-8afb-403bcd79e3fa
+    sigma_status: test
+  - name: sigma_mask_system_power_settings_via_systemctl
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/systemctl(?:\x1e|$))(?=.*cmdline=.* mask)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.persistence", "attack.impact", "attack.t1653"]
+    sigma_id: c172b7b5-f3a1-4af2-90b7-822c63df86cb
+    sigma_status: experimental
+  - name: sigma_touch_suspicious_service_file
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/touch(?:\x1e|$))(?=.*cmdline=.* -t )(?=.*cmdline=.*\.service(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1070.006"]
+    sigma_id: 31545105-3444-4584-bebf-c466353230d2
+    sigma_status: test
+  - name: sigma_triple_cross_ebpf_rootkit_execve_hijack
+    event_type: SIGMA_WEB_XSS
+    regex: >-
+      (?=.*exe=.*/sudo(?:\x1e|$))(?=.*cmdline=.*execve_hijack)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.stealth"]
+    sigma_id: 0326c3c8-7803-4a0f-8c5c-368f747f7c3e
+    sigma_status: test
+  - name: sigma_triple_cross_ebpf_rootkit_install_commands
+    event_type: SIGMA_WEB_XSS
+    regex: >-
+      (?=.*exe=.*/sudo(?:\x1e|$))(?=.*(?:(?:^|\x1e)cmdline= tc (?:\x1e|$)|(?:^|\x1e)cmdline= enp0s3 (?:\x1e|$)))(?=.*(?:cmdline=.* qdisc |cmdline=.* filter ))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.stealth", "attack.t1014"]
+    sigma_id: 22236d75-d5a0-4287-bf06-c93b1770860f
+    sigma_status: test
+  - name: sigma_user_has_been_deleted_via_userdel
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      exe=.*/userdel(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.impact", "attack.t1531"]
+    sigma_id: 08f26069-6f80-474b-8d1f-d971c6fedea0
+    sigma_status: test
+  - name: sigma_user_added_to_rootsudoers_group_using_usermod
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*/usermod(?:\x1e|$))(?=.*(?:cmdline=.*-aG root|cmdline=.*-aG sudoers))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.privilege-escalation", "attack.persistence"]
+    sigma_id: 6a50f16c-3b7b-42d1-b081-0fdd3ba70a73
+    sigma_status: test
+  - name: sigma_vim_gtfobin_abuse_-_linux
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*(?:exe=.*/rvim(?:\x1e|$)|exe=.*/vi(?:\x1e|$)|exe=.*/vim(?:\x1e|$)|exe=.*/vimdiff(?:\x1e|$)))(?=.*(?:cmdline=.* --cmd |cmdline=.* -c))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.discovery", "attack.t1059", "attack.t1083"]
+    sigma_id: 7ab8f73a-fcff-428b-84aa-6a5ff7877dea
+    sigma_status: test
+  - name: sigma_linux_webshell_indicators
+    event_type: SIGMA_WEB_WEBSHELL
+    regex: >-
+      (?=.*(?:parent_exe=.*/httpd(?:\x1e|$)|parent_exe=.*/lighttpd(?:\x1e|$)|parent_exe=.*/nginx(?:\x1e|$)|parent_exe=.*/apache2(?:\x1e|$)|parent_exe=.*/node(?:\x1e|$)|parent_exe=.*/caddy(?:\x1e|$)))(?=.*(?:exe=.*/whoami(?:\x1e|$)|exe=.*/ifconfig(?:\x1e|$)|exe=.*/ip(?:\x1e|$)|exe=.*/bin/uname(?:\x1e|$)|exe=.*/bin/cat(?:\x1e|$)|exe=.*/bin/crontab(?:\x1e|$)|exe=.*/hostname(?:\x1e|$)|exe=.*/iptables(?:\x1e|$)|exe=.*/netstat(?:\x1e|$)|exe=.*/pwd(?:\x1e|$)|exe=.*/route(?:\x1e|$)))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.persistence", "attack.t1505.003"]
+    sigma_id: 818f7b24-0fba-4c49-a073-8b755573b9c7
+    sigma_status: test
+  - name: sigma_download_file_to_potentially_suspicious_directory_via_wget
+    event_type: SIGMA_WEB_DOWNLOAD_CRADLE
+    regex: >-
+      exe=.*/wget(?:\x1e|$)
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.command-and-control", "attack.t1105"]
+    sigma_id: cf610c15-ed71-46e1-bdf8-2bd1a99de6c4
+    sigma_status: test
+  - name: sigma_potential_xterm_reverse_shell
+    event_type: SIGMA_HOST_DETECTION
+    regex: >-
+      (?=.*exe=.*xterm)(?=.*cmdline=.*-display)(?=.*cmdline=.*:1(?:\x1e|$))
+    log_sources: ["auditd"]
+    max_attempts: 1
+    window_seconds: 1
+    tags: ["attack.execution", "attack.t1059"]
+    sigma_id: 4e25af4b-246d-44ea-8563-e42aacab006b
+    sigma_status: test

@@ -9,6 +9,7 @@ Endpoints:
     GET /intel/ip/<ip_address>/events       — Event history fragment (HTMX)
     GET /intel/analytics                    — Analytics dashboard
     GET /intel/analytics/stats              — JSON stats endpoint
+    GET /intel/analytics/attack-frequency   — JSON block-frequency distribution
     GET /intel/analytics/top-offenders      — JSON top offenders
     GET /intel/analytics/top-countries      — JSON top countries
     GET /intel/analytics/top-asns           — JSON top ASNs
@@ -40,6 +41,7 @@ from app.geo import lookup as geo_lookup
 from app.intel_dashboard_service import (
     execute_search,
     get_analytics_stats,
+    get_attack_frequency_distribution,
     get_blocks_vs_sightings,
     get_chart_data,
     get_event_detail,
@@ -518,7 +520,7 @@ def _compute_recency(conn, ip_address: str) -> dict:
 # ── Analytics routes ─────────────────────────────────────────────────────
 
 # Valid interval values for chart data endpoint
-_VALID_INTERVALS = {"7d", "30d", "90d"}
+_VALID_INTERVALS = {"7d", "30d", "60d", "90d"}
 
 
 @intel_dashboard_bp.route("/analytics")
@@ -558,6 +560,28 @@ def analytics_stats():
         db.close()
 
     return jsonify(stats)
+
+
+@intel_dashboard_bp.route("/analytics/attack-frequency")
+@require_role("analyst")
+@limiter.limit("60/minute")
+def analytics_attack_frequency():
+    """Return JSON distribution of IPs by number of times blocked.
+
+    Returns:
+        JSON array of objects with: label, ip_count, percentage
+    """
+    db_path = current_app.config["DATABASE_PATH"]
+    db = get_db(db_path)
+    try:
+        distribution = get_attack_frequency_distribution(db)
+    except Exception as exc:
+        logger.exception("Failed to load attack frequency distribution: %s", exc)
+        return jsonify({"error": "Analytics data could not be loaded"}), 500
+    finally:
+        db.close()
+
+    return jsonify(distribution)
 
 
 @intel_dashboard_bp.route("/analytics/top-offenders")
@@ -705,7 +729,7 @@ def analytics_chart_data():
     """Return JSON time-series data for Chart.js charts.
 
     Query parameters:
-        interval: Time range — "7d", "30d", or "90d" (default "30d")
+        interval: Time range — "7d", "30d", "60d", or "90d" (default "30d")
 
     Returns:
         JSON with: labels (date strings), datasets (new_ips, sightings,
@@ -721,7 +745,7 @@ def analytics_chart_data():
 
     # Validate interval parameter
     if interval not in _VALID_INTERVALS:
-        return jsonify({"error": "Invalid interval. Accepted values: 7d, 30d, 90d"}), 400
+        return jsonify({"error": "Invalid interval. Accepted values: 7d, 30d, 60d, 90d"}), 400
 
     db_path = current_app.config["DATABASE_PATH"]
     db = get_db(db_path)
@@ -893,13 +917,23 @@ def analytics_threat_tags():
 def analytics_hourly_distribution():
     """Return JSON array of event counts by hour of day (0-23).
 
+    Query parameters:
+        interval: Time range — "7d", "30d", "60d", or "90d" (default "30d")
+
     Returns:
         JSON array of 24 integers representing event counts for each hour
+
+    Error responses:
+        400: Invalid interval parameter
     """
+    interval = request.args.get("interval", "30d").strip()
+    if interval not in _VALID_INTERVALS:
+        return jsonify({"error": "Invalid interval. Accepted values: 7d, 30d, 60d, 90d"}), 400
+
     db_path = current_app.config["DATABASE_PATH"]
     db = get_db(db_path)
     try:
-        hourly = get_hourly_distribution(db)
+        hourly = get_hourly_distribution(db, interval)
     except Exception as exc:
         logger.exception("Failed to load hourly distribution: %s", exc)
         return jsonify({"error": "Analytics data could not be loaded"}), 500
