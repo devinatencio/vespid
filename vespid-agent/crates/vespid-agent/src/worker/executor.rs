@@ -23,6 +23,7 @@ pub struct CheckResult {
     pub details: Option<serde_json::Value>,
 }
 
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait CheckExecutor: Send + Sync {
     fn check_type(&self) -> &'static str;

@@ -258,9 +258,7 @@ def _get_node_active_parsers(db, node_id: str) -> tuple[list[str] | None, str]:
         # every source the profile doesn't mention.
         log_sources = settings.get("log_sources", [])
         profile_parsers = [
-            ls.get("parser")
-            for ls in log_sources
-            if isinstance(ls, dict) and ls.get("parser")
+            ls.get("parser") for ls in log_sources if isinstance(ls, dict) and ls.get("parser")
         ]
 
         # auditd is configured via a separate config block, not log_sources,
