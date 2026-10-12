@@ -191,9 +191,7 @@ class TestRotationAndTruncation:
 
             stop = asyncio.Event()
             source = LogSource(path=str(log_path), parser="messages")
-            task = asyncio.create_task(
-                tail_file(source, on_line, stop, offsets=None, catchup=True)
-            )
+            task = asyncio.create_task(tail_file(source, on_line, stop, offsets=None, catchup=True))
             try:
                 assert await _wait_for(first_called.is_set), "consumer never started"
 
