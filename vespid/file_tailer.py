@@ -211,8 +211,19 @@ async def tail_file(
                     # similar): the file keeps its inode but shrinks below our
                     # read position, so the inode check below can't catch it.
                     # Rewind to the start rather than blocking forever at EOF.
+                    #
+                    # Guard against rename-style rotation first: if the path now
+                    # resolves to a different inode, our open handle is the old
+                    # (renamed) file. A smaller new file is NOT an in-place
+                    # truncation — rewinding would re-read the stale handle
+                    # forever instead of following the rotated-in file.
                     try:
                         st = os.stat(source.path)
+                        if inode is not None and st.st_ino != inode:
+                            log.info("Rotation detected on %s, reopening", source.path)
+                            line_queue.put(_SENTINEL_ROTATE)
+                            _notify_async()
+                            break
                         if st.st_size < current_pos[0]:
                             log.info(
                                 "Log file %s truncated in place (%d -> %d bytes), "

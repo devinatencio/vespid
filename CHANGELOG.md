@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The file tailer no longer mistakes a **rename-style rotation** for an
+  in-place truncation. When `logrotate` (or `auditd`) renamed the live file
+  away and created a smaller one at the same path, the truncation check
+  compared the *new* file's size against the *old* open handle's offset and
+  rewound the stale handle forever — re-reading the rotated-out file in a tight
+  loop and never following the new one (observed as endless
+  `truncated in place ... rewinding to start` lines for
+  `/var/log/audit/audit.log`). The check now confirms the path still resolves
+  to the open inode before treating a size decrease as an in-place truncation.
+
 ## [1.0.1] - 2026-10-08
 
 ### Added

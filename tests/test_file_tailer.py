@@ -114,8 +114,12 @@ async def _wait_for(predicate, timeout: float = 5.0) -> bool:
     return False
 
 
-class TestInPlaceTruncation:
-    """The tailer must survive logrotate `copytruncate` (same inode, shrunk)."""
+class TestRotationAndTruncation:
+    """The tailer must survive log rotation and in-place truncation.
+
+    Covers `copytruncate` (same inode, shrunk), rename-style rotation (new
+    inode, usually smaller) and stale saved offsets that point past EOF.
+    """
 
     def test_truncation_in_place_is_followed(self, tmp_path):
         log_path = tmp_path / "app.log"
@@ -142,6 +146,74 @@ class TestInPlaceTruncation:
                 assert await _wait_for(lambda: any("198.51.100.99" in raw for raw in seen)), (
                     "post-truncation line was not read"
                 )
+            finally:
+                stop.set()
+                await task
+
+        asyncio.run(scenario())
+
+    def test_rename_rotation_to_smaller_file_is_followed(self, tmp_path):
+        """A rename-style rotation must not be read as in-place truncation.
+
+        Regression test: the truncation check compares the stat size of
+        ``source.path`` with the open handle's read position. After a rename
+        rotation the path resolves to a different (usually smaller) inode than
+        the open handle, so the check used to fire and rewind the *stale*
+        handle forever — never following the rotated-in file.
+        """
+        log_path = tmp_path / "audit.log"
+        rotated = tmp_path / "audit.log.1"
+
+        # Large enough to overflow the reader's bounded queue so the tailer is
+        # still mid-file (in the old inode) when the rotation happens.
+        log_path.write_text("".join(_firewall_line(i) for i in range(1, 2001)))
+        old_inode = os.stat(log_path).st_ino
+
+        marker = "203.0.113.77"
+        marker_line = (
+            "Sep 21 12:59:59 host kernel: DROP IN=eth0 OUT= "
+            f"SRC={marker} DST=192.0.2.1 PROTO=TCP SPT=4444 DPT=22 DROP\n"
+        )
+
+        seen: list[str] = []
+
+        async def scenario():
+            first_called = asyncio.Event()
+            release = asyncio.Event()
+
+            async def on_line(parsed):
+                seen.append(parsed.raw)
+                first_called.set()
+                # Park the consumer so the reader fills its queue and blocks
+                # mid-file; otherwise it can reach EOF (and the wait loop, which
+                # detects rotation correctly) before we rotate.
+                await release.wait()
+
+            stop = asyncio.Event()
+            source = LogSource(path=str(log_path), parser="messages")
+            task = asyncio.create_task(
+                tail_file(source, on_line, stop, offsets=None, catchup=True)
+            )
+            try:
+                assert await _wait_for(first_called.is_set), "consumer never started"
+
+                # Rename-style rotation: old file -> .1, fresh file at path.
+                os.rename(log_path, rotated)
+                log_path.write_text("")
+                assert os.stat(log_path).st_ino != old_inode
+
+                release.set()
+
+                # Keep appending to the new file until the tailer follows it.
+                followed = False
+                for _ in range(100):
+                    with open(log_path, "a", encoding="utf-8") as fh:
+                        fh.write(marker_line)
+                    await asyncio.sleep(0.1)
+                    if any(marker in raw for raw in seen):
+                        followed = True
+                        break
+                assert followed, "tailer re-read the rotated-out file instead of the new one"
             finally:
                 stop.set()
                 await task
