@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Multi-signal correlation no longer counts ordinary successful HTTP responses
+  (`apache_other` / `haproxy_other`) as a distinct signal category. A
+  legitimate browser session that mixes normal 2xx traffic with a transient
+  4xx or TLS handshake failure — exactly what an ISP IP rotation produces —
+  could otherwise cross `min_categories` and trigger a false-positive
+  `RECON_CORRELATION` block.
+
+## [1.0.2] - 2026-10-12
+
+### Added
+
+- **Automatic packaging toolchain install** — `make package` (and
+  `package-rpm`/`package-deb`) now depends on `package-deps` and installs the
+  host's build toolchain before compiling: RPM/DEB build tools,
+  `systemd-rpm-macros`, `python3-devel`, `protobuf-compiler`, and a rustup Rust
+  toolchain (>= 1.85). The step is idempotent and installs only what is
+  missing, so a fresh clone can go straight to `make package`.
+
+### Fixed
+
 - The file tailer no longer mistakes a **rename-style rotation** for an
   in-place truncation. When `logrotate` (or `auditd`) renamed the live file
   away and created a smaller one at the same path, the truncation check
@@ -18,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `truncated in place ... rewinding to start` lines for
   `/var/log/audit/audit.log`). The check now confirms the path still resolves
   to the open inode before treating a size decrease as an in-place truncation.
+- The Rust agent's RPM/DEB build scripts now derive their version from the
+  component spec instead of a hardcoded literal, so the source tarball name and
+  package metadata can no longer drift from `%{version}`.
 
 ## [1.0.1] - 2026-10-08
 
@@ -116,5 +139,6 @@ Linux systems running nftables.
 - Ruff and mypy are clean across the Python agent; ruff is clean across the
   server.
 
+[1.0.2]: https://github.com/vespid/vespid/releases/tag/v1.0.2
 [1.0.1]: https://github.com/vespid/vespid/releases/tag/v1.0.1
 [1.0.0]: https://github.com/vespid/vespid/releases/tag/v1.0.0

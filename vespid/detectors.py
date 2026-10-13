@@ -253,6 +253,22 @@ class CorrelationDetector:
         "haproxy_other": "http_other",
     }
 
+    # Parsers that represent an ordinary, successful HTTP exchange — the
+    # catch-all bucket for any status that isn't itself suspicious.  These are
+    # the *absence* of a signal, not a signal: a single legitimate browser
+    # session (dashboard polling, SSE keep-alives, static assets) emits them
+    # constantly.  Counting them as a distinct category means one transient
+    # 4xx or TLS error — e.g. the aborted requests and stale-socket handshake
+    # failures produced when an ISP rotates a client's IP — can push a normal
+    # IP over ``min_categories`` and fire a false-positive RECON_CORRELATION.
+    NON_SIGNAL_PARSERS: frozenset[str] = frozenset({"apache_other", "haproxy_other"})
+
+    # Correlation categories produced by the parsers above (both map to
+    # ``http_other``).  State persisted by an older version—which recorded
+    # them—is discarded on load so a restart can't carry a legacy observation
+    # forward.
+    NON_SIGNAL_CATEGORIES: frozenset[str] = frozenset({"http_other"})
+
     def __init__(self, rules: Iterable[CorrelationRule], persist_path: str | None = None) -> None:
         self.rules: list[CorrelationRule] = list(rules)
         # ip -> list of (category, timestamp)
@@ -282,8 +298,14 @@ class CorrelationDetector:
         Returns a list of CorrelationDetection for each rule that tripped.
         """
         ts = timestamp if timestamp is not None else time.time()
-        category = self._categorize(parser)
         fired: list[CorrelationDetection] = []
+
+        # Ordinary successful responses are not evidence of misbehaviour and
+        # must not contribute a distinct category (see NON_SIGNAL_PARSERS).
+        if parser in self.NON_SIGNAL_PARSERS:
+            return fired
+
+        category = self._categorize(parser)
 
         # Append observation
         self._observations[source_ip].append(CorrelationHit(category=category, timestamp=ts))
@@ -368,6 +390,7 @@ class CorrelationDetector:
                     CorrelationHit(category=h["category"], timestamp=h["timestamp"])
                     for h in hits_data
                     if h["timestamp"] > expired_cutoff
+                    and h.get("category") not in self.NON_SIGNAL_CATEGORIES
                 ]
                 if hits:
                     self._observations[ip] = hits

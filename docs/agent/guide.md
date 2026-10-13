@@ -160,6 +160,12 @@ distinct signal categories per IP.  If an IP triggers observations across
 enough different categories within a time window, it's flagged even if no
 single rule's threshold was crossed.
 
+Only *misbehaviour* categories count.  The catch-all parsers for ordinary
+successful HTTP responses (`apache_other`, `haproxy_other`) are deliberately
+excluded: every legitimate browser session produces them, so including them
+would let a single transient 4xx or TLS handshake failure — such as those seen
+when an ISP rotates a client's IP — trigger a false `RECON_CORRELATION`.
+
 ```yaml
 correlation_rules:
   - name: recon_correlation

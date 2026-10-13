@@ -1,5 +1,5 @@
 %define name        vespid
-%define version     1.0.1
+%define version     1.0.2
 %define release     1%{?dist}
 %define install_dir /opt/vespid
 %define config_dir  /etc/vespid
@@ -248,6 +248,9 @@ fi
 %license LICENSE
 
 %changelog
+* Mon Oct 12 2026 Vespid Team <team@vespid.dev> - 1.0.2-1
+- File tailer no longer mistakes rename-style log rotation for in-place truncation
+- `make package` installs the packaging toolchain automatically
 * Thu Oct 08 2026 Vespid Team <team@vespid.dev> - 1.0.1-1
 - Runtime log-source reconciliation (profile-added sources are tailed without a restart)
 - File tailer survives logrotate copytruncate / in-place truncation

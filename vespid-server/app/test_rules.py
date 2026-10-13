@@ -881,6 +881,10 @@ class CorrelationDetector:
         "messages": "firewall_deny",
     }
 
+    # Ordinary successful responses carry no signal of misbehaviour and must
+    # not count toward ``min_categories`` (mirrors the agent detector).
+    NON_SIGNAL_PARSERS: frozenset[str] = frozenset({"apache_other", "haproxy_other"})
+
     def __init__(self, rules: Iterable[CorrelationRule]) -> None:
         self.rules: list[CorrelationRule] = list(rules)
         self._observations: dict[str, list[CorrelationHit]] = defaultdict(list)
@@ -910,8 +914,14 @@ class CorrelationDetector:
         log event from inflating the distinct-category count.
         """
         ts = timestamp if timestamp is not None else time.time()
-        category = self._categorize(parser)
         fired: list[CorrelationDetection] = []
+
+        # Ordinary successful responses are not evidence of misbehaviour and
+        # must not contribute a distinct category (see NON_SIGNAL_PARSERS).
+        if parser in self.NON_SIGNAL_PARSERS:
+            return fired
+
+        category = self._categorize(parser)
 
         # Deduplicate: skip if we already recorded a hit for this IP + line_number
         if line_number > 0:

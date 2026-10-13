@@ -1,5 +1,5 @@
 %define name        vespid-server
-%{!?version:%define version 1.0.1}
+%{!?version:%define version 1.0.2}
 %define release     1%{?dist}
 %define install_dir /opt/vespid-server
 %define config_dir  /etc/vespid-server
@@ -283,6 +283,8 @@ fi
 %license LICENSE
 
 %changelog
+* Mon Oct 12 2026 Vespid Team <team@vespid.dev> - 1.0.2-1
+- `make package` installs the packaging toolchain automatically
 * Thu Oct 08 2026 Vespid Team <team@vespid.dev> - 1.0.1-1
 - Per-node active-parser resolution now unions profile log_sources with heartbeat parsers
 * %(date "+%%a %%b %%d %%Y") Vespid Team <team@vespid.dev> - 1.0.0-1

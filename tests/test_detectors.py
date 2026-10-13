@@ -17,6 +17,9 @@ Validates:
 
 from __future__ import annotations
 
+import json
+import time
+
 from vespid.config import BruteForceRule, CorrelationRule
 from vespid.detectors import (
     CorrelationDetection,
@@ -402,6 +405,89 @@ class TestCorrelationDetector:
 
         assert len(results) == 1
         assert "unknown_parser_type" in results[0].categories_seen
+
+    def test_catch_all_http_parsers_do_not_contribute_category(self):
+        """Successful responses are the absence of a signal, not a signal.
+
+        A normal browser session emits ``*_other`` (2xx/3xx/5xx catch-all)
+        constantly; it must never count toward ``min_categories``.
+        """
+        rule = self.make_rule(min_categories=3, window_seconds=600)
+        det = CorrelationDetector([rule])
+        base = 1000.0
+
+        det.record(parser="haproxy_bad_request", source_ip="1.2.3.4", timestamp=base)
+        det.record(parser="apache_not_found", source_ip="1.2.3.4", timestamp=base + 1)
+        # Plenty of ordinary successful traffic — must not be the third category.
+        for i in range(10):
+            results = det.record(
+                parser="haproxy_other", source_ip="1.2.3.4", timestamp=base + 2 + i
+            )
+
+        assert results == []
+        assert all(h.category != "http_other" for h in det._observations["1.2.3.4"])
+
+    def test_catch_all_parsers_excluded_from_fired_categories(self):
+        rule = self.make_rule(min_categories=3, window_seconds=600)
+        det = CorrelationDetector([rule])
+        base = 1000.0
+
+        det.record(parser="haproxy_other", source_ip="1.2.3.4", timestamp=base)
+        det.record(parser="haproxy_bad_request", source_ip="1.2.3.4", timestamp=base + 1)
+        det.record(parser="apache_not_found", source_ip="1.2.3.4", timestamp=base + 2)
+        results = det.record(
+            parser="secure_negotiate_fail", source_ip="1.2.3.4", timestamp=base + 3
+        )
+
+        assert len(results) == 1
+        assert "http_other" not in results[0].categories_seen
+        assert set(results[0].categories_seen) == {
+            "http_bad_request",
+            "http_probe",
+            "ssh_negotiate",
+        }
+
+    def test_isp_ip_change_does_not_fire_recon_correlation(self):
+        """Regression: a legitimate session must not be flagged after an ISP
+        rotates its IP, which produces a transient mix of an aborted SSE
+        request, a stale-socket TLS handshake failure, and normal 2xx traffic.
+        """
+        rule = self.make_rule(min_categories=3, window_seconds=600)
+        det = CorrelationDetector([rule])
+        base = 1000.0
+        ip = "172.56.81.1"
+
+        det.record(parser="haproxy_bad_request", source_ip=ip, timestamp=base)
+        det.record(parser="haproxy_ssl_fail", source_ip=ip, timestamp=base + 1)
+        results = []
+        for i in range(20):
+            results = det.record(parser="haproxy_other", source_ip=ip, timestamp=base + 2 + i)
+
+        assert results == []
+
+    def test_load_discards_persisted_non_signal_categories(self, tmp_path):
+        """State written by an older version may contain ``http_other`` hits;
+        those must be dropped on load so a restart can't resume a false
+        positive."""
+        now = time.time()
+        state = tmp_path / "correlation.json"
+        state.write_text(
+            json.dumps(
+                {
+                    "observations": {
+                        "1.2.3.4": [
+                            {"category": "http_other", "timestamp": now},
+                            {"category": "http_probe", "timestamp": now},
+                        ]
+                    },
+                    "cooldown": {},
+                }
+            )
+        )
+        rule = self.make_rule(min_categories=3, window_seconds=600)
+        det = CorrelationDetector([rule], persist_path=str(state))
+
+        assert [h.category for h in det._observations["1.2.3.4"]] == ["http_probe"]
 
     def test_single_observation_pruned_when_stale(self):
         rule = self.make_rule(min_categories=3, window_seconds=10)

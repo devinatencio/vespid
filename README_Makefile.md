@@ -35,7 +35,7 @@ PYTEST="pytest -x" make test         # Pass custom pytest flags
 | `PYTEST` | `python3 -m pytest` | Test runner |
 | `PIP` | `pip3` | Package installer |
 | `NAME` | `vespid` | Package name for RPM |
-| `VERSION` | `1.0.0` | Package version for RPM |
+| `VERSION` | `1.0.2` | Package version for RPM |
 
 ## Server Makefile (`vespid-server/`)
 
@@ -67,7 +67,7 @@ PYTHON=.venv/bin/python make dev     # Use venv Python
 | `PIP` | `.venv/bin/pip` | Package installer |
 | `FLASK` | `.venv/bin/flask` | Flask CLI |
 | `NAME` | `vespid-server` | Package name for RPM |
-| `VERSION` | `1.0.0` | Package version for RPM |
+| `VERSION` | `1.0.2` | Package version for RPM |
 
 ## Common workflows
 
@@ -88,13 +88,26 @@ python3 -m http.server -d site/ 8000
 ### Packaging
 
 ```bash
-# Build both packages
+# One-shot: build every component in the host's native format (rpm or deb).
+# Installs any missing packaging toolchain first, then compiles.
+make package
+
+# Force a format for all components
+make package-rpm
+make package-deb
+
+# No local toolchain (e.g. macOS)? Build both formats in containers.
+make package-docker
+
+# Per-component builds
 make rpm
 cd vespid-server && make rpm
-
-# Build Debian packages
 make deb
 ```
+
+`make package*` depends on `make package-deps`, which installs the host's
+packaging toolchain (RPM/DEB build tools, `protobuf-compiler`, and a rustup
+Rust toolchain) before building. It is idempotent, so it is cheap to re-run.
 
 ### CI / pre-commit
 

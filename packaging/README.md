@@ -12,8 +12,13 @@ Run these from the repository root.
 | `make package-rpm` | Force an RPM build for all components | `dist/rpm/*.rpm` |
 | `make package-deb` | Force a `.deb` build for all components | `dist/deb/*.deb` |
 | `make package-docker` | Build **both** formats in containers (works on any host) | `dist/rpm/`, `dist/deb/` |
-| `make package-deps` | Install this host's packaging toolchain | — |
+| `make package-deps` | Install this host's packaging toolchain (idempotent) | — |
 | `make package-clean` | Remove `dist/` and generated `rpmbuild/` trees | — |
+
+`make package`, `make package-rpm` and `make package-deb` run `package-deps`
+automatically, so a fresh clone only needs the repository plus (on a native
+build) a working `sudo`. The dependency step is idempotent — it checks the
+toolchain and installs only what is missing, so repeat builds stay fast.
 
 ```bash
 make package          # rpm on RHEL/Alma/Rocky/Fedora, deb on Debian/Ubuntu
@@ -50,12 +55,14 @@ dist/
 
 ## Build requirements
 
-- **RPM**: `rpm-build`, `protobuf-compiler` (the Rust agent compiles a `.proto`).
+- **RPM**: `rpm-build`, `systemd-rpm-macros`, `python3-devel`, `protobuf-compiler`
+  (the Rust agent compiles a `.proto`).
 - **DEB**: `dpkg-dev`, `fakeroot`, `protobuf-compiler`.
 - **Rust agent**: Rust with edition-2024 support (>= 1.85). `make package-deps`
   installs a toolchain via rustup if `cargo` is missing.
 
-`make package-deps` installs the right set for the detected host.
+`make package-deps` installs the right set for the detected host, and is invoked
+automatically by the `package` targets. It is safe to run by hand at any time.
 
 ## Docker (build both formats anywhere)
 

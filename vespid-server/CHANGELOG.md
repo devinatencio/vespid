@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.0.2 — 2026-10-12
+
+### Changed
+- `make package` / `make package-deb` now install the packaging toolchain
+  automatically (via `make package-deps`) before building
+
+### Fixed
+- Ruff formatting drift in the rules route
+
 ## 1.0.1 — 2026-10-08
 
 ### Added

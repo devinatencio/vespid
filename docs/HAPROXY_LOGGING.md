@@ -232,6 +232,13 @@ These sub-parsers feed into the correlation detector just like Apache's — if a
 IP triggers `haproxy_bad_request` + `haproxy_not_found` + `haproxy_scanner_ua`
 within the correlation window, the `RECON_CORRELATION` rule fires.
 
+`haproxy_other` is a **catch-all that does not count toward correlation**. It
+represents ordinary, successful exchanges (any status that is not itself
+suspicious) that every legitimate browser session produces, so treating it as a
+signal would let a single transient 4xx — for example the aborted requests and
+stale-socket TLS handshake failures produced when an ISP rotates a client's IP —
+push a normal IP over `min_categories`. It remains available to custom rules.
+
 Custom rules targeting `haproxy` in their `log_sources` will match all
 sub-parsers (the same wildcard behaviour as `apache`).
 

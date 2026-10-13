@@ -6,7 +6,12 @@ PYTHON   ?= python3
 PYTEST   ?= python3 -m pytest
 PIP      ?= pip3
 NAME     := vespid
-VERSION  := 1.0.1
+VERSION  := 1.0.2
+
+# Put a rustup-installed toolchain on PATH for the build recipes even when the
+# user's shell has not sourced ~/.cargo/env yet (e.g. right after package-deps
+# installs Rust).
+export PATH := $(HOME)/.cargo/bin:$(PATH)
 # RPM signing — set SIGN_KEY to the GPG signing key ID/name
 #   gpg --gen-key           # one-time: create a signing key
 #   echo '%_gpg_name Vespid Security' >> ~/.rpmmacros
@@ -85,7 +90,7 @@ package: ## Build this host's native packages (all components)
 		   exit 1 ;; \
 	esac
 
-package-rpm: ## Build all RPM packages into dist/rpm
+package-rpm: package-deps ## Build all RPM packages into dist/rpm
 	@mkdir -p "$(DIST_DIR)/rpm"
 	$(MAKE) rpm
 	$(MAKE) -C vespid-server rpm
@@ -95,7 +100,7 @@ package-rpm: ## Build all RPM packages into dist/rpm
 	@cp vespid-server/rpmbuild/RPMS/*/*.rpm "$(DIST_DIR)/rpm/" 2>/dev/null || true
 	@echo "RPMs written to $(DIST_DIR)/rpm"
 
-package-deb: ## Build all DEB packages into dist/deb
+package-deb: package-deps ## Build all DEB packages into dist/deb
 	@mkdir -p "$(DIST_DIR)/deb"
 	./build_deb.sh
 	vespid-agent/packaging/build-vespid-agent-deb.sh -o "$(DIST_DIR)/deb"
