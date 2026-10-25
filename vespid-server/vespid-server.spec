@@ -1,5 +1,5 @@
 %define name        vespid-server
-%{!?version:%define version 1.0.2}
+%{!?version:%define version 1.0.3}
 %define release     1%{?dist}
 %define install_dir /opt/vespid-server
 %define config_dir  /etc/vespid-server
@@ -283,6 +283,10 @@ fi
 %license LICENSE
 
 %changelog
+* Sun Oct 25 2026 Vespid Team <team@vespid.dev> - 1.0.3-1
+- Fix block episode under-counting when fleet blocks are propagated
+- Record unblock events in the IP intelligence history timeline
+- Add repair_block_episodes.py for historical episode counters
 * Mon Oct 12 2026 Vespid Team <team@vespid.dev> - 1.0.2-1
 - `make package` installs the packaging toolchain automatically
 * Thu Oct 08 2026 Vespid Team <team@vespid.dev> - 1.0.1-1

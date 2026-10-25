@@ -59,20 +59,30 @@ and a computed reputation score.
 | Column | Purpose |
 |--------|---------|
 | `last_unblocked_at` | Timestamp of most recent unblock event |
+| `last_episode_block_at` | Timestamp of the most recent block event processed by the intel pipeline — the episode boundary |
 | `block_episode_count` | Number of distinct block→unblock→block cycles |
 | `repeat_offender_since` | When the IP was first classified as a repeat offender |
 
 **Key behavior:**
-- UNBLOCKED events update `last_unblocked_at` without incrementing any counters
-- A new "block episode" starts when a block event arrives after an unblock
+- UNBLOCKED events update `last_unblocked_at` and append an `unblock` row to `ip_intel_events` so the lifecycle is visible in the IP history; they do not touch any counters
+- A new "block episode" starts when a block event arrives after an unblock, compared against `last_episode_block_at`
+- `last_blocked_at` is the display/status field and may also be written by the Propagation Engine when a fleet block is created. Episode detection deliberately does **not** use it: fleet-block propagation runs before intel ingestion and writes "now", which previously made genuine re-blocks look like a continuation of the current episode
+- Timestamps are compared as parsed datetimes, not raw strings, because agents (`2026-10-25 14:45:01`) and the server (`2026-10-25T14:45:04Z`) use different formats
 - `repeat_offender = TRUE` when `block_episode_count >= 2` (blocked, released, blocked again)
 - High `total_times_blocked` from a single continuous episode does NOT trigger repeat offender
 - `total_times_blocked` also feeds the fleet recidive system: the Propagation Engine reads this counter to escalate fleet block TTL for repeat offenders (see [Server Guide](server/guide.md#fleet-block-recidive))
 
 **UI additions:**
-- "Block Status" indicator: Active (green) or Inactive (gray) based on last_blocked_at vs last_unblocked_at
+- "Block Status" indicator: Active (green) or Inactive (gray), derived from parsed timestamps
 - "Block Episodes" counter in Key Metrics
 - "Repeat Offender" badge on IPs with 2+ episodes
+- `unblock` rows in the event history timeline, so the split between episodes is self-explanatory
+
+**Repairing existing data:** deploy the schema change, then run
+`python repair_block_episodes.py --config <server config>` (add `--dry-run` to preview).
+The script backfills `last_episode_block_at` and only ever increases
+`block_episode_count`; older unblocks pruned by retention cannot always be
+recovered, so the recomputed value is a conservative lower bound.
 
 ---
 
@@ -165,6 +175,7 @@ New columns and indicators in the IP search results:
 -- New columns added by this upgrade:
 total_requests        INT NOT NULL DEFAULT 0
 last_unblocked_at     VARCHAR(255) DEFAULT NULL
+last_episode_block_at VARCHAR(255) DEFAULT NULL
 block_episode_count   INT NOT NULL DEFAULT 0
 repeat_offender_since VARCHAR(255) DEFAULT NULL
 ```
@@ -176,6 +187,10 @@ repeat_offender_since VARCHAR(255) DEFAULT NULL
 request_count      INT NOT NULL DEFAULT 1
 server_received_at VARCHAR(255) NOT NULL DEFAULT ''
 ```
+
+`event_kind` may be `sighting`, `block`, `fleet_block`, or `unblock`.
+`unblock` rows are written by `process_unblock_event()` and are excluded
+from recency and block/sighting aggregations.
 
 ### Automatic Migration
 
@@ -191,7 +206,7 @@ On server startup, `init_intel_db()` automatically runs ALTER TABLE statements t
 | BLOCKED | Other | Skipped (only NFT_ACTION is authoritative) |
 | OBSERVED | Any | → `process_sighting()` (increments total_times_seen only) |
 | DETECTED | Any | Skipped entirely from intel |
-| UNBLOCKED | Any | → `process_unblock_event()` (updates last_unblocked_at only) |
+| UNBLOCKED | Any | → `process_unblock_event()` (updates last_unblocked_at and appends an `unblock` history row; no counter changes) |
 | Any (event_kind="fleet_block") | Any | → `process_fleet_block_event()` (stored for visibility, no counter changes) |
 
 ---

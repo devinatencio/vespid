@@ -35,7 +35,7 @@ PYTEST="pytest -x" make test         # Pass custom pytest flags
 | `PYTEST` | `python3 -m pytest` | Test runner |
 | `PIP` | `pip3` | Package installer |
 | `NAME` | `vespid` | Package name for RPM |
-| `VERSION` | `1.0.2` | Package version for RPM |
+| `VERSION` | `1.0.3` | Package version for RPM |
 
 ## Server Makefile (`vespid-server/`)
 
@@ -67,7 +67,7 @@ PYTHON=.venv/bin/python make dev     # Use venv Python
 | `PIP` | `.venv/bin/pip` | Package installer |
 | `FLASK` | `.venv/bin/flask` | Flask CLI |
 | `NAME` | `vespid-server` | Package name for RPM |
-| `VERSION` | `1.0.2` | Package version for RPM |
+| `VERSION` | `1.0.3` | Package version for RPM |
 
 ## Common workflows
 

@@ -1,5 +1,5 @@
 %define name        vespid
-%define version     1.0.2
+%define version     1.0.3
 %define release     1%{?dist}
 %define install_dir /opt/vespid
 %define config_dir  /etc/vespid
@@ -248,6 +248,8 @@ fi
 %license LICENSE
 
 %changelog
+* Sun Oct 25 2026 Vespid Team <team@vespid.dev> - 1.0.3-1
+- Version bump to 1.0.3 (server-side intelligence fixes)
 * Mon Oct 12 2026 Vespid Team <team@vespid.dev> - 1.0.2-1
 - File tailer no longer mistakes rename-style log rotation for in-place truncation
 - `make package` installs the packaging toolchain automatically

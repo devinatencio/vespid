@@ -15,7 +15,7 @@ import re
 from datetime import UTC, datetime, timedelta
 
 from app.country_codes import COUNTRY_NAMES
-from app.intel_models import search_ip_records
+from app.intel_models import compute_block_status, search_ip_records
 
 logger = logging.getLogger(__name__)
 
@@ -647,6 +647,9 @@ def _row_to_dict(row: tuple, column_names: list[str]) -> dict:
         elif col_name == "repeat_offender":
             value = bool(value)
         record[col_name] = value
+    record["block_status"] = compute_block_status(
+        record.get("last_blocked_at"), record.get("last_unblocked_at")
+    )
     return record
 
 

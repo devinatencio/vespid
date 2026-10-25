@@ -500,6 +500,9 @@ def ingest_events():
                     conn=intel_db,
                     ip_address=ev.get("source_ip", ""),
                     timestamp=ev.get("timestamp", ""),
+                    node_id=ev.get("node_id", ""),
+                    event_type=ev.get("event_type", "UNBLOCKED"),
+                    event_id=ev.get("event_id", ""),
                 )
                 continue
 

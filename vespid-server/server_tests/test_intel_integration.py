@@ -4011,16 +4011,21 @@ class TestBlockLifecycleScenario:
             f"Expected total_times_blocked=2, got {record['total_times_blocked']}"
         )
 
-        # Verify ip_intel_events has exactly 2 block rows (no unblock row)
+        # Verify ip_intel_events has 2 block rows plus the unblock lifecycle row
         event_rows = intel_db.execute(
             "SELECT event_kind FROM ip_intel_events WHERE ip_address = ?",
             (target_ip,),
         ).fetchall()
-        assert len(event_rows) == 2, (
-            f"Expected 2 event rows (both blocks), got {len(event_rows)}"
+        kinds = [row["event_kind"] for row in event_rows]
+        assert kinds.count("block") == 2, (
+            f"Expected 2 block rows, got {kinds.count('block')}: {kinds}"
         )
-        for row in event_rows:
-            assert row["event_kind"] == "block"
+        assert kinds.count("unblock") == 1, (
+            f"Expected 1 unblock row, got {kinds.count('unblock')}: {kinds}"
+        )
+        assert all(kind in ("block", "unblock") for kind in kinds), (
+            f"Unexpected event kinds: {kinds}"
+        )
 
     def test_block_unblock_reblock_via_api(self, client, auth_headers, intel_db):
         """Full API path: block → unblock → re-block via Flask test client.
@@ -4139,16 +4144,21 @@ class TestBlockLifecycleScenario:
             "repeat_offender should be 1 (TRUE) when block_episode_count >= 2"
         )
 
-        # Verify ip_intel_events has exactly 2 block rows
+        # Verify ip_intel_events has 2 block rows plus the unblock lifecycle row
         event_rows = intel_db.execute(
             "SELECT event_kind FROM ip_intel_events WHERE ip_address = ?",
             (target_ip,),
         ).fetchall()
-        assert len(event_rows) == 2, (
-            f"Expected 2 event rows, got {len(event_rows)}"
+        kinds = [row["event_kind"] for row in event_rows]
+        assert kinds.count("block") == 2, (
+            f"Expected 2 block rows, got {kinds.count('block')}: {kinds}"
         )
-        for row in event_rows:
-            assert row["event_kind"] == "block"
+        assert kinds.count("unblock") == 1, (
+            f"Expected 1 unblock row, got {kinds.count('unblock')}: {kinds}"
+        )
+        assert all(kind in ("block", "unblock") for kind in kinds), (
+            f"Unexpected event kinds: {kinds}"
+        )
 
     def test_multiple_blocks_without_unblock_no_repeat_offender(self, intel_db):
         """Multiple blocks without an intervening unblock do NOT trigger repeat_offender.

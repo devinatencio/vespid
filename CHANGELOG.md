@@ -7,8 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-25
+
+### Added
+
+- IP Intelligence now records `unblock` events in the per-IP history timeline,
+  so the transition between blocking episodes is visible on the IP detail page.
+- `repair_block_episodes.py` — a one-off, conservative repair for historical
+  `block_episode_count` values. It backfills `last_episode_block_at`, never
+  decreases a counter, and supports `--dry-run`.
+
 ### Fixed
 
+- Block episodes were under-counted when a fleet block was created in the same
+  ingestion request as the block event. The propagation engine advanced
+  `last_blocked_at` to "now" before the intel upsert ran, so a genuine re-block
+  looked like a continuation of the previous episode. Episode detection now
+  uses a dedicated `last_episode_block_at` field written only by the intel
+  upsert path.
+- Episode and Block Status comparisons now parse timestamps instead of
+  comparing raw strings, fixing misordering when agent
+  (`2026-10-25 14:45:01`) and server (`2026-10-25T14:45:04Z`) formats were
+  mixed.
 - Multi-signal correlation no longer counts ordinary successful HTTP responses
   (`apache_other` / `haproxy_other`) as a distinct signal category. A
   legitimate browser session that mixes normal 2xx traffic with a transient
@@ -139,6 +159,7 @@ Linux systems running nftables.
 - Ruff and mypy are clean across the Python agent; ruff is clean across the
   server.
 
+[1.0.3]: https://github.com/vespid/vespid/releases/tag/v1.0.3
 [1.0.2]: https://github.com/vespid/vespid/releases/tag/v1.0.2
 [1.0.1]: https://github.com/vespid/vespid/releases/tag/v1.0.1
 [1.0.0]: https://github.com/vespid/vespid/releases/tag/v1.0.0

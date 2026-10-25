@@ -1329,6 +1329,59 @@ class TestProcessUnblockEvent:
         assert json.loads(row["threat_tags"]) == ["ssh-brute"]
         assert row["geo_country"] == "US"
 
+    def test_unblock_records_history_row(self, intel_db):
+        """An unblock is recorded in ip_intel_events for the IP timeline."""
+        _insert_ip_record(intel_db, "192.168.1.1", total_times_blocked=1,
+                          last_blocked_at="2024-01-01T00:00:00")
+        process_unblock_event(
+            intel_db, "192.168.1.1", "2024-01-15T12:00:00",
+            node_id="node-1", event_type="NFT_ACTION", event_id="evt-1",
+        )
+
+        row = intel_db.execute(
+            "SELECT node_id, event_type, event_kind, timestamp, request_count, event_id "
+            "FROM ip_intel_events WHERE ip_address = ? AND event_kind = 'unblock'",
+            ("192.168.1.1",),
+        ).fetchone()
+        assert row is not None
+        assert row["node_id"] == "node-1"
+        assert row["event_type"] == "NFT_ACTION"
+        assert row["timestamp"] == "2024-01-15T12:00:00"
+        assert row["request_count"] == 0
+        assert row["event_id"] == "evt-1"
+
+    def test_unblock_history_is_deduped(self, intel_db):
+        """Reaper + agent ack for the same unblock produce one history row."""
+        _insert_ip_record(intel_db, "192.168.1.1", total_times_blocked=1,
+                          last_blocked_at="2024-01-01T00:00:00")
+        process_unblock_event(
+            intel_db, "192.168.1.1", "2024-01-15T12:00:00", node_id="system",
+        )
+        process_unblock_event(
+            intel_db, "192.168.1.1", "2024-01-15T12:00:30", node_id="node-1",
+        )
+
+        count = intel_db.execute(
+            "SELECT COUNT(*) FROM ip_intel_events "
+            "WHERE ip_address = ? AND event_kind = 'unblock'",
+            ("192.168.1.1",),
+        ).fetchone()[0]
+        assert count == 1
+
+    def test_unblock_history_not_deduped_outside_window(self, intel_db):
+        """Distinct unblocks further apart are both recorded."""
+        _insert_ip_record(intel_db, "192.168.1.1", total_times_blocked=2,
+                          last_blocked_at="2024-01-01T00:00:00")
+        process_unblock_event(intel_db, "192.168.1.1", "2024-01-15T12:00:00")
+        process_unblock_event(intel_db, "192.168.1.1", "2024-01-20T12:00:00")
+
+        count = intel_db.execute(
+            "SELECT COUNT(*) FROM ip_intel_events "
+            "WHERE ip_address = ? AND event_kind = 'unblock'",
+            ("192.168.1.1",),
+        ).fetchone()[0]
+        assert count == 2
+
 
 # ── Block Episode Detection tests ────────────────────────────────────────
 
@@ -1484,6 +1537,64 @@ class TestBlockEpisodeDetection:
         assert result["total_times_blocked"] == 2
         assert result["block_episode_count"] == 2
 
+    def test_episode_not_suppressed_by_fleet_status_write(self, intel_db):
+        """A fleet-block status write must not hide a genuine re-block episode.
+
+        Regression test: the propagation engine advances ``last_blocked_at``
+        to "now" when it creates a fleet block, and runs before the intel
+        upsert. Episode detection must key off ``last_episode_block_at``
+        instead, otherwise the block looks like a continuation.
+        """
+        # Episode 1
+        upsert_ip_record(
+            intel_db, "192.168.1.1", "node-1", "NFT_ACTION",
+            "2024-01-01T10:00:00", True, {"detection_rule": "ssh-brute"},
+        )
+        # Unblock
+        process_unblock_event(intel_db, "192.168.1.1", "2024-01-02T10:00:00")
+        # Simulate the propagation engine marking the IP blocked at "now",
+        # slightly after the block event that is about to be ingested.
+        intel_db.execute(
+            "UPDATE ip_intel SET last_blocked_at = ? WHERE ip_address = ?",
+            ("2024-01-03T10:00:05Z", "192.168.1.1"),
+        )
+        intel_db.commit()
+        # The block event itself carries the earlier timestamp.
+        result = upsert_ip_record(
+            intel_db, "192.168.1.1", "node-1", "NFT_ACTION",
+            "2024-01-03T10:00:00", True, {"detection_rule": "ssh-brute"},
+        )
+        assert result["block_episode_count"] == 2
+
+    def test_last_episode_block_at_tracks_block_events(self, intel_db):
+        """last_episode_block_at is set on block events and advances."""
+        first = upsert_ip_record(
+            intel_db, "192.168.1.1", "node-1", "NFT_ACTION",
+            "2024-01-01T10:00:00", True, {"detection_rule": "ssh-brute"},
+        )
+        assert first["last_episode_block_at"] == "2024-01-01T10:00:00"
+        second = upsert_ip_record(
+            intel_db, "192.168.1.1", "node-2", "NFT_ACTION",
+            "2024-01-01T11:00:00", True, {"detection_rule": "ssh-brute"},
+        )
+        assert second["last_episode_block_at"] == "2024-01-01T11:00:00"
+
+    def test_mixed_timestamp_formats_compare_correctly(self, intel_db):
+        """Episode detection compares parsed datetimes, not raw strings."""
+        # Block in space-separated format (as agents send)
+        upsert_ip_record(
+            intel_db, "192.168.1.1", "node-1", "NFT_ACTION",
+            "2024-01-01 10:00:00", True, {"detection_rule": "ssh-brute"},
+        )
+        # Unblock in ISO-8601 Z format (as the fleet reaper sends)
+        process_unblock_event(intel_db, "192.168.1.1", "2024-01-02T10:00:00Z")
+        # Re-block in T format without Z
+        result = upsert_ip_record(
+            intel_db, "192.168.1.1", "node-1", "NFT_ACTION",
+            "2024-01-03T10:00:00", True, {"detection_rule": "ssh-brute"},
+        )
+        assert result["block_episode_count"] == 2
+
 
 # ── MySQL backend detection tests ────────────────────────────────────────
 
@@ -1580,11 +1691,13 @@ class TestUpsertMySQLBackendDetection:
             "total_times_blocked", "total_reporting_nodes",
             "total_attack_events", "repeat_offender", "geo_country",
             "asn", "isp_organization", "last_unblocked_at",
-            "block_episode_count", "last_blocked_at", "total_requests",
+            "block_episode_count", "last_blocked_at", "last_episode_block_at",
+            "total_requests",
         ]
         select_all_cols = [
             "id", "ip_address", "ip_version", "first_seen_at", "last_seen_at",
-            "last_blocked_at", "total_times_seen", "total_times_blocked",
+            "last_blocked_at", "last_episode_block_at", "total_times_seen",
+            "total_times_blocked",
             "total_reporting_nodes", "total_attack_events", "total_requests",
             "last_unblocked_at", "block_episode_count", "repeat_offender",
             "repeat_offender_since", "first_reporting_node",
@@ -1593,12 +1706,12 @@ class TestUpsertMySQLBackendDetection:
         ]
 
         state_row = RowWrapper(
-            ('[]', '[]', 0, 0, 0, 0, 0, None, None, None, None, 0, None, 0),
+            ('[]', '[]', 0, 0, 0, 0, 0, None, None, None, None, 0, None, None, 0),
             select_state_cols,
         )
         all_row = RowWrapper(
             (1, "10.0.0.1", "v4", "2024-01-01 00:00:00", "2024-01-01 00:00:00",
-             None, 1, 0, 1, 0, 0, None, 0, 0, None, "node-1", "node-1",
+             None, None, 1, 0, 1, 0, 0, None, 0, 0, None, "node-1", "node-1",
              '["node-1"]', None, None, None, None, '[]'),
             select_all_cols,
         )
@@ -1650,3 +1763,70 @@ class TestUpsertMySQLBackendDetection:
         assert not any("INSERT IGNORE" in s for s in ip_intel_inserts), (
             "MySQL path should NOT use INSERT IGNORE"
         )
+
+
+# ── Legacy SQLite schema migration ───────────────────────────────────────
+
+
+def test_sqlite_migration_rebuilds_legacy_events_table(tmp_path):
+    """Old SQLite DBs with the pre-unblock CHECK constraint are upgraded.
+
+    The migration rebuilds ip_intel_events so event_kind='unblock' is
+    accepted, preserving existing history rows.
+    """
+    db_path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE ip_intel_events ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "ip_address TEXT NOT NULL,"
+        "node_id TEXT NOT NULL,"
+        "event_type TEXT NOT NULL,"
+        "event_kind TEXT NOT NULL CHECK(event_kind IN ('sighting', 'block', 'fleet_block')),"
+        "timestamp TEXT NOT NULL,"
+        "detection_rule TEXT NOT NULL DEFAULT '',"
+        "block_ttl_seconds INTEGER NOT NULL DEFAULT 0"
+        ")"
+    )
+    conn.execute(
+        "INSERT INTO ip_intel_events "
+        "(ip_address, node_id, event_type, event_kind, timestamp) "
+        "VALUES ('10.0.0.1', 'node-1', 'NFT_ACTION', 'block', '2024-01-01 10:00:00')"
+    )
+    conn.commit()
+
+    init_intel_db(conn, "sqlite")
+
+    # Legacy row survived and the new unblock kind is accepted.
+    conn.execute(
+        "INSERT INTO ip_intel_events "
+        "(ip_address, node_id, event_type, event_kind, timestamp) "
+        "VALUES ('10.0.0.1', 'node-1', 'UNBLOCKED', 'unblock', '2024-01-02 10:00:00')"
+    )
+    conn.commit()
+    rows = conn.execute(
+        "SELECT event_kind FROM ip_intel_events ORDER BY id"
+    ).fetchall()
+    assert [row[0] for row in rows] == ["block", "unblock"]
+    conn.close()
+
+
+# ── Block status derivation ──────────────────────────────────────────────
+
+
+def test_compute_block_status_parses_mixed_timestamp_formats():
+    """Block status compares parsed datetimes across agent/server formats."""
+    from app.intel_models import compute_block_status
+
+    # Block after unblock → active, even with different string formats.
+    assert compute_block_status(
+        "2024-01-02T10:00:00Z", "2024-01-01 10:00:00"
+    ) == "active"
+    # Unblock after block → inactive.
+    assert compute_block_status(
+        "2024-01-01 10:00:00", "2024-01-02T10:00:00Z"
+    ) == "inactive"
+    # Never blocked → none.
+    assert compute_block_status(None, "2024-01-01 10:00:00") == "none"
+    # Blocked and never unblocked → active.
+    assert compute_block_status("2024-01-01 10:00:00", None) == "active"

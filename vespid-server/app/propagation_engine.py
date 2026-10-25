@@ -966,6 +966,7 @@ class PropagationEngine:
                     conn=intel_conn,
                     ip_address=source_ip,
                     timestamp=now_str,
+                    node_id="system",
                 )
                 intel_conn.commit()
             finally:
@@ -1406,6 +1407,7 @@ class PropagationEngine:
                         conn=intel_conn,
                         ip_address=block["source_ip"],
                         timestamp=now_str,
+                        node_id="system",
                     )
                     intel_conn.commit()
                 finally:
@@ -1532,6 +1534,11 @@ class PropagationEngine:
         Called whenever a fleet block transitions to 'active' (new propagation,
         manual add, or re-enable). Ensures last_blocked_at > last_unblocked_at
         so the Intelligence Service Block Status shows Active.
+
+        NOTE: this must never touch ``last_episode_block_at``. Episode
+        counting is owned by the intel upsert path; writing the status field
+        from here (using "now") previously suppressed genuine re-block
+        episodes because it ran before the block event was ingested.
         """
         conn = self._get_db()
         try:

@@ -145,9 +145,9 @@
     <div class="stat-card">
         <div class="stat-label">Block Status</div>
         <div class="stat-value">
-            {% if record.last_blocked_at and (not record.last_unblocked_at or record.last_blocked_at > record.last_unblocked_at) %}
+            {% if record.block_status == 'active' %}
             <span class="badge badge-healthy">● Active</span>
-            {% elif record.last_unblocked_at and record.last_unblocked_at > (record.last_blocked_at or '') %}
+            {% elif record.block_status == 'inactive' %}
             <span class="badge">● Inactive</span>
             {% else %}
             <span class="badge">None</span>

@@ -6,7 +6,7 @@
 %global debug_package %{nil}
 
 Name:           vespid-sync
-Version:        1.0.2
+Version:        1.0.3
 Release:        1%{?dist}
 Summary:        Vespid Sync Agent — infrastructure asset discovery
 
@@ -109,6 +109,8 @@ fi
 %{_unitdir}/vespid-sync-agent.timer
 
 %changelog
+* Sun Oct 25 2026 Vespid Team <dev@vespid.io> - 1.0.3-1
+- Version bump to 1.0.3
 * Mon Oct 12 2026 Vespid Team <dev@vespid.io> - 1.0.2-1
 - Version bump to 1.0.2
 * Thu Oct 08 2026 Vespid Team <dev@vespid.io> - 1.0.1-1

@@ -180,7 +180,7 @@
             <td>{{ result.total_times_blocked or 0 }}</td>
             <td>{{ result.total_reporting_nodes or 0 }}</td>
             <td>
-                {% if result.last_blocked_at and (not result.last_unblocked_at or result.last_blocked_at > result.last_unblocked_at) %}
+                {% if result.block_status == 'active' %}
                 <span class="badge badge-healthy">● Active</span>
                 {% else %}
                 <span class="badge">● Inactive</span>

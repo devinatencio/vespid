@@ -31,6 +31,84 @@ GENERIC_TAGS: frozenset[str] = frozenset(
     }
 )
 
+# Window used to collapse duplicate unblock history rows. The fleet-block
+# reaper and the agent's UNBLOCKED acknowledgement can both report the same
+# unblock a few seconds apart.
+_UNBLOCK_HISTORY_DEDUPE_SECONDS = 120
+
+
+# ── Timestamp helpers ────────────────────────────────────────────────────
+#
+# Lifecycle timestamps reach the intel tables from several sources with
+# different formats:
+#   - agents:        "2026-10-25 14:45:01"  (space separated)
+#   - propagation:   "2026-10-25T14:45:04Z" (ISO-8601 with Z)
+#   - some callers:  "2026-10-25T14:45:04"  (no timezone suffix)
+#
+# Always compare parsed datetimes instead of raw strings; lexicographic
+# comparison of mixed formats silently misorders same-day values.
+
+
+def parse_timestamp(value) -> datetime | None:
+    """Parse a stored timestamp into a timezone-aware UTC datetime.
+
+    Accepts ISO-8601 strings with a space or ``T`` separator, an optional
+    trailing ``Z``, and datetime objects (as returned by MySQL drivers).
+    Naive values are assumed to be UTC. Returns ``None`` when the value
+    cannot be parsed.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def timestamp_gte(a, b) -> bool:
+    """Return True when timestamp ``a`` is at or after timestamp ``b``."""
+    parsed_a = parse_timestamp(a)
+    parsed_b = parse_timestamp(b)
+    if parsed_a is None or parsed_b is None:
+        return False
+    return parsed_a >= parsed_b
+
+
+def compute_block_status(last_blocked_at, last_unblocked_at) -> str:
+    """Derive the block status: ``active``, ``inactive``, or ``none``.
+
+    A block is active when it happened after the most recent unblock (or
+    when the IP has never been unblocked).
+    """
+    if not last_blocked_at:
+        return "none"
+    if not last_unblocked_at:
+        return "active"
+    return "active" if timestamp_gte(last_blocked_at, last_unblocked_at) else "inactive"
+
+
+def _row_value(row, key: str, index: int = 0):
+    """Read a column from a sqlite3.Row, dict-like row, or plain tuple."""
+    if row is None:
+        return None
+    try:
+        return row[key]
+    except (KeyError, IndexError, TypeError):
+        return row[index]
+
 
 # ── SQLite schema for intelligence tables ────────────────────────────────
 
@@ -42,6 +120,7 @@ CREATE TABLE IF NOT EXISTS ip_intel (
     first_seen_at             TEXT    NOT NULL,
     last_seen_at              TEXT    NOT NULL,
     last_blocked_at           TEXT,
+    last_episode_block_at     TEXT,
     total_times_seen          INTEGER NOT NULL DEFAULT 0,
     total_times_blocked       INTEGER NOT NULL DEFAULT 0,
     total_reporting_nodes     INTEGER NOT NULL DEFAULT 0,
@@ -72,7 +151,7 @@ CREATE TABLE IF NOT EXISTS ip_intel_events (
     ip_address        TEXT    NOT NULL,
     node_id           TEXT    NOT NULL,
     event_type        TEXT    NOT NULL,
-    event_kind        TEXT    NOT NULL CHECK(event_kind IN ('sighting', 'block', 'fleet_block')),
+    event_kind        TEXT    NOT NULL CHECK(event_kind IN ('sighting', 'block', 'fleet_block', 'unblock')),
     timestamp         TEXT    NOT NULL,
     detection_rule    TEXT    NOT NULL DEFAULT '',
     block_ttl_seconds INTEGER NOT NULL DEFAULT 0,
@@ -98,6 +177,7 @@ _INTEL_SCHEMA_MYSQL = [
     first_seen_at             VARCHAR(255) NOT NULL,
     last_seen_at              VARCHAR(255) NOT NULL,
     last_blocked_at           VARCHAR(255),
+    last_episode_block_at     VARCHAR(255),
     total_times_seen          INT NOT NULL DEFAULT 0,
     total_times_blocked       INT NOT NULL DEFAULT 0,
     total_reporting_nodes     INT NOT NULL DEFAULT 0,
@@ -161,16 +241,7 @@ def init_intel_db(conn, db_type: str = "sqlite") -> None:
         conn.commit()
 
         # ── Schema migrations: add columns missing from older SQLite tables ──
-        try:
-            conn.execute("ALTER TABLE ip_intel_events ADD COLUMN event_id TEXT NOT NULL DEFAULT ''")
-            conn.commit()
-        except Exception:
-            pass  # column already exists
-        try:
-            conn.execute("ALTER TABLE ip_intel_events ADD COLUMN log_context TEXT")
-            conn.commit()
-        except Exception:
-            pass  # column already exists
+        _migrate_sqlite_schema(conn)
     else:
         # MySQL/MariaDB — execute each statement individually
         # Ignore error 1061 (duplicate key name) for idempotent index creation
@@ -190,7 +261,85 @@ def init_intel_db(conn, db_type: str = "sqlite") -> None:
         # ── Schema migrations: add columns missing from older table versions ──
         _migrate_mysql_schema(conn)
 
+    # Episode detection is anchored to the last block event processed by the
+    # intel pipeline. Backfill it from last_blocked_at for rows created
+    # before the column existed so no IP is re-counted on its next block.
+    try:
+        conn.execute(
+            "UPDATE ip_intel SET last_episode_block_at = last_blocked_at "
+            "WHERE last_episode_block_at IS NULL AND last_blocked_at IS NOT NULL"
+        )
+        conn.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Could not backfill last_episode_block_at: %s", exc)
+
     logger.info("Intelligence database tables initialized (backend=%s)", db_type)
+
+
+def _migrate_sqlite_schema(conn) -> None:
+    """Apply idempotent migrations to an existing SQLite intel schema.
+
+    Adds columns introduced by later releases and rebuilds
+    ``ip_intel_events`` when its CHECK constraint predates the ``unblock``
+    event kind.
+    """
+    sqlite_migrations = [
+        "ALTER TABLE ip_intel ADD COLUMN last_episode_block_at TEXT",
+        "ALTER TABLE ip_intel_events ADD COLUMN request_count INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE ip_intel_events ADD COLUMN server_received_at TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE ip_intel_events ADD COLUMN event_id TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE ip_intel_events ADD COLUMN log_context TEXT",
+    ]
+    for stmt in sqlite_migrations:
+        try:
+            conn.execute(stmt)
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
+    # SQLite cannot ALTER a CHECK constraint. Rebuild the events table if the
+    # existing definition does not allow the 'unblock' event kind.
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ip_intel_events'"
+        ).fetchone()
+        table_sql = _row_value(row, "sql", 0) if row else ""
+        if table_sql and "unblock" not in table_sql:
+            logger.info("Rebuilding ip_intel_events to allow 'unblock' event kind")
+            conn.executescript(
+                """
+                ALTER TABLE ip_intel_events RENAME TO ip_intel_events_legacy;
+                CREATE TABLE ip_intel_events (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ip_address        TEXT    NOT NULL,
+                    node_id           TEXT    NOT NULL,
+                    event_type        TEXT    NOT NULL,
+                    event_kind        TEXT    NOT NULL CHECK(event_kind IN ('sighting', 'block', 'fleet_block', 'unblock')),
+                    timestamp         TEXT    NOT NULL,
+                    detection_rule    TEXT    NOT NULL DEFAULT '',
+                    block_ttl_seconds INTEGER NOT NULL DEFAULT 0,
+                    request_count     INTEGER NOT NULL DEFAULT 1,
+                    server_received_at TEXT   NOT NULL DEFAULT '',
+                    event_id          TEXT    NOT NULL DEFAULT '',
+                    log_context       TEXT
+                );
+                INSERT INTO ip_intel_events
+                    (id, ip_address, node_id, event_type, event_kind, timestamp,
+                     detection_rule, block_ttl_seconds, request_count,
+                     server_received_at, event_id, log_context)
+                SELECT id, ip_address, node_id, event_type, event_kind, timestamp,
+                       detection_rule, block_ttl_seconds, request_count,
+                       server_received_at, event_id, log_context
+                FROM ip_intel_events_legacy;
+                DROP TABLE ip_intel_events_legacy;
+                CREATE INDEX IF NOT EXISTS idx_ip_intel_events_ip ON ip_intel_events(ip_address);
+                CREATE INDEX IF NOT EXISTS idx_ip_intel_events_ts ON ip_intel_events(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_ip_intel_events_ip_ts ON ip_intel_events(ip_address, timestamp);
+                """
+            )
+            conn.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Could not rebuild ip_intel_events for 'unblock' kind: %s", exc)
 
 
 # ── MySQL schema migration for existing tables ───────────────────────────
@@ -199,6 +348,7 @@ _MYSQL_MIGRATIONS = [
     # ip_intel table — columns added in the intel-event-ingestion-pipeline spec
     "ALTER TABLE ip_intel ADD COLUMN total_requests INT NOT NULL DEFAULT 0",
     "ALTER TABLE ip_intel ADD COLUMN last_unblocked_at VARCHAR(255) DEFAULT NULL",
+    "ALTER TABLE ip_intel ADD COLUMN last_episode_block_at VARCHAR(255) DEFAULT NULL",
     "ALTER TABLE ip_intel ADD COLUMN block_episode_count INT NOT NULL DEFAULT 0",
     "ALTER TABLE ip_intel ADD COLUMN repeat_offender_since VARCHAR(255) DEFAULT NULL",
     # ip_intel_events table — columns added in the intel-event-ingestion-pipeline spec
@@ -429,6 +579,9 @@ def search_ip_records(
             elif col_name == "repeat_offender":
                 value = bool(value)
             record[col_name] = value
+        record["block_status"] = compute_block_status(
+            record.get("last_blocked_at"), record.get("last_unblocked_at")
+        )
         records.append(record)
 
     return (records, total_count)
@@ -645,7 +798,8 @@ def upsert_ip_record(
         "SELECT reporting_node_list, threat_tags, total_times_seen, "
         "total_times_blocked, total_reporting_nodes, total_attack_events, "
         "repeat_offender, geo_country, asn, isp_organization, "
-        "last_unblocked_at, block_episode_count, last_blocked_at, total_requests "
+        "last_unblocked_at, block_episode_count, last_blocked_at, "
+        "last_episode_block_at, total_requests "
         "FROM ip_intel WHERE ip_address = ?",
         (ip_address,),
     ).fetchone()
@@ -663,6 +817,7 @@ def upsert_ip_record(
     current_last_unblocked_at = row["last_unblocked_at"]
     current_block_episode_count = row["block_episode_count"]
     current_last_blocked_at = row["last_blocked_at"]
+    current_last_episode_block_at = row["last_episode_block_at"]
     current_total_requests = row["total_requests"]
 
     # ── Step 3: Manage reporting_node_list (within transaction) ──
@@ -726,19 +881,28 @@ def upsert_ip_record(
         new_isp_org = isp_value[:256]
 
     # ── Step 7: Apply block episode detection logic ──
-    # Detect new blocking episodes: a new episode starts when a block event
-    # occurs after an unblock (last_unblocked_at is set and >= last_blocked_at).
-    # The first block event ever sets block_episode_count = 1.
+    # A new episode starts when a block event arrives after an unblock.
+    # The episode boundary MUST use last_episode_block_at (written only by
+    # this function) rather than last_blocked_at. The propagation engine
+    # also writes last_blocked_at for Block Status, using "now" when a
+    # fleet block is created — which happens before this upsert runs and
+    # used to make a genuine re-block look like a continuation.
     new_block_episode_count = current_block_episode_count
+    new_last_episode_block_at = current_last_episode_block_at
     if is_block:
+        previous_episode_block_at = (
+            current_last_episode_block_at or current_last_blocked_at
+        )
         if current_block_episode_count == 0:
             # First block ever for this IP — start first episode
             new_block_episode_count = 1
         elif current_last_unblocked_at is not None and (
-            current_last_blocked_at is None or current_last_unblocked_at >= current_last_blocked_at
+            previous_episode_block_at is None
+            or timestamp_gte(current_last_unblocked_at, previous_episode_block_at)
         ):
-            # IP was unblocked after the last block — new episode begins
+            # IP was unblocked after the last block event — new episode begins
             new_block_episode_count = current_block_episode_count + 1
+        new_last_episode_block_at = timestamp
 
     # ── Step 7b: Apply repeat_offender logic ──
     # repeat_offender is set to 1 IFF the IP has been blocked in >= 2 distinct
@@ -785,10 +949,14 @@ def upsert_ip_record(
         new_block_episode_count,
     ]
 
-    # Update last_blocked_at only for block events
+    # Update last_blocked_at only for block events. last_episode_block_at is
+    # advanced here too because this is the authoritative block-event path
+    # for episode counting (see Step 7).
     if is_block:
         update_fields.append("last_blocked_at = ?")
         update_params.append(timestamp)
+        update_fields.append("last_episode_block_at = ?")
+        update_params.append(new_last_episode_block_at)
 
     # Record repeat_offender_since when transitioning from 0 to 1
     if repeat_offender_since_value is not None:
@@ -862,6 +1030,7 @@ def upsert_ip_record(
         "reputation_score": updated_row["reputation_score"],
         "block_episode_count": updated_row["block_episode_count"],
         "last_unblocked_at": updated_row["last_unblocked_at"],
+        "last_episode_block_at": updated_row["last_episode_block_at"],
         "repeat_offender_since": updated_row["repeat_offender_since"],
     }
 
@@ -1176,13 +1345,45 @@ def get_fleet_blocks(conn, ip_address: str) -> list[dict]:
     return results
 
 
-def process_unblock_event(conn, ip_address: str, timestamp: str) -> dict:
+def _has_recent_unblock_row(conn, ip_address: str, timestamp: str) -> bool:
+    """Return True if an unblock history row exists within the dedupe window.
+
+    The fleet-block reaper and the agent's UNBLOCKED acknowledgement can
+    both report the same unblock a few seconds apart. Collapsing those into
+    one history row keeps the IP detail timeline readable.
+    """
+    row = conn.execute(
+        "SELECT timestamp FROM ip_intel_events "
+        "WHERE ip_address = ? AND event_kind = 'unblock' "
+        "ORDER BY id DESC LIMIT 1",
+        (ip_address,),
+    ).fetchone()
+    if row is None:
+        return False
+    last_value = _row_value(row, "timestamp", 0)
+    new_dt = parse_timestamp(timestamp)
+    last_dt = parse_timestamp(last_value)
+    if new_dt is None or last_dt is None:
+        return str(last_value or "") == str(timestamp or "")
+    return abs((new_dt - last_dt).total_seconds()) <= _UNBLOCK_HISTORY_DEDUPE_SECONDS
+
+
+def process_unblock_event(
+    conn,
+    ip_address: str,
+    timestamp: str,
+    node_id: str = "",
+    event_type: str = "UNBLOCKED",
+    event_id: str = "",
+) -> dict:
     """Process an UNBLOCKED event for an IP address.
 
     Updates the `last_unblocked_at` timestamp on the ip_intel record for the
-    given IP address. Does NOT increment `total_times_seen` or
-    `total_times_blocked` counters. If the IP does not exist in ip_intel,
-    the function is a no-op (we only track unblocks for known IPs).
+    given IP address and records an ``unblock`` row in ``ip_intel_events``
+    so the IP detail timeline shows the lifecycle transition. Does NOT
+    increment `total_times_seen` or `total_times_blocked` counters. If the
+    IP does not exist in ip_intel, the function is a no-op (we only track
+    unblocks for known IPs).
 
     This implements Requirement 17 (AC 1, AC 4):
     - Records the unblock timestamp in ip_intel last_unblocked_at column
@@ -1192,6 +1393,10 @@ def process_unblock_event(conn, ip_address: str, timestamp: str) -> dict:
         conn: Database connection (sqlite3.Connection or MySQLConnectionWrapper).
         ip_address: The IPv4 or IPv6 address that was unblocked.
         timestamp: ISO-8601 UTC timestamp of the unblock event.
+        node_id: Node that reported the unblock (empty for server-side
+            unblocks such as fleet-block expiry).
+        event_type: Source event type for the history row.
+        event_id: Originating SecurityEvent UUID, when available.
 
     Returns:
         A dict with keys:
@@ -1218,6 +1423,28 @@ def process_unblock_event(conn, ip_address: str, timestamp: str) -> dict:
         "UPDATE ip_intel SET last_unblocked_at = ? WHERE ip_address = ?",
         (timestamp, ip_address),
     )
+
+    # Record the lifecycle transition in the event timeline. This row is
+    # historical only: event_kind='unblock' is excluded from recency and
+    # block/sighting aggregations.
+    if not _has_recent_unblock_row(conn, ip_address, timestamp):
+        server_received_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
+        conn.execute(
+            "INSERT INTO ip_intel_events "
+            "(ip_address, node_id, event_type, event_kind, timestamp, "
+            "detection_rule, block_ttl_seconds, request_count, "
+            "server_received_at, event_id, log_context) "
+            "VALUES (?, ?, ?, 'unblock', ?, '', 0, 0, ?, ?, NULL)",
+            (
+                ip_address,
+                node_id or "system",
+                event_type or "UNBLOCKED",
+                timestamp,
+                server_received_at,
+                event_id or "",
+            ),
+        )
+
     conn.commit()
 
     return {

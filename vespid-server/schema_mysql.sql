@@ -527,11 +527,16 @@ CREATE TABLE IF NOT EXISTS ip_intel (
     first_seen_at             VARCHAR(255) NOT NULL,
     last_seen_at              VARCHAR(255) NOT NULL,
     last_blocked_at           VARCHAR(255),
+    last_episode_block_at     VARCHAR(255),
     total_times_seen          INT NOT NULL DEFAULT 0,
     total_times_blocked       INT NOT NULL DEFAULT 0,
     total_reporting_nodes     INT NOT NULL DEFAULT 0,
     total_attack_events       INT NOT NULL DEFAULT 0,
+    total_requests            INT NOT NULL DEFAULT 0,
+    last_unblocked_at         VARCHAR(255),
+    block_episode_count       INT NOT NULL DEFAULT 0,
     repeat_offender           INT NOT NULL DEFAULT 0,
+    repeat_offender_since     VARCHAR(255),
     first_reporting_node      VARCHAR(128) NOT NULL,
     most_recent_reporting_node VARCHAR(128) NOT NULL,
     reporting_node_list       TEXT NOT NULL,
@@ -555,10 +560,14 @@ CREATE TABLE IF NOT EXISTS ip_intel_events (
     ip_address        VARCHAR(45) NOT NULL,
     node_id           VARCHAR(128) NOT NULL,
     event_type        VARCHAR(64) NOT NULL,
-    event_kind        VARCHAR(10) NOT NULL,
+    event_kind        VARCHAR(16) NOT NULL,
     timestamp         VARCHAR(255) NOT NULL,
     detection_rule    VARCHAR(128) NOT NULL DEFAULT '',
-    block_ttl_seconds INT NOT NULL DEFAULT 0
+    block_ttl_seconds INT NOT NULL DEFAULT 0,
+    request_count     INT NOT NULL DEFAULT 1,
+    server_received_at VARCHAR(255) NOT NULL DEFAULT '',
+    event_id          VARCHAR(255) NOT NULL DEFAULT '',
+    log_context       TEXT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE ip_intel_events ADD INDEX IF NOT EXISTS idx_ip_intel_events_ip (ip_address);

@@ -28,12 +28,14 @@
                 <span class="badge badge-info">sighting</span>
                 {% elif event.event_kind == 'fleet_block' %}
                 <span class="badge badge-warning">fleet block</span>
+                {% elif event.event_kind == 'unblock' %}
+                <span class="badge badge-healthy">unblock</span>
                 {% else %}
                 <span class="badge badge-secondary">{{ event.event_kind }}</span>
                 {% endif %}
             </td>
             <td>{{ event.detection_rule or '' }}</td>
-            <td>{% if event.event_kind == 'fleet_block' %}—{% else %}{{ event.request_count or 1 }}{% endif %}</td>
+            <td>{% if event.event_kind in ('fleet_block', 'unblock') %}—{% else %}{{ event.request_count or 1 }}{% endif %}</td>
         </tr>
         {% if event.log_context %}
         <tr class="event-detail-row" style="display: none;">
