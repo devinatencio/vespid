@@ -496,13 +496,14 @@ class ShieldConfig:
                 parser="haproxy_not_found",
             ),
             # HAProxy TLS/cipher scanning: repeated SSL handshake failures.
-            # These are connection-level errors (not HTTP access lines) and
-            # almost never occur on legitimate traffic.
+            # Browsers legitimately abort speculative/preconnect TLS
+            # handshakes, so keep this threshold high enough that normal
+            # dashboard users are not blocked by transient failures.
             BruteForceRule(
                 name="haproxy_ssl_handshake_probe",
                 event_type="HAPROXY_SSL_HANDSHAKE_PROBE",
-                max_attempts=5,
-                window_seconds=300,
+                max_attempts=20,
+                window_seconds=3600,
                 parser="haproxy_ssl_fail",
             ),
         ]

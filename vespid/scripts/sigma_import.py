@@ -21,6 +21,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -51,7 +52,8 @@ logging.basicConfig(
 # ── Constants ───────────────────────────────────────────────────────────
 
 SIGMA_REPO_URL = "https://github.com/SigmaHQ/sigma.git"
-CACHE_DIR = Path.home() / ".cache" / "vespid"
+_cache_env = os.environ.get("VESPID_SIGMA_CACHE_DIR")
+CACHE_DIR = Path(_cache_env) if _cache_env else Path.home() / ".cache" / "vespid"
 SIGMA_CLONE_DIR = CACHE_DIR / "sigma"
 STATE_FILE = CACHE_DIR / "sigma_state.json"
 
@@ -105,8 +107,23 @@ PACKS = {
     },
 }
 
+
 # Where to write output packs (relative to project root)
-PACKS_OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "vespid-server" / "packs"
+def _default_packs_output_dir() -> Path:
+    """Resolve the server packs directory for source-tree and installed layouts.
+
+    Source tree:  <root>/vespid/scripts  -> <root>/vespid-server/packs
+    Installed:    <root>/vespid/vespid/scripts -> <root>/vespid-server/packs
+    """
+    agent_package_root = Path(__file__).resolve().parent.parent
+    for install_root in (agent_package_root.parent, agent_package_root.parent.parent):
+        candidate = install_root / "vespid-server" / "packs"
+        if candidate.parent.is_dir():
+            return candidate
+    return agent_package_root.parent / "vespid-server" / "packs"
+
+
+PACKS_OUTPUT_DIR = _default_packs_output_dir()
 
 
 # ── Git helpers ─────────────────────────────────────────────────────────
@@ -170,7 +187,13 @@ def _ensure_sigma_repo() -> Path | None:
 
 
 def _git_pull(repo_dir: Path) -> bool:
-    """Pull latest changes. Returns True if updates were pulled."""
+    """Pull latest changes. Returns True if updates were pulled.
+
+    The Sigma checkout is a disposable, shallow, sparse clone. A normal
+    fast-forward pull can fail after the shallow history diverges from
+    upstream; in that case force-refresh the cache to the remote head. There
+    are never local edits to preserve in this cache.
+    """
     try:
         result = subprocess.run(
             ["git", "-C", str(repo_dir), "pull", "--ff-only"],
@@ -179,12 +202,38 @@ def _git_pull(repo_dir: Path) -> bool:
             timeout=120,
         )
         if result.returncode != 0:
-            log.warning("Git pull failed: %s", result.stderr.strip())
-            return False
+            log.warning(
+                "Git pull failed, refreshing shallow cache: %s",
+                result.stderr.strip(),
+            )
+            fetch = subprocess.run(
+                ["git", "-C", str(repo_dir), "fetch", "--depth", "1", "origin", "master"],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if fetch.returncode != 0:
+                log.error("Git fetch failed: %s", fetch.stderr.strip())
+                return False
+
+            reset = subprocess.run(
+                ["git", "-C", str(repo_dir), "reset", "--hard", "FETCH_HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if reset.returncode != 0:
+                log.error("Git reset failed: %s", reset.stderr.strip())
+                return False
+            return True
+
         output = result.stdout + result.stderr
         if "Already up to date" in output:
             return False
         return True
+    except subprocess.TimeoutExpired as exc:
+        log.error("Git pull timed out: %s", exc)
+        return False
     except subprocess.CalledProcessError as exc:
         log.error("Git pull error: %s", exc)
         return False

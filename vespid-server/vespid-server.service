@@ -26,7 +26,10 @@ TimeoutStopSec=30
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/vespid-server /var/log/vespid-server /etc/vespid-server/geoip
+ReadWritePaths=/var/lib/vespid-server /var/log/vespid-server /etc/vespid-server/geoip /opt/vespid-server/packs
+# Sigma sync clones upstream rules into a writable cache and writes packs.
+CacheDirectory=vespid-server
+Environment=VESPID_SIGMA_CACHE_DIR=/var/cache/vespid-server/sigma
 PrivateTmp=true
 
 [Install]

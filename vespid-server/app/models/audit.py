@@ -149,6 +149,11 @@ def summarize_audit_details(action_type: str, details: str | dict | None) -> str
     if action_type in ("rule_created", "rule_updated", "rule_deleted"):
         name = parsed.get("rule_name", parsed.get("name", ""))
         return f"Rule: {name}" if name else action_type.replace("_", " ").title()
+    if action_type == "sigma_sync":
+        inserted = parsed.get("inserted", 0)
+        updated = parsed.get("updated", 0)
+        skipped = parsed.get("skipped_user_modified", 0)
+        return f"Inserted {inserted}, updated {updated}, skipped {skipped}"
 
     # ── Enrollment ────────────────────────────────────────────────────
     if action_type.startswith("enrollment"):
@@ -217,6 +222,7 @@ VALID_AUDIT_ACTION_TYPES = frozenset(
         "rule_created",
         "rule_updated",
         "rule_deleted",
+        "sigma_sync",
         "template_toggled",
         "templates_enabled",
         "templates_disabled",

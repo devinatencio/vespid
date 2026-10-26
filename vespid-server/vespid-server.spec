@@ -289,6 +289,8 @@ fi
 - Add repair_block_episodes.py for historical episode counters
 - Add read-only role and close host-threat/inventory write role gaps
 - Fix Host Threats mode changes appearing to revert and host-event time windows on SQLite
+- Raise HAProxy SSL handshake-failure threshold to 20/hour
+- Fix web UA/CMS pack regex false positives on dashboard traffic
 * Mon Oct 12 2026 Vespid Team <team@vespid.dev> - 1.0.2-1
 - `make package` installs the packaging toolchain automatically
 * Thu Oct 08 2026 Vespid Team <team@vespid.dev> - 1.0.1-1

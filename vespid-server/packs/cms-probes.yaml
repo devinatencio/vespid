@@ -160,22 +160,22 @@ rules:
   # Multi-platform scanner — catches any IP probing multiple CMS/application
   # paths in a short window, regardless of which specific platforms they try.
   # The combined regex covers all paths from the per-platform rules above.
-  # A low threshold (3 in 120s) catches multi-platform reconnaissance while
-  # ignoring random one-off probes.
+  # A modest threshold (5 in 300s) catches multi-platform reconnaissance
+  # while ignoring random one-off probes.
   # ---------------------------------------------------------------------------
   - name: cms_multi_probe
     event_type: CMS_MULTI_SCANNER
-    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|product\/|shop\/|account\/|rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version|xmlrpc\.php|wp-comments-post|wp-cron\.php|user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|administrator\/|components\/|modules\/|plugins\/|_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|admin(?:[\/\s\?\.#&]|$)|api\/(?!v1\/)|products\/|collections\/|cart\.js|checkouts\/|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml).*"\s\d{3}\s'
+    regex: '^(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|product\/|shop\/|account\/|rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version|xmlrpc\.php|wp-comments-post|wp-cron\.php|user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|administrator\/|components\/|modules\/|plugins\/|_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|products\/|collections\/|cart\.js|checkouts\/|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml).*"\s\d{3}\s'
     log_sources: ["apache"]
-    max_attempts: 3
-    window_seconds: 120
+    max_attempts: 5
+    window_seconds: 300
 
   - name: cms_multi_probe_haproxy
     event_type: CMS_MULTI_SCANNER
-    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|product\/|shop\/|account\/|rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version|xmlrpc\.php|wp-comments-post|wp-cron\.php|user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|administrator\/|components\/|modules\/|plugins\/|_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|admin(?:[\/\s\?\.#&]|$)|api\/(?!v1\/)|products\/|collections\/|cart\.js|checkouts\/|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml)'
+    regex: '^\s*(?P<ip>\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(?::\d+)?\s+\[[^\]]+\]\s+\S+~?\s+\S+/\S+\s+\S+\s+\d{3}\s.*"(?:GET|POST|HEAD)\s+\/(?:wp-(?:json|includes\/|content\/)|wp-json\/wc\/|cart(?:[\/\s\?\.#&]|$)|my-account|checkout|product\/|shop\/|account\/|rest\/V1\/|soap\/|graphql(?:[\/\s\?\.#&]|$)|index\.php\/admin\/|static\/version|xmlrpc\.php|wp-comments-post|wp-cron\.php|user\/(?:login|register|password)|node\/\d+|core\/install\.php|sites\/default\/|administrator\/|components\/|modules\/|plugins\/|_ignition(?:[\/\s\?\.#&]|$)|artisan(?:[\/\s\?\.#&]|$)|vendor\/|\.env(?:[\/\s\?\.#&]|$)|products\/|collections\/|cart\.js|checkouts\/|sites\/default\/files|CHANGELOG\.txt|composer\.lock|package\.json|Dockerfile|\.git\/config|\.env\.example|robots\.txt|sitemap\.xml|crossdomain\.xml)'
     log_sources: ["haproxy"]
-    max_attempts: 3
-    window_seconds: 120
+    max_attempts: 5
+    window_seconds: 300
 
   # Kept as-is for backward compatibility and separate attribution
   - name: cms_generic_scanner

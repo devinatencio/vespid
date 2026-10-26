@@ -21,6 +21,17 @@
   fall back to a hardcoded DETECTING label
 - Host event time windows now use the stored timestamp format, fixing dropped
   events on SQLite deployments
+- Raised the HAProxy SSL handshake-failure threshold to 20/hour so browser
+  TLS/preconnect noise does not block dashboard users
+- Fixed Sigma/CMS pack regex false positives on normal browser/dashboard
+  traffic (`Mozilla/5.0`, `/api/stats`, `/admin/config/`)
+- Sigma sync now honors Sigma's exact-match semantics for user-agent fields,
+  keeps `contains`/`startswith`/`endswith` modifiers, skips locally edited
+  rules, keeps the raised 3/300 thresholds for the two noisy UA rules,
+  resolves the importer and packs paths in both source-tree and installed
+  layouts, and records a valid `sigma_sync` audit action
+- The server systemd unit grants the Sigma importer a writable packs
+  directory and an upstream-rule cache under `ProtectSystem=strict`
 
 ## 1.0.2 — 2026-10-12
 

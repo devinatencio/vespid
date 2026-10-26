@@ -41,12 +41,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Host Threat time-window queries now use the same space-separated timestamp
   format as `host_events`, so recent events are not dropped on SQLite
   deployments (which previously left the reported mode as `unknown`).
+- Raised the HAProxy SSL handshake-failure threshold from 5/300s to 20/hour.
+  Browsers legitimately abort speculative/preconnect TLS handshakes, and the
+  old threshold let normal dashboard traffic get blocked for 24 hours.
+- Fixed two web-detection pack false positives that blocked normal dashboard
+  traffic: the exploit-framework user-agent rule matched every `Mozilla/5.0`
+  browser, and the CMS multi-probe rules matched the dashboard's own
+  `/api/stats` and `/admin/config/` paths. User-agent alternatives are now
+  anchored to exact values, generic `/api/` and `/admin/` CMS paths were
+  removed, and the thresholds were raised.
 - Multi-signal correlation no longer counts ordinary successful HTTP responses
   (`apache_other` / `haproxy_other`) as a distinct signal category. A
   legitimate browser session that mixes normal 2xx traffic with a transient
   4xx or TLS handshake failure — exactly what an ISP IP rotation produces —
   could otherwise cross `min_categories` and trigger a false-positive
   `RECON_CORRELATION` block.
+- Sigma sync now preserves Sigma's exact-match semantics for user-agent fields
+  by default, so short values such as `Mozilla/5.0`, `M`, and `Opera` cannot
+  match every browser again. `contains`, `startswith`, and `endswith`
+  modifiers remain honored, locally edited (`user_modified`) rules are
+  skipped, and the two noisy UA rules keep their raised 3/300 thresholds.
+- The Sigma sync endpoint now finds `sigma_import.py` and writes generated
+  packs correctly in both the source-tree and installed layouts, including
+  under the systemd sandbox. Syncs are recorded with a valid `sigma_sync`
+  audit action.
 
 ## [1.0.2] - 2026-10-12
 

@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import re
+from pathlib import Path
 
 from flask import current_app, jsonify, request
 from flask_login import current_user
@@ -1274,6 +1275,22 @@ def distribution():
 # ---------------------------------------------------------------------------
 
 
+def _resolve_sigma_sync_paths(server_root: Path) -> tuple[Path | None, Path]:
+    """Locate the Sigma importer and the server packs directory.
+
+    Supports both the source-tree layout (``<root>/vespid/scripts``) and the
+    installed layout (``<root>/vespid/vespid/scripts``). Packs always live
+    under the server installation, independent of the agent package layout.
+    """
+    install_root = server_root.parent
+    candidates = (
+        install_root / "vespid" / "scripts" / "sigma_import.py",
+        install_root / "vespid" / "vespid" / "scripts" / "sigma_import.py",
+    )
+    sigma_script = next((path for path in candidates if path.exists()), None)
+    return sigma_script, server_root / "packs"
+
+
 @rules_bp.post(
     "/sigma/sync",
     summary="Trigger Sigma rule sync",
@@ -1287,19 +1304,26 @@ def sigma_sync():
     """
     import subprocess
     import sys
-    from pathlib import Path
 
-    # Resolve the sigma_import module path
-    project_root = Path(current_app.root_path).parent.parent
-    sigma_script = project_root / "vespid" / "scripts" / "sigma_import.py"
+    # Resolve the sigma_import script for both the source-tree and installed
+    # layouts. Run it directly so the server venv's Python is used and the
+    # output directory is always the server's packs directory.
+    server_root = Path(current_app.root_path).parent
+    sigma_script, packs_dir = _resolve_sigma_sync_paths(server_root)
 
-    if not sigma_script.exists():
+    if sigma_script is None:
         return jsonify({"error": "sigma_import tool not found"}), 500
 
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "vespid.scripts.sigma_import", "--sync"],
-            cwd=str(project_root),
+            [
+                sys.executable,
+                str(sigma_script),
+                "--sync",
+                "--output-dir",
+                str(packs_dir),
+            ],
+            cwd=str(server_root),
             capture_output=True,
             text=True,
             timeout=300,
@@ -1311,8 +1335,8 @@ def sigma_sync():
 
     # Check if packs were updated
     packs_updated = False
-    web_pack = project_root / "vespid-server" / "packs" / "sigma-web-attacks.yaml"
-    ssh_pack = project_root / "vespid-server" / "packs" / "sigma-ssh-attacks.yaml"
+    web_pack = packs_dir / "sigma-web-attacks.yaml"
+    ssh_pack = packs_dir / "sigma-ssh-attacks.yaml"
     if web_pack.exists() or ssh_pack.exists():
         packs_updated = True
 
@@ -1321,24 +1345,31 @@ def sigma_sync():
         from app.pack_loader import get_pack_rules, load_packs
 
         db = get_request_db()
+        reload_packs()
         packs = load_packs()
         pack_rules = get_pack_rules(packs)
         # Only re-insert sigma pack rules
         sigma_rules = [r for r in pack_rules if r.get("pack_name", "").startswith("sigma-")]
         inserted = 0
         updated = 0
+        skipped = 0
         for rule in sigma_rules:
             existing = db.execute(
-                "SELECT id FROM detection_rules_custom WHERE name = ?",
+                "SELECT id, user_modified FROM detection_rules_custom WHERE name = ?",
                 (rule["name"],),
             ).fetchone()
             if existing:
+                # Local edits are protected from upstream syncs, matching the
+                # pack reload/bundle reconcile behavior.
+                if int(existing["user_modified"] or 0):
+                    skipped += 1
+                    continue
                 # Update existing rule's regex and metadata
                 db.execute(
                     "UPDATE detection_rules_custom SET "
                     "regex = ?, tags = ?, sigma_id = ?, sigma_status = ?, "
                     "event_type = ?, max_attempts = ?, window_seconds = ?, "
-                    "updated_at = ? WHERE id = ?",
+                    "log_sources = ?, content_hash = ?, updated_at = ? WHERE id = ?",
                     (
                         rule["regex"],
                         rule.get("tags", "[]"),
@@ -1347,6 +1378,8 @@ def sigma_sync():
                         rule["event_type"],
                         rule["max_attempts"],
                         rule["window_seconds"],
+                        rule["log_sources"],
+                        rule.get("content_hash", ""),
                         _utcnow_iso(),
                         existing["id"],
                     ),
@@ -1356,8 +1389,8 @@ def sigma_sync():
                 db.execute(
                     "INSERT OR IGNORE INTO detection_rules_custom "
                     "(name, event_type, regex, log_sources, max_attempts, window_seconds, "
-                    "enabled, is_template, pack_name, tags, sigma_id, sigma_status) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "enabled, is_template, pack_name, tags, sigma_id, sigma_status, content_hash) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         rule["name"],
                         rule["event_type"],
@@ -1371,6 +1404,7 @@ def sigma_sync():
                         rule.get("tags", "[]"),
                         rule.get("sigma_id", ""),
                         rule.get("sigma_status", ""),
+                        rule.get("content_hash", ""),
                     ),
                 )
                 inserted += 1
@@ -1383,7 +1417,11 @@ def sigma_sync():
             actor_ip=request.remote_addr,
             action_type="sigma_sync",
             target="sigma_rules",
-            details={"inserted": inserted, "updated": updated},
+            details={
+                "inserted": inserted,
+                "updated": updated,
+                "skipped_user_modified": skipped,
+            },
         )
 
         return jsonify(
@@ -1391,6 +1429,7 @@ def sigma_sync():
                 "ok": True,
                 "inserted": inserted,
                 "updated": updated,
+                "skipped_user_modified": skipped,
                 "output": result.stdout[-2000:],
                 "stderr": result.stderr[-1000:] if result.stderr else "",
                 "returncode": result.returncode,

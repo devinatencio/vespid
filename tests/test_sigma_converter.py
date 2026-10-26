@@ -1,5 +1,7 @@
 """Tests for the Sigma → Vespid rule converter."""
 
+import re
+
 from vespid.scripts.sigma_converter import (
     _apache_single_block,
     _parse_condition_tokens,
@@ -180,6 +182,127 @@ def test_single_block_cs_method_and_uri():
     assert "(?P<ip>" in regex
     assert "GET" in regex
     assert "UNION SELECT" in regex or "UNION\\ SELECT" in regex
+
+
+# ── User-Agent modifier semantics ───────────────────────────────────────
+
+OPERA_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/153.0.0.0 Safari/537.36 OPR/137.0.0.0"
+)
+
+
+def _apache_line(ua: str, path: str = "/") -> str:
+    return (
+        f"172.56.87.84 - - [08/Oct/2026:20:35:22 +0000] "
+        f'"GET {path} HTTP/1.1" 200 91 "-" "{ua}" rid=abc D=9243'
+    )
+
+
+def test_exact_user_agent_values_are_anchored():
+    """Sigma has no modifier = exact field match; short values must not be
+    treated as substrings of every modern browser UA."""
+    regex = _apache_single_block({"cs-user-agent": ["M", "Mozilla/5.0", "Havana/0.1"]})
+    assert regex is not None
+
+    assert re.search(regex, _apache_line(OPERA_UA)) is None
+    assert re.search(regex, _apache_line("Mozilla/5.0")) is not None
+    assert re.search(regex, _apache_line("Havana/0.1")) is not None
+    assert re.search(regex, _apache_line("M")) is not None
+
+
+def test_contains_user_agent_still_matches_substrings():
+    regex = _apache_single_block({"cs-user-agent|contains": ["OPR/137"]})
+    assert regex is not None
+    assert re.search(regex, _apache_line(OPERA_UA)) is not None
+
+
+def test_startswith_user_agent_still_matches_prefixes():
+    regex = _apache_single_block({"cs-user-agent|startswith": ["Mozilla/5.0"]})
+    assert regex is not None
+    assert re.search(regex, _apache_line(OPERA_UA)) is not None
+
+
+def test_endswith_user_agent_matches_only_suffixes():
+    regex = _apache_single_block({"cs-user-agent|endswith": ["OPR/137.0.0.0"]})
+    assert regex is not None
+    assert re.search(regex, _apache_line(OPERA_UA)) is not None
+
+    middle = "Mozilla/5.0 OPR/137.0.0.0 Safari/537.36"
+    assert re.search(regex, _apache_line(middle)) is None
+
+
+def test_convert_rule_with_exact_user_agent_list():
+    """The full conversion pipeline keeps exact UA semantics."""
+    yaml = """
+title: Exact UA Test
+id: 11111111-1111-1111-1111-111111111111
+status: test
+level: high
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-user-agent:
+            - M
+            - Mozilla/5.0
+            - Havana/0.1
+    condition: selection
+"""
+    rule = parse_sigma_rule(yaml)
+    assert rule is not None
+    result, reason = convert_rule(rule)
+    assert result is not None, f"Conversion failed: {reason}"
+
+    assert re.search(result.regex, _apache_line(OPERA_UA)) is None
+    assert re.search(result.regex, _apache_line("Havana/0.1")) is not None
+
+
+def test_false_positive_ua_rule_keeps_raised_thresholds():
+    """The two noisy UA rules keep their manually raised 3/300 thresholds."""
+    yaml = """
+title: Exploit Framework User Agent
+id: fdd1bfb5-f60b-4a35-910e-f36ed3d0b32f
+status: test
+level: high
+logsource:
+    category: proxy
+detection:
+    selection:
+        c-useragent:
+            - 'Mozilla/5.0'
+    condition: selection
+"""
+    rule = parse_sigma_rule(yaml)
+    assert rule is not None
+    result, reason = convert_rule(rule)
+    assert result is not None, f"Conversion failed: {reason}"
+
+    assert (result.max_attempts, result.window_seconds) == (3, 300)
+    assert re.search(result.regex, _apache_line(OPERA_UA)) is None
+
+
+def test_generic_high_severity_rule_keeps_default_thresholds():
+    yaml = """
+title: Generic High Web Test
+id: 22222222-2222-2222-2222-222222222222
+status: test
+level: high
+logsource:
+    category: webserver
+detection:
+    selection:
+        cs-uri-query|contains:
+            - '../../etc/passwd'
+    condition: selection
+"""
+    rule = parse_sigma_rule(yaml)
+    assert rule is not None
+    result, reason = convert_rule(rule)
+    assert result is not None, f"Conversion failed: {reason}"
+
+    assert (result.max_attempts, result.window_seconds) == (2, 120)
 
 
 # ── Full conversion pipeline ────────────────────────────────────────────
