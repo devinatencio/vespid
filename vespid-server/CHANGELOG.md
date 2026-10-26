@@ -11,6 +11,8 @@
   (`--dry-run` supported)
 - `readonly` role with analyst-level reads and no write endpoints; host-threat
   and inventory-label writes now require Analyst
+- Repo-wide `make bump-version` / `make version-check` targets keep package
+  metadata, changelogs, and build docs in sync
 
 ### Fixed
 - `block_episode_count` no longer misses re-block episodes when the
@@ -33,6 +35,9 @@
   Bearer/CLI clients without a session CSRF token
 - The server systemd unit grants the Sigma importer a writable packs
   directory and an upstream-rule cache under `ProtectSystem=strict`
+- The agent list-sync endpoint now returns allowlist entries normalized to
+  CIDR, so older agents do not flip-flop a bare IP such as
+  `72.201.135.201` between `WHITELIST_ADD` and `WHITELIST_REMOVE`
 
 ## 1.0.2 — 2026-10-12
 

@@ -8,14 +8,14 @@ optionally add the centralized server for fleet management.
 === "Debian / Ubuntu"
 
     ```bash
-    sudo dpkg -i vespid_1.0.0_all.deb
+    sudo dpkg -i vespid_1.0.3_all.deb
     sudo apt-get install -f   # resolve dependencies
     ```
 
 === "RHEL / AlmaLinux / Rocky"
 
     ```bash
-    sudo rpm -ivh vespid-1.0.0-1.noarch.rpm
+    sudo rpm -ivh vespid-1.0.3-1.noarch.rpm
     ```
 
 === "pip (development)"
@@ -58,14 +58,14 @@ fleet-wide blocklist sharing, and a web dashboard.
 === "Debian / Ubuntu"
 
     ```bash
-    sudo dpkg -i vespid-server_1.0.0_all.deb
+    sudo dpkg -i vespid-server_1.0.3_all.deb
     sudo apt-get install -f
     ```
 
 === "RHEL / AlmaLinux / Rocky"
 
     ```bash
-    sudo rpm -ivh vespid-server-1.0.0-1.noarch.rpm
+    sudo rpm -ivh vespid-server-1.0.3-1.noarch.rpm
     ```
 
 === "Manual"

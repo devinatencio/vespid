@@ -23,8 +23,8 @@ Two packages are built via `build_deb.sh`:
 
 | Package | Contents |
 |---------|----------|
-| `vespid_1.0.0_all.deb` | Python agent daemon + CLI |
-| `vespid-server_1.0.0_all.deb` | Flask dashboard server |
+| `vespid_1.0.3_all.deb` | Python agent daemon + CLI |
+| `vespid-server_1.0.3_all.deb` | Flask dashboard server |
 
 #### Building
 
@@ -42,7 +42,7 @@ Two packages are built via `build_deb.sh`:
 #### Installing
 
 ```bash
-sudo dpkg -i vespid_1.0.0_all.deb
+sudo dpkg -i vespid_1.0.3_all.deb
 sudo apt-get install -f   # resolve dependencies
 ```
 
@@ -82,7 +82,7 @@ sudo apt-get install -f   # resolve dependencies
 
 ```bash
 make rpm
-sudo rpm -ivh rpmbuild/RPMS/noarch/vespid-1.0.0-1.*.noarch.rpm
+sudo rpm -ivh rpmbuild/RPMS/noarch/vespid-1.0.3-1.*.noarch.rpm
 ```
 
 #### Server RPM
@@ -90,7 +90,7 @@ sudo rpm -ivh rpmbuild/RPMS/noarch/vespid-1.0.0-1.*.noarch.rpm
 ```bash
 cd vespid-server/
 make rpm
-sudo rpm -ivh rpmbuild/RPMS/noarch/vespid-server-1.0.0-1.*.noarch.rpm
+sudo rpm -ivh rpmbuild/RPMS/noarch/vespid-server-1.0.3-1.*.noarch.rpm
 ```
 
 RPM specs are at `vespid.spec` (agent) and `vespid-server/vespid-server.spec`
@@ -118,7 +118,7 @@ rustc cargo protobuf-compiler dpkg-deb fakeroot
 ./packaging/build-vespid-agent-deb.sh
 ```
 
-Produces `vespid-agent_1.0.0_amd64.deb` (arch-specific, not `all`).
+Produces `vespid-agent_1.0.3_amd64.deb` (arch-specific, not `all`).
 
 ### RPM package
 

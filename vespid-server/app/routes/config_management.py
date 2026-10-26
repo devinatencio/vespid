@@ -18,6 +18,7 @@ Endpoints:
 Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.1, 3.2, 3.3, 3.5, 3.6, 3.7, 3.8, 3.9, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 11.1, 11.2
 """
 
+import ipaddress
 import json
 import logging
 import sqlite3
@@ -1536,6 +1537,14 @@ def agent_check_in():
 # ---------------------------------------------------------------------------
 
 
+def _normalize_allowlist_entry(entry: str) -> str:
+    """Normalize bare IPs to CIDR so agents can compare them canonically."""
+    try:
+        return str(ipaddress.ip_network(str(entry), strict=False))
+    except ValueError:
+        return str(entry)
+
+
 @config_mgmt_bp.get(
     "/rules/lists",
     summary="Rules lists",
@@ -1556,7 +1565,11 @@ def rules_lists():
     allowlist_rows = list_ip_rules(db, rule_type="allowlist")
     blocklist_rows = list_ip_rules(db, rule_type="blocklist")
 
-    allowlist = [r["entry"] for r in allowlist_rows]
+    # Normalize bare IPs to CIDR. Agents store runtime allowlist entries as
+    # normalized networks; returning ``72.201.135.201`` while the agent has
+    # ``72.201.135.201/32`` causes a WHITELIST_ADD/REMOVE flip-flop on every
+    # list sync.
+    allowlist = [_normalize_allowlist_entry(r["entry"]) for r in allowlist_rows]
     blocklist = [r["entry"] for r in blocklist_rows]
 
     updated_at = ""

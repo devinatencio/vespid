@@ -14,6 +14,8 @@ Run these from the repository root.
 | `make package-docker` | Build **both** formats in containers (works on any host) | `dist/rpm/`, `dist/deb/` |
 | `make package-deps` | Install this host's packaging toolchain (idempotent) | — |
 | `make package-clean` | Remove `dist/` and generated `rpmbuild/` trees | — |
+| `make bump-version NEW_VERSION=1.0.4` | Update every version reference and add changelog placeholders | versioned files |
+| `make version-check` | Verify all version metadata matches `vespid-server/VERSION` | — |
 
 `make package`, `make package-rpm` and `make package-deb` run `package-deps`
 automatically, so a fresh clone only needs the repository plus (on a native
@@ -24,6 +26,20 @@ toolchain and installs only what is missing, so repeat builds stay fast.
 make package          # rpm on RHEL/Alma/Rocky/Fedora, deb on Debian/Ubuntu
 make package-docker   # no local toolchain needed (requires Docker)
 ```
+
+## Version bumps
+
+`vespid-server/VERSION` is the canonical version. Bump every package manifest,
+changelog, and build-doc example in one pass:
+
+```bash
+make bump-version NEW_VERSION=1.0.4
+make version-check
+```
+
+`bump-version` writes placeholder changelog/RPM entries; edit them before
+release. `version-check` fails if any canonical version reference has drifted,
+which catches the usual “one control file stayed behind” problem.
 
 ## What gets packaged
 

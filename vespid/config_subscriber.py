@@ -26,10 +26,12 @@ import httpx
 from . import __version__
 from .config import STATE_DIR, ShieldConfig
 from .http_client import build_ssl_context
+from .net_utils import normalize_entry_map as _normalize_entry_map
 from .nftables_manager import NFTablesManager
 from .subscription_manager import SubscriptionManager
 
 log = logging.getLogger("vespid.config_sub")
+
 
 # Reconnection backoff parameters
 _BACKOFF_INITIAL = 5  # seconds
@@ -634,36 +636,39 @@ class ConfigSubscriber:
             log.warning("List sync request failed: %s", exc)
             return
 
-        server_allowlist = set(data.get("allowlist", []))
-        server_blocklist = set(data.get("blocklist", []))
+        server_allowlist = _normalize_entry_map(data.get("allowlist", []))
+        server_blocklist = _normalize_entry_map(data.get("blocklist", []))
 
-        current_allowlist = set(
+        current_allowlist = _normalize_entry_map(
             str(n) for n in getattr(self._nft_manager, "_runtime_allowlist", set())
         )
-        config_allowlist = set(getattr(self.config, "allowlist", []))
-        local_allowlist = current_allowlist | config_allowlist
+        config_allowlist = _normalize_entry_map(getattr(self.config, "allowlist", []))
+        local_allowlist = {**config_allowlist, **current_allowlist}
 
-        # Never remove self-allowlisted entries (auto-detected local IPs)
-        self_entries = set(str(n) for n in self._nft_manager._self_allowlist)
+        # Never remove self-allowlisted entries (auto-detected local IPs) or
+        # entries that come from the local config file.
+        self_entries = set(_normalize_entry_map(str(n) for n in self._nft_manager._self_allowlist))
 
-        al_to_add = server_allowlist - local_allowlist
-        al_to_remove = (local_allowlist - server_allowlist) - self_entries
+        al_to_add = set(server_allowlist) - set(local_allowlist)
+        al_to_remove = (
+            set(local_allowlist) - set(server_allowlist) - self_entries - set(config_allowlist)
+        )
 
-        for entry in al_to_add:
-            self._nft_manager.allowlist_add(entry)
-        for entry in al_to_remove:
-            self._nft_manager.allowlist_remove(entry)
+        for key in sorted(al_to_add):
+            self._nft_manager.allowlist_add(server_allowlist[key])
+        for key in sorted(al_to_remove):
+            self._nft_manager.allowlist_remove(key)
 
-        current_blocklist = set(getattr(self.config, "blocklist", []))
-        bl_to_add = server_blocklist - current_blocklist
-        bl_to_remove = current_blocklist - server_blocklist
+        current_blocklist = _normalize_entry_map(getattr(self.config, "blocklist", []))
+        bl_to_add = set(server_blocklist) - set(current_blocklist)
+        bl_to_remove = set(current_blocklist) - set(server_blocklist)
 
-        for entry in bl_to_add:
-            self._nft_manager.block_local(entry, reason="blocklist_server")
-        for entry in bl_to_remove:
-            self._nft_manager.unblock_local(entry, reason="blocklist_removed")
+        for key in sorted(bl_to_add):
+            self._nft_manager.block_local(server_blocklist[key], reason="blocklist_server")
+        for key in sorted(bl_to_remove):
+            self._nft_manager.unblock_local(current_blocklist[key], reason="blocklist_removed")
 
-        self.config.blocklist = list(server_blocklist)
+        self.config.blocklist = sorted(server_blocklist.values())
 
         if al_to_add or al_to_remove or bl_to_add or bl_to_remove:
             log.info(

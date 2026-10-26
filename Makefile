@@ -1,6 +1,6 @@
 .PHONY: test dev rpm deb clean lint help install-deps test-deps syntax-check docs docs-serve \
         sign-rpms package package-rpm package-deb package-deps package-docker package-clean \
-        sigma-bundle
+        sigma-bundle bump-version version-check
 
 PYTHON   ?= python3
 PYTEST   ?= python3 -m pytest
@@ -72,6 +72,13 @@ sign-rpms: ## Sign all RPMs in rpmbuild/ (usage: make sign-rpms SIGN_KEY="Vespid
 
 deb: ## Build .deb packages for Debian/Ubuntu
 	./build_deb.sh
+
+bump-version: ## Bump every version reference (usage: make bump-version NEW_VERSION=1.0.4)
+	@test -n "$(NEW_VERSION)" || { echo "Usage: make bump-version NEW_VERSION=1.0.4"; exit 1; }
+	$(PYTHON) packaging/bump_version.py $(NEW_VERSION)
+
+version-check: ## Verify all version references match vespid-server/VERSION
+	$(PYTHON) packaging/bump_version.py --check
 
 # --- Unified packaging -----------------------------------------------------
 # Builds packages for every component (Python agent, server, Rust agent,

@@ -112,7 +112,7 @@ has zero impact on security-only deployments.
 make rpm
 
 # Install
-sudo rpm -ivh rpmbuild/RPMS/noarch/vespid-server-1.0.0-1.*.noarch.rpm
+sudo rpm -ivh rpmbuild/RPMS/noarch/vespid-server-1.0.3-1.*.noarch.rpm
 
 # Create the first admin user
 sudo -u vespid /opt/vespid-server/.venv/bin/python \

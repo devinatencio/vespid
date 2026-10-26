@@ -18,6 +18,8 @@ make help         # Show all targets
 | `lint` | Run ruff linter + formatter check on `vespid/` and `tests/` |
 | `rpm` | Build agent RPM package → `rpmbuild/RPMS/` |
 | `deb` | Build Debian/Ubuntu `.deb` packages via `build_deb.sh` |
+| `bump-version` | Bump every version reference (`make bump-version NEW_VERSION=1.0.4`) |
+| `version-check` | Verify all version references match `vespid-server/VERSION` |
 | `docs` | Build MkDocs documentation site → `website/docs/` |
 | `docs-serve` | Serve built docs locally at `http://localhost:8000` |
 | `clean` | Remove build artifacts (rpmbuild/, build/, dist/, `.pytest_cache`, `site/`, `website/docs/`) |
@@ -108,6 +110,24 @@ make deb
 `make package*` depends on `make package-deps`, which installs the host's
 packaging toolchain (RPM/DEB build tools, `protobuf-compiler`, and a rustup
 Rust toolchain) before building. It is idempotent, so it is cheap to re-run.
+
+### Version bumps
+
+```bash
+# Update the canonical VERSION, package manifests, RPM/Debian metadata,
+# changelog placeholders, and build-doc examples in one pass.
+make bump-version NEW_VERSION=1.0.4
+
+# Verify that no version reference has drifted.
+make version-check
+
+# Preview without writing anything.
+python3 packaging/bump_version.py --dry-run 1.0.4
+```
+
+`vespid-server/VERSION` is the canonical version. `bump-version` leaves the
+generated changelog and RPM entries as placeholders so you can describe the
+release before committing.
 
 ### CI / pre-commit
 

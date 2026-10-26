@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoints now require Analyst, closing gaps that previously let any
   logged-in user change host modes, suppress rules, acknowledge alerts, or
   edit labels.
+- `make bump-version` and `make version-check` keep package manifests,
+  changelogs, RPM/Debian metadata, and build-doc version examples in sync.
 
 ### Fixed
 
@@ -66,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under the systemd sandbox. Syncs are recorded with a valid `sigma_sync`
   audit action, and Bearer/CLI clients can call the endpoint without a
   session CSRF token.
+- Agent allowlist sync now normalizes bare IPs and CIDRs before comparing
+  them. A server entry such as `72.201.135.201` no longer flip-flops between
+  `WHITELIST_ADD` and `WHITELIST_REMOVE` every five minutes.
 
 ## [1.0.2] - 2026-10-12
 
