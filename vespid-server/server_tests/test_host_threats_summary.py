@@ -11,7 +11,7 @@ Tests cover:
 """
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -420,3 +420,46 @@ class TestSuppressionIntegration:
         top_rule_names = [r["name"] if isinstance(r, dict) else r for r in card["top_rules"]]
         assert "sigma_noisy" not in top_rule_names
         assert "sigma_real" in top_rule_names
+
+
+def test_space_formatted_host_event_included_in_window(tmp_path, monkeypatch):
+    """host_events stores space-separated timestamps; the 24h window must use
+    the same format so SQLite does not silently drop same-day events.
+
+    Regression test for the dashboard mode staying on DETECTING: when the
+    window boundary used a 'T' separator, the host's events were excluded,
+    its node_id was never resolved, and the mode fell back to 'unknown'.
+    """
+    import app.routes.host_threats as host_threats
+
+    fixed_now = datetime(2026, 10, 25, 0, 30, 0, tzinfo=UTC)
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed_now
+
+    monkeypatch.setattr(host_threats, "datetime", _FixedDateTime)
+
+    app = _create_app(tmp_path)
+    with app.app_context():
+        db = get_db(app.config["DATABASE_PATH"])
+        _create_user(db)
+        # Same calendar date as the 24h boundary (2026-10-24 00:30), and
+        # after it, but stored with a space separator like production data.
+        _insert_host_event(
+            db, "space-host", "sigma_whoami", "2026-10-24 17:43:00", "node-space"
+        )
+        _insert_node(db, "node-space", {"auditd": {"mode": "alerting"}})
+        db.close()
+
+    client = app.test_client()
+    _login(client)
+    resp = client.get("/admin/host-threats/summary?hostname=space-host")
+    assert resp.status_code == 200
+
+    cards = resp.get_json()["cards"]
+    assert len(cards) == 1, "space-formatted host event was excluded from the window"
+    assert cards[0]["hostname"] == "space-host"
+    assert cards[0]["event_count"] == 1
+    assert cards[0]["mode"] == "alerting"

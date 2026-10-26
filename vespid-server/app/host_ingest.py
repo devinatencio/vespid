@@ -8,6 +8,7 @@ Requirements: 8.2, 8.5
 """
 
 import logging
+from datetime import UTC, datetime
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +47,34 @@ def _resolve_severity_name(severity_weight) -> str | None:
         return _SEVERITY_NAME_BY_WEIGHT.get(int(severity_weight))
     except (ValueError, TypeError):
         return None
+
+
+def _normalize_host_event_ts(value) -> str:
+    """Normalize a host event timestamp to the canonical stored format.
+
+    ``host_events.timestamp`` is compared as a string by SQLite, so all rows
+    must share one shape. Agents historically send space-separated
+    timestamps (``2026-10-25 17:43:00``); ISO-8601 values with ``T``/``Z``
+    are accepted and converted. Epoch-second values are also handled.
+    """
+    text = str(value).strip()
+    if not text:
+        return text
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        try:
+            epoch = float(text)
+        except (TypeError, ValueError):
+            return text
+        if epoch > 1_000_000_000:
+            return datetime.fromtimestamp(epoch, tz=UTC).strftime("%Y-%m-%d %H:%M:%S")
+        return text
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def validate_host_threat(event: dict) -> list[str]:
@@ -98,7 +127,7 @@ def store_host_threat(db, event: dict, node_id: str) -> None:
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             str(event["hostname"]),
-            str(event["timestamp"]),
+            _normalize_host_event_ts(event["timestamp"]),
             str(event["event_type"]),
             str(event["rule_name"]),
             int(event["pid"]),

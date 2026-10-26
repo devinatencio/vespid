@@ -119,7 +119,7 @@
                 <a href="{{ url_for('dashboard.geo') }}" class="spn-item spn-item-sub {% if request.endpoint == 'dashboard.geo' %}active{% endif %}" onclick="closeSidePanel()">Geo</a>
                 <a href="{{ url_for('dashboard.trends') }}" class="spn-item spn-item-sub {% if request.endpoint == 'dashboard.trends' %}active{% endif %}" onclick="closeSidePanel()">Trends</a>
             </div>
-            {% if current_user.is_authenticated %}
+            {% if current_user.is_authenticated and current_user.role in ('admin', 'analyst', 'readonly') %}
             <div class="spn-section" data-module="security">
                 <div class="spn-section-title">🧠 Intelligence</div>
                 <a href="{{ url_for('intel_dashboard.search_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'intel_dashboard.search_page' %}active{% endif %}" onclick="closeSidePanel()">Search</a>
@@ -159,7 +159,9 @@
                 <div class="spn-section-title">🔒 Security</div>
                 <a href="{{ url_for('dashboard.blocked_ips') }}" class="spn-item spn-item-sub {% if request.endpoint == 'dashboard.blocked_ips' %}active{% endif %}" onclick="closeSidePanel()">Blocked</a>
                 <a href="{{ url_for('dashboard.feeds') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('dashboard.feeds') %}active{% endif %}" onclick="closeSidePanel()">Feeds</a>
+                {% if current_user.is_authenticated and current_user.role in ('admin', 'analyst', 'readonly') %}
                 <a href="{{ url_for('fleet_dashboard.blocks_page') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('fleet_dashboard.') %}active{% endif %}" onclick="closeSidePanel()">Fleet</a>
+                {% endif %}
                 <a href="{{ url_for('host_threats.host_threats_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'host_threats.host_threats_page' %}active{% endif %}" onclick="closeSidePanel()">Host Threats</a>
                 <a href="{{ url_for('dashboard.rules') }}" class="spn-item spn-item-sub {% if request.endpoint and request.endpoint.startswith('dashboard.rules') %}active{% endif %}" onclick="closeSidePanel()">IP Rules Management</a>
                 <a href="{{ url_for('dashboard.nodes') }}" class="spn-item spn-item-sub {% if request.endpoint in ['dashboard.nodes', 'dashboard.node_detail'] %}active{% endif %}" onclick="closeSidePanel()">Nodes</a>

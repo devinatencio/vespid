@@ -25,6 +25,7 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 from flask_login import login_required
 
 from app.config_resolution import resolve_effective_profile
+from app.decorators import require_role
 from app.default_noise_rules import is_default_noise
 from app.models import create_command, get_db
 
@@ -35,6 +36,18 @@ host_threats_bp = Blueprint(
     __name__,
     template_folder="templates",
 )
+
+
+def _host_event_ts(dt: datetime) -> str:
+    """Format a datetime for comparisons against ``host_events.timestamp``.
+
+    ``host_events`` stores timestamps with a space separator
+    (``2026-10-25 17:43:00``). SQLite compares those strings
+    lexicographically, so a boundary using a ``T`` separator would silently
+    drop same-day events. MySQL normalizes parameters, but using the stored
+    format keeps both backends consistent.
+    """
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 # ── ATT&CK Tactic Color Mapping ─────────────────────────────────────────────
 # Maps Sigma rule tag prefixes to human-readable tactic names and Chart.js colors.
@@ -520,7 +533,7 @@ def kill_chain_timeline():
     # Compute time boundary
     now = datetime.now(UTC)
     since = now - timedelta(hours=hours)
-    since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    since_iso = _host_event_ts(since)
 
     db_path = current_app.config["DATABASE_PATH"]
     db = get_db(db_path)
@@ -683,7 +696,7 @@ def score_history():
     num_points = 288
     interval = timedelta(hours=hours) / (num_points - 1)
 
-    start_iso = start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    start_iso = _host_event_ts(start)
 
     db_path = current_app.config["DATABASE_PATH"]
     db = get_db(db_path)
@@ -836,7 +849,7 @@ def host_summary_cards():
     # Past 24 hours
     now = datetime.now(UTC)
     since = now - timedelta(hours=24)
-    since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    since_iso = _host_event_ts(since)
     now_epoch = now.timestamp()
 
     db_path = current_app.config["DATABASE_PATH"]
@@ -1072,7 +1085,7 @@ def host_summary_cards():
 
 
 @host_threats_bp.route("/admin/host-threats/suppress", methods=["POST"])
-@login_required
+@require_role("analyst")
 def suppress_rules():
     """Apply bulk rule suppression to a host's config profile.
 
@@ -1183,7 +1196,7 @@ def suppress_rules():
 
 
 @host_threats_bp.route("/admin/host-threats/disable-rules", methods=["POST"])
-@login_required
+@require_role("analyst")
 def disable_host_threat_rules():
     """Apply bulk rule disable to a host's config profile.
 
@@ -1278,7 +1291,7 @@ def disable_host_threat_rules():
 
 
 @host_threats_bp.route("/admin/host-threats/unsuppress", methods=["POST"])
-@login_required
+@require_role("analyst")
 def unsuppress_rules():
     """Remove rules from a host's suppress_rules list.
 
@@ -1370,7 +1383,7 @@ def unsuppress_rules():
 
 
 @host_threats_bp.route("/admin/host-threats/enable-rules", methods=["POST"])
-@login_required
+@require_role("analyst")
 def enable_host_threat_rules():
     """Remove rules from a host's disabled_host_threat_rules list.
 
@@ -1463,7 +1476,7 @@ def enable_host_threat_rules():
 
 
 @host_threats_bp.route("/admin/host-threats/set-mode", methods=["POST"])
-@login_required
+@require_role("analyst")
 def set_host_threat_mode():
     """Set the auditd mode for a host via a queued server command.
 
@@ -2004,7 +2017,7 @@ def _dispatch_host_alert_notification(
 
 
 @host_threats_bp.route("/admin/host-threats/acknowledge", methods=["POST"])
-@login_required
+@require_role("analyst")
 def acknowledge_host_alert():
     """Acknowledge a host threat alert notification.
 
@@ -2164,7 +2177,7 @@ def host_threat_alert_config():
 
 
 @host_threats_bp.route("/admin/host-threats/alert-config", methods=["POST"])
-@login_required
+@require_role("analyst")
 def host_threat_alert_config_save():
     """Create or update a host threat alert config for a profile.
 
@@ -2223,7 +2236,7 @@ def host_threat_alert_config_save():
 
 
 @host_threats_bp.route("/admin/host-threats/alert-config/<int:profile_id>", methods=["DELETE"])
-@login_required
+@require_role("analyst")
 def host_threat_alert_config_delete(profile_id: int):
     """Delete a host threat alert config for a profile."""
     db_path = current_app.config["DATABASE_PATH"]
@@ -2402,7 +2415,7 @@ def evaluate_host_threat_alerts(db) -> None:
     """
     now = datetime.now(UTC)
     since = now - timedelta(hours=24)
-    since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    since_iso = _host_event_ts(since)
     now_epoch = now.timestamp()
 
     try:
@@ -2479,7 +2492,7 @@ def host_production_view():
 
     now = datetime.now(UTC)
     since = now - timedelta(hours=24)
-    since_iso = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+    since_iso = _host_event_ts(since)
     now_epoch = now.timestamp()
 
     db_path = current_app.config["DATABASE_PATH"]
@@ -2839,8 +2852,8 @@ def noise_analysis():
         # Convert epochs to ISO strings for the query
         learning_start_dt = datetime.fromtimestamp(started_epoch, tz=UTC)
         learning_end_dt = datetime.fromtimestamp(end_epoch, tz=UTC)
-        learning_start_iso = learning_start_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-        learning_end_iso = learning_end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        learning_start_iso = _host_event_ts(learning_start_dt)
+        learning_end_iso = _host_event_ts(learning_end_dt)
 
         # Query host_events using the composite index idx_host_events_hostname_timestamp
         rows = db.execute(

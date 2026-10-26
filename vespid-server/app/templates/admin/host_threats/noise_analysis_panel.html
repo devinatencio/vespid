@@ -2,6 +2,13 @@
 <!-- Displays learning-period detection rules ranked by fire count for bulk suppression -->
 <!-- Opened when a user clicks a host card on the Summary Cards panel -->
 <!-- Columns: checkbox, rule name, fire count, severity, sample command -->
+{% set can_edit_host_threats = current_user.is_authenticated and current_user.role in ('admin', 'analyst') %}
+{% if not can_edit_host_threats %}
+<style>
+#noise-controls { display: none !important; }
+.noise-table .col-checkbox { display: none; }
+</style>
+{% endif %}
 <div id="noise-analysis-panel" class="card noise-panel" style="margin-bottom:1.5rem; display:none;">
     <div class="noise-panel-header">
         <div style="display:flex; flex-direction:column; gap:0.25rem;">

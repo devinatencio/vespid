@@ -234,6 +234,62 @@ def _close_request_db(exception: Exception | None) -> None:
         del g._request_db
 
 
+def _migrate_sqlite_users_readonly_role(conn) -> None:
+    """Rebuild the SQLite users table when its role CHECK predates 'readonly'.
+
+    SQLite cannot ALTER a CHECK constraint. The table is rebuilt with the same
+    columns and foreign keys disabled for the swap; child tables' ``REFERENCES
+    users(id)`` clauses continue to point at the recreated table.
+    """
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'"
+        ).fetchone()
+        table_sql = (row[0] if row else "") or ""
+        if not table_sql or "readonly" in table_sql:
+            return
+
+        logger.info("Rebuilding users table to allow the 'readonly' role")
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys=OFF")
+        conn.executescript("""
+            DROP TABLE IF EXISTS users_new;
+            CREATE TABLE users_new (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                username        TEXT    NOT NULL UNIQUE,
+                password_hash   TEXT    NOT NULL,
+                role            TEXT    NOT NULL DEFAULT 'viewer'
+                                CHECK(role IN ('admin', 'analyst', 'readonly', 'viewer')),
+                created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+                last_login_at   TEXT,
+                display_name    TEXT    NOT NULL DEFAULT '',
+                theme           TEXT    NOT NULL DEFAULT 'dark'
+                                CHECK(theme IN ('dark', 'light', 'nord', 'vespid')),
+                failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+                locked_until    TEXT,
+                onboarding_dismissed INTEGER NOT NULL DEFAULT 0,
+                brand_beam_enabled INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO users_new
+                (id, username, password_hash, role, created_at, last_login_at,
+                 display_name, theme, failed_login_attempts, locked_until,
+                 onboarding_dismissed, brand_beam_enabled)
+            SELECT id, username, password_hash, role, created_at, last_login_at,
+                   display_name, theme, failed_login_attempts, locked_until,
+                   onboarding_dismissed, brand_beam_enabled
+            FROM users;
+            DROP TABLE users;
+            ALTER TABLE users_new RENAME TO users;
+            DELETE FROM sqlite_sequence WHERE name IN ('users', 'users_new');
+            INSERT INTO sqlite_sequence (name, seq)
+                SELECT 'users', COALESCE(MAX(id), 0) FROM users;
+        """)
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("Could not migrate users role CHECK: %s", exc)
+
+
 def init_db(db_config: str | dict) -> None:
     """Initialize the database schema.
 
@@ -1096,6 +1152,10 @@ def _migrate(conn, db_type: str = "sqlite") -> None:
     if "brand_beam_enabled" not in user_cols:
         conn.execute("ALTER TABLE users ADD COLUMN brand_beam_enabled INTEGER NOT NULL DEFAULT 1")
         conn.commit()
+
+    # Migration 14b: allow the 'readonly' role in the users table (SQLite)
+    if db_type == "sqlite":
+        _migrate_sqlite_users_readonly_role(conn)
 
     # Migration 15: add check_results table for health-check / Nagios-style results
     if "check_results" not in tables:
@@ -2792,7 +2852,7 @@ CREATE TABLE IF NOT EXISTS users (
     username        TEXT    NOT NULL UNIQUE,
     password_hash   TEXT    NOT NULL,
     role            TEXT    NOT NULL DEFAULT 'viewer'
-                    CHECK(role IN ('admin', 'analyst', 'viewer')),
+                    CHECK(role IN ('admin', 'analyst', 'readonly', 'viewer')),
     created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     last_login_at   TEXT,
     display_name    TEXT    NOT NULL DEFAULT '',

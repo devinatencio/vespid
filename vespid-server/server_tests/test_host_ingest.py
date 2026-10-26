@@ -335,3 +335,12 @@ class TestHostThreatIngestAPI:
             assert len(row["command_line"]) == 32768
         finally:
             db.close()
+
+
+def test_normalize_host_event_ts_handles_iso_and_space():
+    """Ingest normalizes both agent-provided formats to the stored format."""
+    from app.host_ingest import _normalize_host_event_ts
+
+    assert _normalize_host_event_ts("2026-10-25T17:43:00Z") == "2026-10-25 17:43:00"
+    assert _normalize_host_event_ts("2026-10-25T17:43:00+00:00") == "2026-10-25 17:43:00"
+    assert _normalize_host_event_ts("2026-10-25 17:43:00") == "2026-10-25 17:43:00"

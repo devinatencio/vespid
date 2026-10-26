@@ -296,7 +296,7 @@ def create_user_endpoint():
         flash("Username and password are required.", "error")
         return redirect(url_for("admin.users"))
 
-    if role not in ("admin", "analyst", "viewer"):
+    if role not in ("admin", "analyst", "readonly", "viewer"):
         flash("Invalid role.", "error")
         return redirect(url_for("admin.users"))
 
@@ -338,7 +338,7 @@ def change_user_role(user_id):
         new_role = data.get("role", "").strip()
     else:
         new_role = request.form.get("role", "").strip()
-    if new_role not in ("admin", "analyst", "viewer"):
+    if new_role not in ("admin", "analyst", "readonly", "viewer"):
         if _wants_json():
             return jsonify({"error": "invalid_role", "message": f"Invalid role '{new_role}'"}), 400
         return "Invalid role", 400

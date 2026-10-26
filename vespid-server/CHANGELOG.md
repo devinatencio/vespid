@@ -9,12 +9,18 @@
   and appear in the IP detail history timeline
 - `repair_block_episodes.py` for correcting historical block episode counts
   (`--dry-run` supported)
+- `readonly` role with analyst-level reads and no write endpoints; host-threat
+  and inventory-label writes now require Analyst
 
 ### Fixed
 - `block_episode_count` no longer misses re-block episodes when the
   propagation engine writes `last_blocked_at` before the intel upsert
 - Episode and Block Status comparisons parse timestamps, so mixed agent/server
   formats no longer misorder same-day values
+- Host Threats mode changes now wait for the agent heartbeat and no longer
+  fall back to a hardcoded DETECTING label
+- Host event time windows now use the stored timestamp format, fixing dropped
+  events on SQLite deployments
 
 ## 1.0.2 — 2026-10-12
 

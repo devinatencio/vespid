@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Host Threats Dashboard — Vespid Server{% endblock %}
 {% block content %}
+{% set can_edit_host_threats = current_user.is_authenticated and current_user.role in ('admin', 'analyst') %}
 {% include "admin/_admin_nav.html" %}
 
 <div class="card" style="padding:1rem 1.25rem;margin-bottom:0.5rem;display:flex;align-items:center;gap:1rem;">
@@ -78,6 +79,7 @@
      ═══════════════════════════════════════════════════════════════════════════ -->
 <div id="panel-notifications" style="display:none;">
     <!-- Alert Configuration Management -->
+    {% if can_edit_host_threats %}
     <div class="card" style="margin-bottom:1rem;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
             <h2 class="card-title" style="margin:0;">Alert Configuration</h2>
@@ -86,6 +88,7 @@
             <p style="color:var(--text-muted); text-align:center; padding:1rem 0;">Loading configuration…</p>
         </div>
     </div>
+    {% endif %}
 
     <!-- Notification History -->
     <div class="card">
@@ -120,11 +123,14 @@
         </a>
         <span id="detail-host-title" style="margin-left:1rem; font-size:1rem; font-weight:600; color:var(--text); vertical-align:middle;"></span>
         <select id="detail-mode-select" onchange="changeHostMode(this)"
+                {% if not can_edit_host_threats %}disabled title="Read-only role"{% endif %}
                 style="margin-left:0.75rem; padding:0.25rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.75rem; font-weight:600; text-transform:uppercase; vertical-align:middle; background:var(--bg-input); color:var(--text); cursor:pointer;">
+            <option value="" selected disabled>Mode…</option>
             <option value="learning">Learning</option>
-            <option value="detecting" selected>Detecting</option>
+            <option value="detecting">Detecting</option>
             <option value="alerting">Alerting</option>
         </select>
+        <span id="detail-mode-status" style="margin-left:0.5rem; font-size:0.7rem; color:var(--text-muted); vertical-align:middle;"></span>
     </div>
 
     <!-- Noise Analysis Panel -->
@@ -200,7 +206,7 @@
         if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
         var orig = el.textContent;
         el.textContent = msg;
-        el.style.color = type === 'error' ? '#DC2626' : '#16A34A';
+        el.style.color = type === 'error' ? '#DC2626' : (type === 'warning' ? '#B45309' : '#16A34A');
         _toastTimer = setTimeout(function() {
             el.textContent = orig;
             el.style.color = '';
@@ -329,11 +335,47 @@
             });
     }
 
+    var _VALID_HOST_MODES = ['learning', 'detecting', 'alerting'];
+    var _modePollSeq = 0;
+    window.CAN_EDIT_HOST_THREATS = {{ 'true' if can_edit_host_threats else 'false' }};
+
+    function fetchHostMode(hostname) {
+        return fetch('/admin/host-threats/summary?hostname=' + encodeURIComponent(hostname) + '&per_page=1')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (!data || !data.cards || data.cards.length === 0) return null;
+                return data.cards[0].mode || null;
+            });
+    }
+
+    function waitForHostMode(hostname, desiredMode, timeoutMs) {
+        var deadline = Date.now() + timeoutMs;
+        return new Promise(function(resolve) {
+            function poll() {
+                fetchHostMode(hostname).then(function(currentMode) {
+                    if (currentMode === desiredMode) { resolve(true); return; }
+                    if (Date.now() >= deadline) { resolve(false); return; }
+                    setTimeout(poll, 5000);
+                }).catch(function() {
+                    if (Date.now() >= deadline) { resolve(false); return; }
+                    setTimeout(poll, 5000);
+                });
+            }
+            poll();
+        });
+    }
+
     /**
      * Change the auditd mode for a host via the set-mode endpoint.
+     *
+     * The endpoint only queues a command; the agent reports the new mode on
+     * its next heartbeat. Poll the summary endpoint until the host confirms
+     * instead of claiming success immediately.
      */
     window.changeHostMode = function(selectEl) {
+        if (!window.CAN_EDIT_HOST_THREATS) return;
         var mode = selectEl.value;
+        if (!mode) return;
         var hostname = selectEl.getAttribute('data-hostname');
         /* If the select is in the detail view, read hostname from the title */
         if (!hostname) {
@@ -342,16 +384,20 @@
         }
         if (!hostname) return;
 
+        var prevMode = selectEl.getAttribute('data-prev-mode') || '';
+        var statusEl = document.getElementById('detail-mode-status');
+
         /* Confirm for going to alerting mode */
         if (mode === 'alerting') {
             if (!confirm('Switch ' + hostname + ' to ALERTING mode? This will enable threshold-based alert dispatch.')) {
-                /* Reset to previous value */
-                selectEl.value = selectEl.getAttribute('data-prev-mode') || 'detecting';
+                selectEl.value = prevMode;
                 return;
             }
         }
 
+        var seq = ++_modePollSeq;
         selectEl.disabled = true;
+        if (statusEl) statusEl.textContent = '';
 
         fetch('/admin/host-threats/set-mode', {
             method: 'POST',
@@ -361,20 +407,33 @@
         .then(function(r) { return r.json(); })
         .then(function(result) {
             if (result.success) {
-                showToast('Mode changed to ' + mode.toUpperCase() + ' for ' + hostname, 'success');
-                /* Refresh production view and summary cards */
-                loadProductionView();
-                var summaryGrid = document.getElementById('host-summary-grid');
-                if (summaryGrid) htmx.trigger(summaryGrid, 'load');
+                selectEl.setAttribute('data-prev-mode', mode);
+                if (statusEl) statusEl.textContent = 'Applying…';
+                showToast('Mode change queued; waiting for ' + hostname + ' to confirm…', 'info');
+                waitForHostMode(hostname, mode, 5 * 60 * 1000).then(function(confirmed) {
+                    if (seq !== _modePollSeq) return;  /* superseded by a newer change */
+                    if (statusEl) statusEl.textContent = confirmed ? '' : 'Pending next heartbeat';
+                    if (confirmed) {
+                        showToast('Mode confirmed: ' + mode.toUpperCase() + ' for ' + hostname, 'success');
+                    } else {
+                        showToast('Mode queued, but ' + hostname + ' has not confirmed yet (next heartbeat).', 'warning');
+                    }
+                    /* Refresh the production table and summary cards */
+                    loadProductionView();
+                    var summaryGrid = document.getElementById('host-summary-grid');
+                    if (summaryGrid) htmx.trigger(summaryGrid, 'load');
+                });
             } else {
                 var errMsg = result.error || 'Unknown error';
                 showToast('Mode change failed: ' + errMsg, 'error');
-                selectEl.value = selectEl.getAttribute('data-prev-mode') || 'detecting';
+                selectEl.value = prevMode;
+                if (statusEl) statusEl.textContent = '';
             }
         })
         .catch(function() {
             showToast('Mode change failed: network error.', 'error');
-            selectEl.value = selectEl.getAttribute('data-prev-mode') || 'detecting';
+            selectEl.value = prevMode;
+            if (statusEl) statusEl.textContent = '';
         })
         .finally(function() {
             selectEl.disabled = false;
@@ -593,7 +652,11 @@
                         html += '<td>—</td>';
                     } else {
                         html += '<td>—</td>';
-                        html += '<td><button class="notif-ack-btn" onclick="acknowledgeNotification(\'' + escapeHtml(n.hostname) + '\', this)">Acknowledge</button></td>';
+                        if (window.CAN_EDIT_HOST_THREATS) {
+                            html += '<td><button class="notif-ack-btn" onclick="acknowledgeNotification(\'' + escapeHtml(n.hostname) + '\', this)">Acknowledge</button></td>';
+                        } else {
+                            html += '<td>—</td>';
+                        }
                     }
 
                     html += '</tr>';
@@ -611,6 +674,7 @@
      * Acknowledge a host threat alert notification.
      */
     window.acknowledgeNotification = function(hostname, btn) {
+        if (!window.CAN_EDIT_HOST_THREATS) return;
         if (!hostname) return;
 
         btn.disabled = true;
@@ -669,9 +733,17 @@
             detailTitle.innerHTML = escapeHtml(hostname) + agentBadge + versionStr;
         }
         if (modeSelect) {
-            modeSelect.value = mode;
+            var safeMode = _VALID_HOST_MODES.indexOf(String(mode || '').toLowerCase()) !== -1
+                ? String(mode).toLowerCase() : '';
+            modeSelect.value = safeMode;
             modeSelect.setAttribute('data-hostname', hostname);
-            modeSelect.setAttribute('data-prev-mode', mode);
+            modeSelect.setAttribute('data-prev-mode', safeMode);
+            var modeStatusEl = document.getElementById('detail-mode-status');
+            if (modeStatusEl) {
+                modeStatusEl.textContent = !window.CAN_EDIT_HOST_THREATS
+                    ? 'read-only'
+                    : (safeMode ? '' : 'mode unavailable');
+            }
         }
 
         /* Set the global hostname filter to match */

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ asset.display_name }} — Inventory{% endblock %}
 {% block content %}
+{% set can_edit_inventory = current_user.is_authenticated and current_user.role in ('admin', 'analyst') %}
 <div class="page-container">
     <div class="content-card">
         <div class="mb-2">
@@ -31,13 +32,17 @@
                     <span class="inv-label-key">{{ k }}</span>
                     <span class="inv-label-val">{{ v }}</span>
                     {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                    {% if can_edit_inventory %}
                     <button class="inv-label-del" onclick="deleteLabel('{{ asset.asset_id }}', '{{ k }}')" title="Remove &quot;{{ k }}&quot;">&times;</button>
+                    {% endif %}
                     {% endif %}
                 </span>
                 {% endfor %}
                 {% endif %}
                 {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                {% if can_edit_inventory %}
                 <button class="inv-label-add-btn" onclick="showAddLabel('{{ asset.asset_id }}')" title="Add label">+ Add</button>
+                {% endif %}
                 {% endif %}
             </div>
             <div id="heroLabelForm" class="inv-label-form" style="display:none;">

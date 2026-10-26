@@ -58,6 +58,7 @@
                 <label for="modal-role">Role</label>
                 <select id="modal-role" name="role" style="width:100%;box-sizing:border-box;">
                     <option value="viewer">Viewer</option>
+                    <option value="readonly">Read-only</option>
                     <option value="analyst">Analyst</option>
                     <option value="admin">Admin</option>
                 </select>
@@ -135,6 +136,7 @@
                           style="display:inline-flex; gap:0.25rem; align-items:center;">
                         <select name="role" style="padding:0.2rem; font-size:0.8rem;">
                             <option value="viewer" {% if user.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                            <option value="readonly" {% if user.role == 'readonly' %}selected{% endif %}>Read-only</option>
                             <option value="analyst" {% if user.role == 'analyst' %}selected{% endif %}>Analyst</option>
                             <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
                         </select>

@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `repair_block_episodes.py` — a one-off, conservative repair for historical
   `block_episode_count` values. It backfills `last_episode_block_at`, never
   decreases a counter, and supports `--dry-run`.
+- **Read-only role** — `readonly` grants analyst-level read access (IP
+  Intelligence, Fleet, Host Threats, inventory, dashboards, exports) while
+  denying every POST/PUT/PATCH/DELETE. Host-threat and inventory-label write
+  endpoints now require Analyst, closing gaps that previously let any
+  logged-in user change host modes, suppress rules, acknowledge alerts, or
+  edit labels.
 
 ### Fixed
 
@@ -29,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comparing raw strings, fixing misordering when agent
   (`2026-10-25 14:45:01`) and server (`2026-10-25T14:45:04Z`) formats were
   mixed.
+- Host Threats Dashboard mode changes now show an "Applying…" state and poll
+  for the agent's next heartbeat instead of reporting success immediately; the
+  mode select no longer falls back to a hardcoded DETECTING label.
+- Host Threat time-window queries now use the same space-separated timestamp
+  format as `host_events`, so recent events are not dropped on SQLite
+  deployments (which previously left the reported mode as `unknown`).
 - Multi-signal correlation no longer counts ordinary successful HTTP responses
   (`apache_other` / `haproxy_other`) as a distinct signal category. A
   legitimate browser session that mixes normal 2xx traffic with a transient

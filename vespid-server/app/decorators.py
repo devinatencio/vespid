@@ -14,12 +14,14 @@ from flask import abort, jsonify, redirect, request, url_for
 from flask_login import current_user, login_user
 
 # Role hierarchy: admin > analyst > viewer
+# 'readonly' shares analyst's read access but is never allowed to write.
 # 'agent' keys are treated as admin-level (they are server-trusted API keys
 # used by nodes and the CLI for full operational access).
 ROLE_HIERARCHY = {
     "admin": 3,
     "agent": 3,
     "analyst": 2,
+    "readonly": 2,
     "viewer": 1,
 }
 
@@ -98,6 +100,9 @@ def require_role(*roles: str):
     If a route requires 'viewer', then analyst and admin can also access it.
     If a route requires 'analyst', then admin can also access it.
 
+    The special 'readonly' role has analyst-level read access but is denied
+    any non-GET/HEAD/OPTIONS request, regardless of the route's required role.
+
     Supports Bearer token auth for API/CLI clients. Returns JSON errors
     for API requests instead of HTML redirects.
 
@@ -130,6 +135,21 @@ def require_role(*roles: str):
                 if _is_api_request():
                     return jsonify(
                         {"error": "forbidden", "message": f"Requires role: {', '.join(roles)}"}
+                    ), 403
+                abort(403)
+
+            # The readonly role can see everything analyst can see, but must
+            # never mutate state. Account self-service routes (password,
+            # theme, display name) use @login_required instead, so they are
+            # intentionally unaffected.
+            if current_user.role == "readonly" and request.method not in (
+                "GET",
+                "HEAD",
+                "OPTIONS",
+            ):
+                if _is_api_request():
+                    return jsonify(
+                        {"error": "forbidden", "message": "Read-only role cannot modify data"}
                     ), 403
                 abort(403)
 

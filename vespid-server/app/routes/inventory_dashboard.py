@@ -319,7 +319,7 @@ def delete(asset_id: str):
 
 
 @inventory_bp.route("/<asset_id>/labels", methods=["POST"])
-@require_role("viewer")
+@require_role("analyst")
 def set_labels(asset_id: str):
     """Merge key/value labels into an asset."""
     data = request.get_json(silent=True) or {}
@@ -355,7 +355,7 @@ def set_labels(asset_id: str):
 
 
 @inventory_bp.route("/<asset_id>/labels/<key>", methods=["DELETE"])
-@require_role("viewer")
+@require_role("analyst")
 def delete_label(asset_id: str, key: str):
     """Remove a single label key from an asset."""
     if not key or len(key) > 64:

@@ -91,7 +91,13 @@ def _check_analyst_role():
     """
     # If authenticated via session, check role
     if current_user.is_authenticated:
-        role_hierarchy = {"admin": 3, "analyst": 2, "viewer": 1}
+        role_hierarchy = {
+            "admin": 3,
+            "agent": 3,
+            "analyst": 2,
+            "readonly": 2,
+            "viewer": 1,
+        }
         user_level = role_hierarchy.get(current_user.role, 0)
         required_level = role_hierarchy.get("analyst", 2)
         if user_level < required_level:

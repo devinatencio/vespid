@@ -164,6 +164,15 @@ stateDiagram-v2
     Learning --> Alerting: operator config change
 ```
 
+### Changing Mode from the Dashboard
+
+Mode changes made from the Host Threats Dashboard are queued as a
+`set_auditd_mode` command for the agent. The agent applies the command on its
+next poll and reports the new mode in its next heartbeat
+(`nodes.last_host_info.auditd.mode`). The dashboard shows **Applying…** and
+polls until the host confirms, so the change is not instant — a page refreshed
+before the heartbeat may still show the previous mode.
+
 ### Learning Mode
 
 - **Duration**: Configurable (default 24 hours)

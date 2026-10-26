@@ -272,8 +272,8 @@ Register with `app.register_api(my_bp)` instead of `app.register_blueprint()`.
 |------|-------|--------|
 | **Dashboard** | Overview (stats, charts, live feed) | All roles |
 | **Analytics** | Events, Counters, Geo, Trends | All roles |
-| **Intelligence** | IP Search, Threat Metrics | Analyst+ |
-| **Security** | Blocked IPs, Feeds, Fleet, IP Rules, Nodes, Detection Rules | Viewer (read) / Analyst+ (actions) |
+| **Intelligence** | IP Search, Threat Metrics | Analyst+ (read-only included) |
+| **Security** | Blocked IPs, Feeds, Fleet, IP Rules, Nodes, Detection Rules | Viewer (read) / Analyst+ (actions); read-only sees Analyst reads |
 | **Admin** | Users, API Keys, Audit Log, Enrollment, Config Management, Test Rules | Admin only |
 
 ### Key pages
@@ -359,8 +359,15 @@ Statuses: `pending` → `acknowledged` → `completed` / `failed` / `expired`.
 | Role | Dashboard | Analytics | Intelligence | Security | Export | Admin |
 |------|-----------|-----------|--------------|----------|--------|-------|
 | **viewer** | ✓ | Events, Counters, Geo, Trends | — | Blocked, Nodes (read) | — | — |
+| **readonly** | ✓ | All | Search, Threat Metrics | All (read-only) | ✓ | — |
 | **analyst** | ✓ | All | Search, Threat Metrics | All (actions) | ✓ | — |
 | **admin** | ✓ | All | All (+ Intel Admin) | All (+ Detection Rules) | ✓ | ✓ |
+
+`readonly` has the same read access as `analyst`, but every write endpoint
+(POST/PUT/PATCH/DELETE) is denied. Account self-service (password, theme,
+display name) still works. Use it for public demos and audit users who should
+see IP Intelligence and Fleet without being able to block, unblock, change
+host-threat modes, or edit configuration.
 
 ## Metrics (optional)
 

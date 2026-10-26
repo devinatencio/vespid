@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Host: {{ hostname }} — Host Threats{% endblock %}
 {% block content %}
+{% set can_edit_host_threats = current_user.is_authenticated and current_user.role in ('admin', 'analyst') %}
 {% include "admin/_admin_nav.html" %}
 
 {% if not_found %}
@@ -22,11 +23,14 @@
         <div class="hero-badges">
             <span class="agent-badge agent-online" id="host-agent-badge" style="display:none;">—</span>
             <select id="detail-mode-select" onchange="changeHostMode(this)"
+                    {% if not can_edit_host_threats %}disabled title="Read-only role"{% endif %}
                     style="padding:0.25rem 0.5rem; border:1px solid var(--border); border-radius:4px; font-size:0.75rem; font-weight:600; text-transform:uppercase; background:var(--bg-input); color:var(--text); cursor:pointer;">
+                <option value="" selected disabled>Mode…</option>
                 <option value="learning">Learning</option>
-                <option value="detecting" selected>Detecting</option>
+                <option value="detecting">Detecting</option>
                 <option value="alerting">Alerting</option>
             </select>
+            <span id="detail-mode-status" style="margin-left:0.5rem; font-size:0.7rem; color:var(--text-muted);"></span>
         </div>
     </div>
 </div>
@@ -130,7 +134,7 @@
         if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
         var orig = el.textContent;
         el.textContent = msg;
-        el.style.color = type === 'error' ? '#DC2626' : '#16A34A';
+        el.style.color = type === 'error' ? '#DC2626' : (type === 'warning' ? '#B45309' : '#16A34A');
         _toastTimer = setTimeout(function() { el.textContent = orig; el.style.color = ''; }, 5000);
     }
 
@@ -146,11 +150,51 @@
     }
 
     /* ── Mode Change ──────────────────────────────────────────── */
+    var _VALID_HOST_MODES = ['learning', 'detecting', 'alerting'];
+    var _modePollSeq = 0;
+    window.CAN_EDIT_HOST_THREATS = {{ 'true' if can_edit_host_threats else 'false' }};
+
+    function fetchHostMode(hostname) {
+        return fetch('/admin/host-threats/summary?hostname=' + encodeURIComponent(hostname) + '&per_page=1')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (!data || !data.cards || data.cards.length === 0) return null;
+                return data.cards[0].mode || null;
+            });
+    }
+
+    function waitForHostMode(hostname, desiredMode, timeoutMs) {
+        var deadline = Date.now() + timeoutMs;
+        return new Promise(function(resolve) {
+            function poll() {
+                fetchHostMode(hostname).then(function(currentMode) {
+                    if (currentMode === desiredMode) { resolve(true); return; }
+                    if (Date.now() >= deadline) { resolve(false); return; }
+                    setTimeout(poll, 5000);
+                }).catch(function() {
+                    if (Date.now() >= deadline) { resolve(false); return; }
+                    setTimeout(poll, 5000);
+                });
+            }
+            poll();
+        });
+    }
+
     window.changeHostMode = function(selectEl) {
+        if (!window.CAN_EDIT_HOST_THREATS) return;
         var mode = selectEl.value;
-        var prevMode = selectEl.getAttribute('data-prev-mode') || 'unknown';
+        if (!mode) return;
+        var prevMode = selectEl.getAttribute('data-prev-mode') || '';
         if (mode === prevMode) return;
-        if (!confirm('Change host mode to ' + mode.toUpperCase() + '?')) { selectEl.value = prevMode; return; }
+        if (!confirm('Change host mode to ' + mode.toUpperCase() + '? This is applied by the agent on its next heartbeat.')) {
+            selectEl.value = prevMode;
+            return;
+        }
+        var statusEl = document.getElementById('detail-mode-status');
+        var seq = ++_modePollSeq;
+        selectEl.disabled = true;
+        if (statusEl) statusEl.textContent = '';
+
         fetch('/admin/host-threats/set-mode', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -159,16 +203,32 @@
         .then(function(r) { return r.json(); })
         .then(function(result) {
             if (result.success) {
-                showToast('Mode changed to ' + mode, 'success');
                 selectEl.setAttribute('data-prev-mode', mode);
+                if (statusEl) statusEl.textContent = 'Applying…';
+                showToast('Mode change queued; waiting for the host to confirm…', 'info');
+                waitForHostMode(hostname, mode, 5 * 60 * 1000).then(function(confirmed) {
+                    if (seq !== _modePollSeq) return;  /* superseded by a newer change */
+                    if (statusEl) statusEl.textContent = confirmed ? '' : 'Pending next heartbeat';
+                    if (confirmed) {
+                        window._noiseHostMode = mode;
+                        showToast('Mode confirmed: ' + mode.toUpperCase(), 'success');
+                    } else {
+                        showToast('Mode queued, but the host has not confirmed yet (next heartbeat).', 'warning');
+                    }
+                });
             } else {
                 showToast('Mode change failed: ' + (result.error || 'unknown'), 'error');
                 selectEl.value = prevMode;
+                if (statusEl) statusEl.textContent = '';
             }
         })
         .catch(function() {
             showToast('Mode change failed: network error', 'error');
             selectEl.value = prevMode;
+            if (statusEl) statusEl.textContent = '';
+        })
+        .finally(function() {
+            selectEl.disabled = false;
         });
     };
 
@@ -187,10 +247,19 @@
                     badgeEl.style.display = 'inline';
                 }
                 var modeSelect = document.getElementById('detail-mode-select');
-                if (modeSelect && card.mode) {
-                    modeSelect.value = card.mode;
-                    modeSelect.setAttribute('data-prev-mode', card.mode);
-                    window._noiseHostMode = card.mode;
+                if (modeSelect) {
+                    var mode = String(card.mode || '').toLowerCase();
+                    var statusEl = document.getElementById('detail-mode-status');
+                    if (_VALID_HOST_MODES.indexOf(mode) !== -1) {
+                        modeSelect.value = mode;
+                        modeSelect.setAttribute('data-prev-mode', mode);
+                        window._noiseHostMode = mode;
+                        if (statusEl) statusEl.textContent = window.CAN_EDIT_HOST_THREATS ? '' : 'read-only';
+                    } else {
+                        modeSelect.value = '';
+                        modeSelect.setAttribute('data-prev-mode', '');
+                        if (statusEl) statusEl.textContent = 'mode unavailable';
+                    }
                 }
             })
             .catch(function() {});
