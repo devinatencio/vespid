@@ -29,7 +29,8 @@
   keeps `contains`/`startswith`/`endswith` modifiers, skips locally edited
   rules, keeps the raised 3/300 thresholds for the two noisy UA rules,
   resolves the importer and packs paths in both source-tree and installed
-  layouts, and records a valid `sigma_sync` audit action
+  layouts, records a valid `sigma_sync` audit action, and accepts
+  Bearer/CLI clients without a session CSRF token
 - The server systemd unit grants the Sigma importer a writable packs
   directory and an upstream-rule cache under `ProtectSystem=strict`
 

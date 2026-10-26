@@ -30,3 +30,26 @@ def test_sigma_sync_skips_user_modified_rules(admin_client, db):
     ).fetchone()
     assert row["regex"] == "custom-regex"
     assert int(row["user_modified"]) == 1
+
+
+def test_sigma_sync_accepts_bearer_without_csrf(app, client, db, api_key):
+    """The CLI uses Bearer auth; the sync view must be CSRF-exempt."""
+    db.execute(
+        "UPDATE api_keys SET role = 'admin' WHERE label = ?",
+        ("test-api-key",),
+    )
+    db.commit()
+    app.config["WTF_CSRF_ENABLED"] = True
+
+    fake_run = MagicMock(returncode=0, stdout="sync ok", stderr="")
+    with patch("subprocess.run", return_value=fake_run):
+        response = client.post(
+            "/api/v1/rules/sigma/sync",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+            },
+        )
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    assert response.get_json()["ok"] is True

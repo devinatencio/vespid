@@ -64,7 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Sigma sync endpoint now finds `sigma_import.py` and writes generated
   packs correctly in both the source-tree and installed layouts, including
   under the systemd sandbox. Syncs are recorded with a valid `sigma_sync`
-  audit action.
+  audit action, and Bearer/CLI clients can call the endpoint without a
+  session CSRF token.
 
 ## [1.0.2] - 2026-10-12
 

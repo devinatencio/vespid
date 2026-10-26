@@ -430,6 +430,13 @@ def create_app(config_path: str | None = None) -> Flask:
     # Inventory sync is an agent API (require_role agent, non-session).
     csrf.exempt(inventory_sync_bp)
 
+    # Sigma sync is a Bearer/CLI admin API with no form payload; exempt this
+    # view from session-form CSRF while keeping the rest of the rules
+    # blueprint protected.
+    from app.routes.rules import sigma_sync
+
+    csrf.exempt(sigma_sync)
+
     if security_enabled:
         app.sse_manager = SSEManager(history_size=config.get("SSE_HISTORY_SIZE", 500))
 
