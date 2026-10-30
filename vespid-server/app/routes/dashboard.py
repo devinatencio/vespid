@@ -614,7 +614,7 @@ def nodes():
     enriched_nodes = []
     for node in node_list:
         health = get_node_health(
-            node.get("last_event_at"),
+            node.get("last_seen_at") or node.get("last_event_at"),
             healthy_seconds=healthy_seconds,
             degraded_seconds=degraded_seconds,
         )
@@ -979,7 +979,7 @@ def node_detail(node_id):
     healthy_seconds = current_app.config.get("NODE_HEALTHY_SECONDS", 300)
     degraded_seconds = current_app.config.get("NODE_DEGRADED_SECONDS", 900)
     health = get_node_health(
-        node.get("last_event_at"),
+        node.get("last_seen_at") or node.get("last_event_at"),
         healthy_seconds=healthy_seconds,
         degraded_seconds=degraded_seconds,
     )

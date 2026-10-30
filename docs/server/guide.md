@@ -81,8 +81,8 @@ SESSION_LIFETIME_HOURS: 24
 | `SSE_HISTORY_SIZE` | `500` | Dashboard SSE replay buffer |
 | `FLEET_SSE_HISTORY_SIZE` | `1000` | Fleet SSE replay buffer |
 | `FLEET_REAPER_INTERVAL_SECONDS` | `86400` | Fleet block reaper interval (24h) |
-| `NODE_HEALTHY_SECONDS` | `300` | Max age for "healthy" status |
-| `NODE_DEGRADED_SECONDS` | `900` | Max age before "offline" |
+| `NODE_HEALTHY_SECONDS` | `300` | Max seconds since last contact for "healthy" status |
+| `NODE_DEGRADED_SECONDS` | `900` | Max seconds since last contact before "offline" |
 | `RATELIMIT_ENABLED` | `true` | API rate limiting master switch |
 | `RATELIMIT_STORAGE_URI` | `memory://` | Use `redis://host:6379/0` for multi-worker |
 | `LOG_FILE` | `/var/log/vespid-server/vespid-server.log` | App log path |

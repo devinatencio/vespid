@@ -34,6 +34,7 @@
                 <th>Health</th>
                 <th>Policy</th>
                 <th>Last Seen</th>
+                <th>Last Event</th>
                 <th>Total Events</th>
                 <th>Actions</th>
             </tr>
@@ -67,6 +68,7 @@
                         </select>
                     </form>
                 </td>
+                <td><span data-ts="{{ node.last_seen_at or node.last_event_at or '' }}">{{ node.last_seen_at or node.last_event_at or '—' }}</span></td>
                 <td><span data-ts="{{ node.last_event_at or '' }}">{{ node.last_event_at or '—' }}</span></td>
                 <td>{{ "{:,}".format(node.total_events) }}</td>
                 <td>

@@ -2,8 +2,17 @@
 
 import sqlite3
 
-from app.models import get_db, get_user_by_username
+from app.models import add_ip_rule, get_db, get_user_by_username
 from app.models.db_core import _migrate_sqlite_users_readonly_role
+
+
+def _enable_metrics_nav(app):
+    """Expose the monitoring nav in the test app so role gating can be checked."""
+    from app.routes.metrics import metrics_bp
+
+    app.config["METRICS_ENABLED"] = True
+    if "metrics.overview" not in app.view_functions:
+        app.register_blueprint(metrics_bp)
 
 
 def _insert_host_event(db, hostname="web-01", node_id="node-1"):
@@ -44,6 +53,99 @@ class TestReadonlyReadAccess:
     def test_readonly_cannot_open_admin_pages(self, auth_client):
         client = auth_client("readonly")
         assert client.get("/admin/users").status_code == 403
+        assert client.get("/alerts/channels").status_code == 403
+        assert client.get("/alerts/silences").status_code == 403
+
+    def test_readonly_nav_hides_admin_only_alert_pages(self, app, auth_client):
+        _enable_metrics_nav(app)
+        client = auth_client("readonly")
+        resp = client.get("/alerts")
+        assert resp.status_code == 200
+        assert b">Channels</a>" not in resp.data
+        assert b">Silences</a>" not in resp.data
+
+    def test_admin_nav_shows_alert_configuration_pages(self, app, auth_client):
+        _enable_metrics_nav(app)
+        client = auth_client("admin")
+        resp = client.get("/alerts")
+        assert resp.status_code == 200
+        assert b">Channels</a>" in resp.data
+        assert b">Silences</a>" in resp.data
+
+    def test_readonly_feed_page_hides_deploy_and_retract(self, auth_client):
+        client = auth_client("readonly")
+        resp = client.get("/feeds")
+        assert resp.status_code == 200
+        assert b'class="feed-catalog-actions"' not in resp.data
+        assert b'class="retract-form"' not in resp.data
+
+    def test_analyst_feed_page_shows_deploy_and_retract(self, auth_client):
+        client = auth_client("analyst")
+        resp = client.get("/feeds")
+        assert resp.status_code == 200
+        assert b'class="feed-catalog-actions"' in resp.data
+        assert b'class="retract-form"' in resp.data
+
+    def test_readonly_rules_page_hides_write_controls(self, db, auth_client):
+        add_ip_rule(db, "allowlist", "10.0.0.0/8", "internal", "admin")
+        add_ip_rule(db, "blocklist", "203.0.113.42", "abuse", "admin")
+
+        client = auth_client("readonly")
+        resp = client.get("/rules")
+        assert resp.status_code == 200
+        assert b"Add to Allowlist" not in resp.data
+        assert b"Block IP" not in resp.data
+        assert b"Remove from allowlist" not in resp.data
+        assert b">Unblock</button>" not in resp.data
+
+    def test_analyst_rules_page_shows_write_controls(self, db, auth_client):
+        add_ip_rule(db, "allowlist", "10.0.0.0/8", "internal", "admin")
+        add_ip_rule(db, "blocklist", "203.0.113.42", "abuse", "admin")
+
+        client = auth_client("analyst")
+        resp = client.get("/rules")
+        assert resp.status_code == 200
+        assert b"Add to Allowlist" in resp.data
+        assert b"Block IP" in resp.data
+        assert b"Remove from allowlist" in resp.data
+        assert b">Unblock</button>" in resp.data
+
+    def test_readonly_alert_pages_hide_write_controls(self, auth_client):
+        client = auth_client("readonly")
+
+        rules = client.get("/alerts/rules")
+        assert rules.status_code == 200
+        assert b"+ New Rule" not in rules.data
+        assert b"var ADMIN = false;" in rules.data
+
+        groups = client.get("/alerts/groups")
+        assert groups.status_code == 200
+        assert b"+ New Group" not in groups.data
+        assert b"var ADMIN = false;" in groups.data
+
+        checks = client.get("/alerts/synthetic-checks")
+        assert checks.status_code == 200
+        assert b"+ New Check" not in checks.data
+        assert b"+ New Rule" not in checks.data
+        assert b">Sync All</a>" not in checks.data
+        assert b"var ADMIN = false;" in checks.data
+
+    def test_admin_alert_pages_show_write_controls(self, auth_client):
+        client = auth_client("admin")
+
+        rules = client.get("/alerts/rules")
+        assert b"+ New Rule" in rules.data
+        assert b"var ADMIN = true;" in rules.data
+
+        groups = client.get("/alerts/groups")
+        assert b"+ New Group" in groups.data
+        assert b"var ADMIN = true;" in groups.data
+
+        checks = client.get("/alerts/synthetic-checks")
+        assert b"+ New Check" in checks.data
+        assert b"+ New Rule" in checks.data
+        assert b">Sync All</a>" in checks.data
+        assert b"var ADMIN = true;" in checks.data
 
     def test_viewer_cannot_open_analyst_pages(self, auth_client):
         client = auth_client("viewer")

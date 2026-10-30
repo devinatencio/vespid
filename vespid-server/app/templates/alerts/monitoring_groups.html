@@ -10,7 +10,9 @@
         </div>
     </div>
     <div id="grp-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    {% if current_user.role == 'admin' %}
     <a href="/alerts/groups/new" class="btn btn-primary" style="white-space:nowrap;">+ New Group</a>
+    {% endif %}
 </div>
 
 <div id="groups-container">
@@ -23,6 +25,8 @@
 .grp-stat .grp-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
 </style>
 <script>
+var ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
+
 function escapeHtml(s) {
     if (!s) return '';
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -34,6 +38,7 @@ function getCsrfToken() {
 }
 
 function deleteGroup(id, name) {
+    if (!ADMIN) return;
     if (!confirm('Delete monitoring group "' + name + '" permanently?')) return;
     if (!confirm('This will also resolve all active alerts from this group. Are you sure?')) return;
     fetch('/alerts/api/groups/' + id, {
@@ -70,11 +75,14 @@ function loadGroups() {
             var groups = data.groups || [];
             renderGroupStats(groups);
             if (!groups.length) {
-                container.innerHTML = '<div class="empty-state">No monitoring groups yet. <a href="/alerts/groups/new">Create one</a>.</div>';
+                container.innerHTML = '<div class="empty-state">No monitoring groups yet.' +
+                    (ADMIN ? ' <a href="/alerts/groups/new">Create one</a>.' : '') +
+                    '</div>';
                 return;
             }
             var html = '<table class="data-table"><thead><tr>' +
-                '<th>Name</th><th>Description</th><th>Conditions</th><th>Active</th><th>Instances</th><th>Status</th><th></th>' +
+                '<th>Name</th><th>Description</th><th>Conditions</th><th>Active</th><th>Instances</th><th>Status</th>' +
+                (ADMIN ? '<th></th>' : '') +
                 '</tr></thead><tbody>';
             groups.forEach(function(g) {
                 var status = g.enabled ? '<span class="badge badge-success">Enabled</span>' : '<span class="badge badge-secondary">Disabled</span>';
@@ -85,10 +93,12 @@ function loadGroups() {
                     '<td>' + (g.active_count || 0) + '</td>' +
                     '<td>' + (g.instance_count || 0) + '</td>' +
                     '<td>' + status + '</td>' +
-                    '<td>' +
-                    '<button class="btn btn-sm btn-secondary" onclick="window.location.href=\'/alerts/groups/' + g.id + '/edit\'">Edit</button> ' +
-                    '<button class="btn btn-sm btn-danger" onclick="deleteGroup(' + g.id + ', \'' + escapeHtml(g.name) + '\')">Delete</button>' +
-                    '</td>' +
+                    (ADMIN
+                        ? '<td>' +
+                          '<button class="btn btn-sm btn-secondary" onclick="window.location.href=\'/alerts/groups/' + g.id + '/edit\'">Edit</button> ' +
+                          '<button class="btn btn-sm btn-danger" onclick="deleteGroup(' + g.id + ', \'' + escapeHtml(g.name) + '\')">Delete</button>' +
+                          '</td>'
+                        : '') +
                     '</tr>';
             });
             html += '</tbody></table>';

@@ -36,6 +36,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retention reaper purges old resolved alerts, while firing and acknowledged
   alerts are kept until resolved. The Data Cleanup page exposes the setting
   and includes alerts in the manual purge counts.
+- Read-only users no longer see admin-only alert configuration links or write
+  controls. Channels and Silences are hidden from their navigation, and alert
+  rules, host monitoring groups, synthetic checks, and active alerts render
+  view-only for non-admin users instead of exposing actions that return 403.
+- Read-only users no longer see Deploy/Retract controls on the Feeds page.
+  Analysts and admins retain feed deployment actions; catalog add/remove
+  remains admin-only.
+- Read-only users no longer see add, remove, or unblock controls on the IP
+  Rules page; analysts and admins retain rule management actions.
+- Node health now uses the node's most recent contact (`last_seen_at`) with a
+  fallback to `last_event_at` for legacy rows, so successful config check-ins,
+  event uploads, command polls, and heartbeats all count as liveness. Health
+  parsing accepts both ISO strings and database DATETIME values, and the Nodes
+  page now distinguishes Last Seen from Last Event.
 
 ## [1.0.3] - 2026-10-25
 

@@ -137,8 +137,10 @@
                 <a href="{{ url_for('alerts.hosts_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.hosts_page' %}active{% endif %}" onclick="closeSidePanel()">Hosts</a>
                 <a href="{{ url_for('alerts.history_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.history_page' %}active{% endif %}" onclick="closeSidePanel()">History</a>
                 <div class="spn-subsection-title">⚙️ Configuration</div>
+                {% if current_user.role == 'admin' %}
                 <a href="{{ url_for('alerts.channels_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.channels_page' %}active{% endif %}" onclick="closeSidePanel()">Channels</a>
                 <a href="{{ url_for('alerts.silences_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.silences_page' %}active{% endif %}" onclick="closeSidePanel()">Silences</a>
+                {% endif %}
                 <a href="{{ url_for('alerts.rules_page') }}" class="spn-item spn-item-sub {% if request.endpoint == 'alerts.rules_page' %}active{% endif %}" onclick="closeSidePanel()">PromQL Rules</a>
                 <a href="{{ url_for('alerts.groups_page') }}" class="spn-item spn-item-sub {% if request.endpoint in ('alerts.groups_page', 'alerts.new_group_page', 'alerts.group_detail_page', 'alerts.edit_group_page') %}active{% endif %}" onclick="closeSidePanel()">Host Monitoring</a>
                 <a href="{{ url_for('synthetic_checks.list_page') }}" class="spn-item spn-item-sub {% if request.endpoint and (request.endpoint.startswith('synthetic_checks.list') or request.endpoint.startswith('synthetic_checks.alert')) %}active{% endif %}" onclick="closeSidePanel()">Synthetic Checks</a>

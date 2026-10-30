@@ -543,7 +543,8 @@ function loadActiveAlerts() {
                 return;
             }
             var html = '<div class="table-wrap"><table><thead><tr>' +
-                '<th>Status</th><th>Fired</th><th>Severity</th><th>Rule</th><th>Labels</th><th>Value</th><th class="action-cell">Actions</th>' +
+                '<th>Status</th><th>Fired</th><th>Severity</th><th>Rule</th><th>Labels</th><th>Value</th>' +
+                (ADMIN ? '<th class="action-cell">Actions</th>' : '') +
                 '</tr></thead><tbody>';
             alerts.forEach(function(a) {
                 var cls = a.severity === 'critical' ? 'critical' : 'warning';
@@ -562,10 +563,13 @@ function loadActiveAlerts() {
                     '<td><strong>' + escapeHtml(a.rule_name) + '</strong></td>' +
                     '<td>' + renderLabels(a.labels) + '</td>' +
                     '<td>' + (a.value !== undefined ? Number(a.value).toFixed(2) : '\u2014') + '</td>' +
-                    '<td class="action-cell">' +
-                    (isAcked ? '' : '<button class="btn btn-sm table-btn btn-ack" onclick="ackAlert(' + a.id + ')">Ack</button> ') +
-                    '<button class="btn btn-sm table-btn btn-resolve" onclick="resolveAlert(' + a.id + ')">Resolve</button>' +
-                    '</td></tr>';
+                    (ADMIN
+                        ? '<td class="action-cell">' +
+                          (isAcked ? '' : '<button class="btn btn-sm table-btn btn-ack" onclick="ackAlert(' + a.id + ')">Ack</button> ') +
+                          '<button class="btn btn-sm table-btn btn-resolve" onclick="resolveAlert(' + a.id + ')">Resolve</button>' +
+                          '</td>'
+                        : '') +
+                    '</tr>';
             });
             html += '</tbody></table></div>';
             container.innerHTML = html;
@@ -588,6 +592,7 @@ function updateSummary(alerts) {
 }
 
 window.ackAlert = function(id) {
+    if (!ADMIN) return;
     fetch('/alerts/api/events/' + id + '/ack', {method: 'POST'})
         .then(function(r) {
             if (!r.ok) throw new Error();
@@ -598,6 +603,7 @@ window.ackAlert = function(id) {
 };
 
 window.resolveAlert = function(id) {
+    if (!ADMIN) return;
     fetch('/alerts/api/events/' + id + '/resolve', {method: 'POST'})
         .then(function(r) {
             if (!r.ok) throw new Error();

@@ -10,7 +10,9 @@
         </div>
     </div>
     <div id="sc-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    {% if current_user.role == 'admin' %}
     <a href="/alerts/synthetic-checks/new" class="btn btn-primary" style="white-space:nowrap;">+ New Check</a>
+    {% endif %}
 </div>
 
 <div id="checks-container">
@@ -24,7 +26,9 @@
         <h2 style="margin:0;font-size:1rem;">Default Alert Policies</h2>
     </div>
     <div id="policy-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    {% if current_user.role == 'admin' %}
     <a href="#" class="btn btn-sm btn-primary" onclick="reconcilePolicies(this); return false;" style="white-space:nowrap;">Sync All</a>
+    {% endif %}
 </div>
 <div id="policies-container">
     <div class="loading">Loading policies…</div>
@@ -37,7 +41,9 @@
         <h2 style="margin:0;font-size:1rem;">Alert Rules</h2>
     </div>
     <div id="rule-panel-stats" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;"></div>
+    {% if current_user.role == 'admin' %}
     <a href="/alerts/synthetic-alerts/new" class="btn btn-sm btn-primary" style="white-space:nowrap;">+ New Rule</a>
+    {% endif %}
 </div>
 <div id="rules-container">
     <div class="loading">Loading rules…</div>
@@ -54,7 +60,9 @@
             <div class="event-modal-loading">Loading…</div>
         </div>
         <div class="event-modal-actions" style="display:none;" id="modal-actions">
+            {% if current_user.role == 'admin' %}
             <a id="modal-edit-link" href="#" class="btn btn-primary">Edit Check</a>
+            {% endif %}
             <a id="modal-detail-link" href="#" class="btn">Full Page</a>
             <span style="flex:1;"></span>
             <button class="btn btn-sm" id="modal-load-more" style="display:none;" onclick="loadMoreResults()">Load 10 more results</button>
@@ -125,6 +133,7 @@
 .sc-stat .sc-stat-l { color:var(--text-muted,#94a3b8); font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
 </style>
 <script>
+var ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
 var _modalCheckId = null;
 var _resultOffset = 10;
 var _resultLimit = 10;
@@ -232,7 +241,8 @@ function renderModalContent(check, jobs) {
     _totalResults = jobs.length;
 
     document.getElementById('modal-title').textContent = check.name || ('Check #' + check.id);
-    document.getElementById('modal-edit-link').href = '/alerts/synthetic-checks/' + check.id + '/edit';
+    var modalEditLink = document.getElementById('modal-edit-link');
+    if (modalEditLink) modalEditLink.href = '/alerts/synthetic-checks/' + check.id + '/edit';
     document.getElementById('modal-detail-link').href = '/alerts/synthetic-checks/' + check.id;
     document.getElementById('modal-actions').style.display = 'flex';
 
@@ -682,12 +692,15 @@ function loadChecks() {
             var checks = data.checks || [];
             renderCheckStats(checks);
             if (!checks.length) {
-                container.innerHTML = '<div class="empty-state">No synthetic checks configured yet. <a href="/alerts/synthetic-checks/new">Create one</a>.</div>';
+                container.innerHTML = '<div class="empty-state">No synthetic checks configured yet.' +
+                    (ADMIN ? ' <a href="/alerts/synthetic-checks/new">Create one</a>.' : '') +
+                    '</div>';
                 return;
             }
             var html = '<table class="data-table"><thead><tr>' +
                 '<th>Name</th><th>Status</th><th>Last Duration</th><th>Type</th><th>Target</th><th>Locations</th>' +
-                '<th>Actions</th></tr></thead><tbody>';
+                (ADMIN ? '<th>Actions</th>' : '') +
+                '</tr></thead><tbody>';
 
             checks.forEach(function(c) {
                 var locs = (c.locations || []).join(', ') || 'any';
@@ -706,10 +719,13 @@ function loadChecks() {
                     '<td><code>' + escapeHtml(c.check_type) + '</code></td>' +
                     '<td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + escapeHtml(c.target) + '">' + escapeHtml(c.target) + '</td>' +
                     '<td>' + escapeHtml(locs) + '</td>' +
-                    '<td style="white-space:nowrap;">' +
-                        '<button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();window.location.href=\'' + editUrl + '\'">Edit</button> ' +
-                        '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteCheck(' + c.id + ',\'' + escapeHtml(c.name) + '\')">Delete</button>' +
-                    '</td></tr>';
+                    (ADMIN
+                        ? '<td style="white-space:nowrap;">' +
+                          '<button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();window.location.href=\'' + editUrl + '\'">Edit</button> ' +
+                          '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteCheck(' + c.id + ',\'' + escapeHtml(c.name) + '\')">Delete</button>' +
+                          '</td>'
+                        : '') +
+                    '</tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;
@@ -720,6 +736,7 @@ function loadChecks() {
 }
 
 function deleteCheck(id, name) {
+    if (!ADMIN) return;
     if (!confirm('Archive check "' + name + '"? It will stop running.')) return;
     fetch('/api/v1/synthetic-checks/' + id, {
         method: 'DELETE',
@@ -744,7 +761,9 @@ function loadRules() {
                 return;
             }
             var html = '<table class="data-table"><thead><tr>' +
-                '<th>Name</th><th>Check</th><th>Type</th><th>Source</th><th>Firing</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>';
+                '<th>Name</th><th>Check</th><th>Type</th><th>Source</th><th>Firing</th><th>Enabled</th>' +
+                (ADMIN ? '<th>Actions</th>' : '') +
+                '</tr></thead><tbody>';
 
             rules.forEach(function(r) {
                 var typeLabel = r.condition_type === 'metric' ? 'Metric' : r.condition_type === 'dns_answer_change' ? 'DNS Change' : 'Failure Count';
@@ -759,11 +778,13 @@ function loadRules() {
                     sourceBadge = '<span class="source-badge custom">custom</span>';
                 }
                 var actionsHtml = '';
-                if (r.firing && r.condition_type === 'dns_answer_change' && r.dns_change_persist) {
-                    actionsHtml += '<button class="btn btn-sm btn-secondary" onclick="resolveAlert(' + r.id + ')">Resolve</button> ';
+                if (ADMIN) {
+                    if (r.firing && r.condition_type === 'dns_answer_change' && r.dns_change_persist) {
+                        actionsHtml += '<button class="btn btn-sm btn-secondary" onclick="resolveAlert(' + r.id + ')">Resolve</button> ';
+                    }
+                    actionsHtml += '<button class="btn btn-sm btn-secondary" onclick="window.location.href=\'' + editUrl + '\'">Edit</button> ' +
+                        '<button class="btn btn-sm btn-danger" onclick="deleteRule(' + r.id + ')">Del</button>';
                 }
-                actionsHtml += '<button class="btn btn-sm btn-secondary" onclick="window.location.href=\'' + editUrl + '\'">Edit</button> ' +
-                    '<button class="btn btn-sm btn-danger" onclick="deleteRule(' + r.id + ')">Del</button>';
                 html += '<tr>' +
                     '<td><span style="font-weight:600;">' + escapeHtml(r.name) + '</span></td>' +
                     '<td>' + escapeHtml(r.check_name || ('#' + r.check_id)) + (r.location ? ' (' + escapeHtml(r.location) + ')' : '') + (r.check_target ? '<br><span style="font-size:0.75rem;color:var(--text-muted);">' + escapeHtml(r.check_target) + '</span>' : '') + '</td>' +
@@ -771,7 +792,8 @@ function loadRules() {
                     '<td>' + sourceBadge + '</td>' +
                     '<td>' + firingHtml + '</td>' +
                     '<td>' + (r.enabled ? 'Yes' : 'No') + '</td>' +
-                    '<td>' + actionsHtml + '</td></tr>';
+                    (ADMIN ? '<td>' + actionsHtml + '</td>' : '') +
+                    '</tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;
@@ -780,6 +802,7 @@ function loadRules() {
 }
 
 function deleteRule(id) {
+    if (!ADMIN) return;
     if (!confirm('Delete this alert rule? It will not be recreated by any policy.')) return;
     fetch('/api/v1/synthetic-alerts/' + id, { method: 'DELETE', headers: {'Accept': 'application/json', 'X-CSRFToken': getCsrfToken()} })
         .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -788,6 +811,7 @@ function deleteRule(id) {
 }
 
 function resolveAlert(id) {
+    if (!ADMIN) return;
     if (!confirm('Resolve this firing alert?')) return;
     fetch('/api/v1/synthetic-alerts/' + id + '/resolve', { method: 'POST', headers: {'Accept': 'application/json', 'X-CSRFToken': getCsrfToken()} })
         .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
@@ -845,7 +869,10 @@ function loadPolicies() {
                     '<td><code style="font-size:0.75rem;">' + escapeHtml(condLabel) + '</code></td>' +
                     '<td>' + (p.rule_count || 0) + '</td>' +
                     '<td>' + (p.firing_count ? '<span class="badge badge-critical">' + p.firing_count + '</span>' : '0') + '</td>' +
-                    '<td><label class="pol-toggle"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="togglePolicy(' + p.id + ', this.checked)"><span class="slider"></span></label></td></tr>';
+                    '<td>' + (ADMIN
+                        ? '<label class="pol-toggle"><input type="checkbox" ' + (p.enabled ? 'checked' : '') + ' onchange="togglePolicy(' + p.id + ', this.checked)"><span class="slider"></span></label>'
+                        : (p.enabled ? 'Yes' : 'No')) +
+                    '</td></tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;
@@ -854,6 +881,7 @@ function loadPolicies() {
 }
 
 function togglePolicy(id, enabled) {
+    if (!ADMIN) return;
     fetch('/api/v1/synthetic-alert-policies/' + id, {
         method: 'PUT',
         headers: {'Accept': 'application/json', 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken()},
@@ -865,6 +893,7 @@ function togglePolicy(id, enabled) {
 }
 
 function reconcilePolicies(btn) {
+    if (!ADMIN) return;
     document.getElementById('reconcile-confirm-modal').style.display = 'flex';
 }
 

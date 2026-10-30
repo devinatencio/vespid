@@ -326,8 +326,8 @@ Configuration is loaded from a YAML or JSON file with environment variable overr
 | `SSE_HISTORY_SIZE` | `500` | SSE reconnection replay buffer size (dashboard stream). |
 | `FLEET_SSE_HISTORY_SIZE` | `1000` | SSE reconnection replay buffer size (fleet block stream). |
 | `CONFIG_SSE_HISTORY_SIZE` | `1000` | SSE reconnection replay buffer size (config push stream). |
-| `NODE_HEALTHY_SECONDS` | `300` | Max age (seconds) for "healthy" node status. |
-| `NODE_DEGRADED_SECONDS` | `900` | Max age (seconds) before node shows "offline". |
+| `NODE_HEALTHY_SECONDS` | `300` | Max seconds since last contact for "healthy" node status. |
+| `NODE_DEGRADED_SECONDS` | `900` | Max seconds since last contact before node shows "offline". |
 | `FLEET_REAPER_INTERVAL_SECONDS` | `86400` | How often the fleet reaper expires old blocks (24 hours). |
 | `COUNTER_RETENTION_DAYS` | `30` | Days to retain counter snapshots before cleanup. |
 | `LOG_FILE` | `/var/log/vespid-server/vespid-server.log` | Application log file path. |
@@ -424,7 +424,7 @@ Centralized threat intelligence feed catalog. Feeds are managed here and deploye
 
 ### Security → Nodes (`/nodes`)
 
-Lists all registered nodes with health status, last seen time, total events, and location. Click a node ID to open its detail page.
+Lists all registered nodes with health status, last seen and last event times, total events, and location. Click a node ID to open its detail page.
 
 ### Security → Node Detail (`/nodes/<node_id>`) — viewer+ role
 

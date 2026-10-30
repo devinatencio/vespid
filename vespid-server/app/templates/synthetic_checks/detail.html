@@ -4,7 +4,9 @@
 <div class="page-header">
     <h1 id="check-name">Check Detail</h1>
     <div class="page-actions">
+        {% if current_user.role == 'admin' %}
         <a id="edit-link" href="#" class="btn">Edit</a>
+        {% endif %}
         <a href="/alerts/synthetic-checks" class="btn">Back</a>
     </div>
 </div>
@@ -35,7 +37,8 @@ function loadDetail() {
             if (data.error) { return; }
             var c = data.check;
             document.getElementById('check-name').textContent = c.name;
-            document.getElementById('edit-link').href = '/alerts/synthetic-checks/' + CHECK_ID + '/edit';
+            var editLink = document.getElementById('edit-link');
+            if (editLink) editLink.href = '/alerts/synthetic-checks/' + CHECK_ID + '/edit';
 
             var locs = (c.locations || []).join(', ') || 'any';
             var st = c.last_result_status || '—';

@@ -313,7 +313,8 @@ body.light-theme .toggle-inline .slider::before { background: #f1f5f9; }
 
         var html = '<div style="overflow-x:auto;"><table><thead><tr>' +
             '<th style="width:48px;">On</th><th>Name</th><th>Type</th><th>Target</th>' +
-            '<th>Severity</th><th>Threshold</th><th>Interval</th><th class="action-cell">Actions</th>' +
+            '<th>Severity</th><th>Threshold</th><th>Interval</th>' +
+            (ADMIN ? '<th class="action-cell">Actions</th>' : '') +
             '</tr></thead><tbody>';
 
         filtered.forEach(function(rule) {
@@ -333,19 +334,26 @@ body.light-theme .toggle-inline .slider::before { background: #f1f5f9; }
                 }
             }
 
+            var stateHtml = ADMIN
+                ? '<label class="toggle-inline" onclick="event.stopPropagation();toggleRule(' + rule.id + ',' + rule.enabled + ')">' +
+                  '<input type="checkbox"' + (rule.enabled ? ' checked' : '') + '><span class="slider"></span></label>'
+                : '<span class="badge ' + (rule.enabled ? 'badge-success' : 'badge-secondary') + '">' +
+                  (rule.enabled ? 'Enabled' : 'Disabled') + '</span>';
             html += '<tr>' +
-                '<td><label class="toggle-inline" onclick="event.stopPropagation();toggleRule(' + rule.id + ',' + rule.enabled + ')">' +
-                '<input type="checkbox"' + (rule.enabled ? ' checked' : '') + '><span class="slider"></span></label></td>' +
+                '<td>' + stateHtml + '</td>' +
                 '<td><strong>' + escapeHtml(rule.name) + '</strong>' + tagsHtml + '</td>' +
                 '<td><span class="badge">' + type + '</span></td>' +
                 '<td><code>' + escapeHtml(target) + '</code></td>' +
                 '<td><span class="badge ' + (rule.severity === 'critical' ? 'badge-danger' : 'badge-warning') + '">' + rule.severity + '</span></td>' +
                 '<td style="white-space:nowrap;">' + thresholdStr + '</td>' +
                 '<td>' + rule.interval_secs + 's</td>' +
-                '<td class="action-cell">' +
-                '<button class="btn btn-sm btn-secondary" onclick="editRule(' + rule.id + ')">Edit</button> ' +
-                '<button class="btn btn-sm btn-danger" onclick="deleteRule(' + rule.id + ')">Del</button>' +
-                '</td></tr>';
+                (ADMIN
+                    ? '<td class="action-cell">' +
+                      '<button class="btn btn-sm btn-secondary" onclick="editRule(' + rule.id + ')">Edit</button> ' +
+                      '<button class="btn btn-sm btn-danger" onclick="deleteRule(' + rule.id + ')">Del</button>' +
+                      '</td>'
+                    : '') +
+                '</tr>';
         });
 
         html += '</tbody></table></div>';
@@ -353,6 +361,7 @@ body.light-theme .toggle-inline .slider::before { background: #f1f5f9; }
     }
 
     window.toggleRule = function(id, enabled) {
+        if (!ADMIN) return;
         fetch('/alerts/api/rules/' + id, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
@@ -376,6 +385,7 @@ body.light-theme .toggle-inline .slider::before { background: #f1f5f9; }
     };
 
     window.editRule = function(id) {
+        if (!ADMIN) return;
         var rule = rules.find(function(r) { return r.id === id; });
         if (!rule) {
             fetch('/alerts/api/rules')
@@ -487,6 +497,7 @@ body.light-theme .toggle-inline .slider::before { background: #f1f5f9; }
     };
 
     window.deleteRule = function(id) {
+        if (!ADMIN) return;
         if (!confirm('Delete this rule? Firing events will be resolved.')) return;
         fetch('/alerts/api/rules/' + id, {method: 'DELETE'})
             .then(function(r) {

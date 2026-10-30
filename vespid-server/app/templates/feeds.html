@@ -187,7 +187,8 @@
                 </div>
             </details>
             {% endif %}
-            <!-- Row 6: Deploy actions -->
+            <!-- Row 6: Deploy actions (admin/analyst only; read-only cannot queue commands) -->
+            {% if current_user.role in ('admin', 'analyst') %}
             <div class="feed-catalog-actions">
                 <form method="POST" action="{{ url_for('dashboard.feeds_deploy', feed_id=feed.id) }}" class="inline-form feed-deploy-form">
                     <div class="node-picker">
@@ -235,6 +236,7 @@
                 <form method="POST" action="{{ url_for('dashboard.feeds_remove', feed_id=feed.id) }}" class="remove-form" style="display:none;"></form>
                 {% endif %}
             </div>
+            {% endif %}
         </div>
         {% endfor %}
     </div>

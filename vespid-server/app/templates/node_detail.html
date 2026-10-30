@@ -58,6 +58,10 @@
         </div>
         <div class="host-pill host-pill-amber">
             <span class="host-pill-label">Last Seen</span>
+            <span class="host-pill-value"><span data-ts="{{ node.last_seen_at or node.last_event_at or '' }}">{{ node.last_seen_at or node.last_event_at or '—' }}</span></span>
+        </div>
+        <div class="host-pill host-pill-rose">
+            <span class="host-pill-label">Last Event</span>
             <span class="host-pill-value"><span data-ts="{{ node.last_event_at or '' }}">{{ node.last_event_at or '—' }}</span></span>
         </div>
         <div class="host-pill host-pill-purple">

@@ -187,39 +187,45 @@ def delete_node(db: sqlite3.Connection, node_id: str) -> bool:
 
 
 def get_node_health(
-    last_event_at: str | None,
+    last_contact_at: str | datetime | None,
     healthy_seconds: int = 300,
     degraded_seconds: int = 900,
 ) -> str:
-    """Derive a node's health status from its last event timestamp.
+    """Derive a node's health status from its last contact timestamp.
 
-    Compares last_event_at against the current UTC time to determine
-    the health category.
+    Compares the timestamp against the current UTC time to determine the
+    health category. Callers should pass ``last_seen_at`` when available,
+    falling back to ``last_event_at`` for legacy rows.
 
     Args:
-        last_event_at: ISO-8601 UTC timestamp of the node's last event,
-            or None if the node has never sent an event.
+        last_contact_at: UTC timestamp of the node's last contact (any
+            authenticated agent request), as an ISO-8601 string or a
+            datetime object, or None if the node has never contacted the
+            server.
         healthy_seconds: Maximum age in seconds for 'healthy' status
             (default 300 = 5 minutes).
         degraded_seconds: Maximum age in seconds for 'degraded' status
             (default 900 = 15 minutes). Ages >= this value are 'offline'.
 
     Returns:
-        'healthy' if last_event_at is within healthy_seconds of now,
+        'healthy' if last_contact_at is within healthy_seconds of now,
         'degraded' if between healthy_seconds and degraded_seconds,
-        'offline' if >= degraded_seconds or last_event_at is None.
+        'offline' if >= degraded_seconds or last_contact_at is None.
     """
-    if last_event_at is None:
+    if last_contact_at is None:
         return "offline"
 
     try:
-        # Handle multiple ISO-8601 formats: with Z, +00:00, or no timezone
-        ts = last_event_at.replace("Z", "+00:00")
-        last_dt = datetime.fromisoformat(ts)
+        if isinstance(last_contact_at, datetime):
+            last_dt = last_contact_at
+        else:
+            # Handle multiple ISO-8601 formats: with Z, +00:00, or no timezone
+            ts = last_contact_at.replace("Z", "+00:00")
+            last_dt = datetime.fromisoformat(ts)
         # If no timezone info, assume UTC
         if last_dt.tzinfo is None:
             last_dt = last_dt.replace(tzinfo=UTC)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return "offline"
 
     now = datetime.now(UTC)

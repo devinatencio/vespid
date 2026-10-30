@@ -18,6 +18,7 @@
 </div>
 
 <script>
+var ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
 (function() {
     function loadAlerts() {
         fetch('/alerts/api/active')
@@ -30,7 +31,8 @@
                     return;
                 }
                 var html = '<table class="data-table"><thead><tr>' +
-                    '<th>Severity</th><th>Rule</th><th>Labels</th><th>Value</th><th>Duration</th><th>Actions</th>' +
+                    '<th>Severity</th><th>Rule</th><th>Labels</th><th>Value</th><th>Duration</th>' +
+                    (ADMIN ? '<th>Actions</th>' : '') +
                     '</tr></thead><tbody>';
                 alerts.forEach(function(a) {
                     var severityClass = a.severity === 'critical' ? 'badge-danger' : 'badge-warning';
@@ -46,10 +48,12 @@
                         '<td>' + labels.join(' ') + '</td>' +
                         '<td>' + (a.value !== undefined ? a.value.toFixed(2) : '—') + '</td>' +
                         '<td data-ts="' + a.fired_at + '">' + duration + '</td>' +
-                        '<td>' +
-                        '  <button class="btn btn-sm btn-secondary" onclick="ackAlert(' + a.id + ')">Acknowledge</button>' +
-                        '  <button class="btn btn-sm btn-secondary" onclick="resolveAlert(' + a.id + ')">Resolve</button>' +
-                        '</td>' +
+                        (ADMIN
+                            ? '<td>' +
+                              '  <button class="btn btn-sm btn-secondary" onclick="ackAlert(' + a.id + ')">Acknowledge</button>' +
+                              '  <button class="btn btn-sm btn-secondary" onclick="resolveAlert(' + a.id + ')">Resolve</button>' +
+                              '</td>'
+                            : '') +
                         '</tr>';
                 });
                 html += '</tbody></table>';
@@ -63,12 +67,14 @@
     }
 
     window.ackAlert = function(id) {
+        if (!ADMIN) return;
         fetch('/alerts/api/events/' + id + '/ack', {method: 'POST'})
             .then(function() { loadAlerts(); })
             .catch(function() { alert('Failed to acknowledge'); });
     };
 
     window.resolveAlert = function(id) {
+        if (!ADMIN) return;
         fetch('/alerts/api/events/' + id + '/resolve', {method: 'POST'})
             .then(function() { loadAlerts(); })
             .catch(function() { alert('Failed to resolve'); });

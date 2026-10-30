@@ -1264,6 +1264,19 @@ class TestGetNodeHealth:
     def test_invalid_timestamp_returns_offline(self):
         assert get_node_health("not-a-timestamp") == "offline"
 
+    def test_datetime_object_returns_healthy(self):
+        """MySQL returns DATETIME columns as datetime objects."""
+        now = datetime.now(timezone.utc)
+        assert get_node_health(now) == "healthy"
+
+    def test_naive_datetime_is_assumed_utc(self):
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        assert get_node_health(now) == "healthy"
+
+    def test_old_datetime_object_returns_offline(self):
+        old = datetime.now(timezone.utc) - timedelta(hours=1)
+        assert get_node_health(old) == "offline"
+
     def test_boundary_at_healthy_threshold(self):
         """At exactly 300 seconds, should be degraded (not healthy)."""
         now = datetime.now(timezone.utc)
