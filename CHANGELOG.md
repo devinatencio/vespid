@@ -50,6 +50,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event uploads, command polls, and heartbeats all count as liveness. Health
   parsing accepts both ISO strings and database DATETIME values, and the Nodes
   page now distinguishes Last Seen from Last Event.
+- The hamburger button now morphs into a close icon and the side panel uses a
+  frosted-glass treatment with a tinted backdrop, accent edge, softer shadow,
+  and spring-like slide motion.
+- Side navigation now has collapsible sections with counts, Admin collapsed by
+  default, a sliding module switcher, recent-search/quick-action search
+  suggestions, staggered item motion, and mobile swipe-to-close with focus
+  containment.
+- Opening the sidebar now expands the section containing the current page,
+  scrolls that item into view, and highlights the section header.
+- The sidebar now shows a per-user Recent section with up to four recently
+  visited pages, filtered against the current role's available navigation.
+- Sidebar search now matches pages and quick actions in addition to IPs and
+  events, and visible nav links support arrow-key navigation and type-ahead.
+- The Vespid theme now gives the hamburger button an electric-yellow outline
+  and glow at rest, with a solid yellow hover/open state.
 
 ## [1.0.3] - 2026-10-25
 

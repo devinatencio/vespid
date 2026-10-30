@@ -8,7 +8,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=38">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=45">
     {% if custom_theme_css %}
     <style>{{ custom_theme_css | safe }}</style>
     {% endif %}
@@ -91,26 +91,34 @@
             <span class="side-panel-title">Vespid Nest&trade;</span>
             <button class="side-panel-close" onclick="closeSidePanel()">✕</button>
         </div>
-        <div class="module-tabs" id="moduleTabs">
-            {% if config.SECURITY_ENABLED %}<button class="module-tab {% if not (request.endpoint and (request.endpoint.startswith('metrics.') or request.endpoint.startswith('inventory.'))) %}active{% endif %}" data-module="security" onclick="switchModule('security')">🔒 Security</button>{% endif %}
-            {% if config.METRICS_ENABLED %}<button class="module-tab {% if request.endpoint and request.endpoint.startswith('metrics.') %}active{% endif %}" data-module="monitoring" onclick="switchModule('monitoring')">🔔 Monitoring</button>{% endif %}
-            <button class="module-tab {% if request.endpoint and request.endpoint.startswith('inventory.') %}active{% endif %}" data-module="inventory" onclick="switchModule('inventory')">🗄️ Inventory</button>
+        <div class="module-tabs" id="moduleTabs" role="tablist" aria-label="Modules">
+            <span class="module-tab-indicator" aria-hidden="true"></span>
+            {% if config.SECURITY_ENABLED %}<button class="module-tab {% if not (request.endpoint and (request.endpoint.startswith('metrics.') or request.endpoint.startswith('inventory.'))) %}active{% endif %}" data-module="security" role="tab" aria-selected="false" onclick="switchModule('security')">🔒 Security</button>{% endif %}
+            {% if config.METRICS_ENABLED %}<button class="module-tab {% if request.endpoint and request.endpoint.startswith('metrics.') %}active{% endif %}" data-module="monitoring" role="tab" aria-selected="false" onclick="switchModule('monitoring')">🔔 Monitoring</button>{% endif %}
+            <button class="module-tab {% if request.endpoint and request.endpoint.startswith('inventory.') %}active{% endif %}" data-module="inventory" role="tab" aria-selected="false" onclick="switchModule('inventory')">🗄️ Inventory</button>
         </div>
         {% if current_user.is_authenticated %}
         <div class="side-panel-search">
             <span class="search-icon">🔍</span>
             <input type="text" id="global-search" class="search-input"
-                   placeholder="Search IP, event type, or country…"
+                   placeholder="Search pages, IPs, events…"
+                   aria-label="Search IPs, events, or countries"
+                   aria-keyshortcuts="/"
                    autocomplete="off"
                    onfocus="showSearchDropdown()"
                    onblur="hideSearchDropdown()"
                    oninput="quickSearch()"
                    onkeydown="handleSearchKey(event)">
+            <kbd class="search-shortcut" title="Press / to focus search">/</kbd>
             <div class="search-dropdown" id="search-dropdown" style="display:none;"></div>
         </div>
         {% endif %}
         <nav class="side-panel-nav">
             <a href="{{ url_for('dashboard.index') }}" class="spn-item spn-item-home {% if request.endpoint == 'dashboard.index' %}active{% endif %}" onclick="closeSidePanel()">📊 Dashboard</a>
+            <div class="spn-section" id="recentNavSection" style="display:none;">
+                <div class="spn-section-title">🕘 Recent <span class="spn-section-count" id="recentNavCount"></span></div>
+                <div id="recentNavItems"></div>
+            </div>
             {% if config.SECURITY_ENABLED %}
             <div class="spn-section" data-module="security">
                 <div class="spn-section-title">📈 Analytics</div>
@@ -208,7 +216,13 @@
 
     <nav class="main-nav">
         <div class="nav-left">
-            <button class="hamburger" onclick="toggleSidePanel()" title="Menu">☰</button>
+            <button class="hamburger" onclick="toggleSidePanel()" title="Menu" aria-label="Open menu" aria-controls="side-panel" aria-expanded="false">
+                <span class="hamburger-box" aria-hidden="true">
+                    <span class="hamburger-line hamburger-line-1"></span>
+                    <span class="hamburger-line hamburger-line-2"></span>
+                    <span class="hamburger-line hamburger-line-3"></span>
+                </span>
+            </button>
             <div class="nav-brand{% if current_user.is_authenticated and not current_user.brand_beam_enabled %} nav-brand-no-beam{% endif %}">
 Vespid Nest&trade;
                 {% if not current_user.is_authenticated or current_user.brand_beam_enabled %}
@@ -253,16 +267,46 @@ Vespid Nest&trade;
     <script>
     /* Core UI functions — defined before content block so child template
        script errors don't break the hamburger, module tabs, theme toggle, etc. */
-    window.toggleSidePanel = function() {
+    function setSidePanelOpen(open) {
         var panel = document.getElementById('side-panel');
         var overlay = document.getElementById('side-panel-overlay');
-        var isOpen = panel.classList.contains('open');
-        if (isOpen) { closeSidePanel(); }
-        else { panel.classList.add('open'); overlay.classList.add('open'); }
+        var burger = document.querySelector('.hamburger');
+        panel.classList.toggle('open', open);
+        overlay.classList.toggle('open', open);
+        document.body.classList.toggle('side-panel-open', open);
+        if (burger) {
+            burger.classList.toggle('is-open', open);
+            burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+            burger.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+        }
+        if (open) {
+            requestAnimationFrame(function() {
+                requestAnimationFrame(revealActiveNavItem);
+            });
+        }
+    }
+    window.toggleSidePanel = function() {
+        var panel = document.getElementById('side-panel');
+        setSidePanelOpen(!panel.classList.contains('open'));
     };
     window.closeSidePanel = function() {
-        document.getElementById('side-panel').classList.remove('open');
-        document.getElementById('side-panel-overlay').classList.remove('open');
+        setSidePanelOpen(false);
+    };
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') closeSidePanel();
+    });
+    window.updateModuleIndicator = function(module) {
+        var tabs = document.getElementById('moduleTabs');
+        if (!tabs) return;
+        var indicator = tabs.querySelector('.module-tab-indicator');
+        var active = tabs.querySelector('.module-tab[data-module="' + module + '"]');
+        if (!indicator || !active) {
+            if (indicator) indicator.style.opacity = '0';
+            return;
+        }
+        indicator.style.width = active.offsetWidth + 'px';
+        indicator.style.transform = 'translateX(' + active.offsetLeft + 'px)';
+        indicator.style.opacity = '1';
     };
     window.switchModule = function(module) {
         document.querySelectorAll('.spn-section[data-module]').forEach(function(el) {
@@ -273,10 +317,301 @@ Vespid Nest&trade;
             }
         });
         document.querySelectorAll('.module-tab').forEach(function(btn) {
-            btn.classList.toggle('active', btn.dataset.module === module);
+            var active = btn.dataset.module === module;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
         });
         localStorage.setItem('vespid_module', module);
+        updateModuleIndicator(module);
     };
+    window.addEventListener('resize', function() {
+        var active = document.querySelector('.module-tab.active');
+        if (active) updateModuleIndicator(active.dataset.module);
+    });
+    window.addEventListener('load', function() {
+        var active = document.querySelector('.module-tab.active');
+        if (active) updateModuleIndicator(active.dataset.module);
+    });
+
+    /* Collapsible nav sections, persisted per section. Admin starts collapsed. */
+    (function initNavSections() {
+        var panel = document.getElementById('side-panel');
+        if (!panel) return;
+        var idx = 0;
+        panel.querySelectorAll('.spn-item, .spn-section-title').forEach(function(el) {
+            el.style.setProperty('--nav-i', Math.min(idx++, 10));
+        });
+        panel.querySelectorAll('.spn-section').forEach(function(section, sectionIdx) {
+            var title = section.querySelector(':scope > .spn-section-title');
+            if (!title) return;
+            var slug = title.textContent.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_') || ('section_' + sectionIdx);
+            var key = 'vespid_nav_collapsed_' + slug;
+            section.dataset.navKey = key;
+            if (section.querySelector('.spn-item.active')) {
+                section.classList.add('has-active');
+            }
+            var itemCount = section.querySelectorAll('.spn-item').length;
+            if (itemCount) {
+                var count = document.createElement('span');
+                count.className = 'spn-section-count';
+                count.textContent = itemCount;
+                title.appendChild(count);
+            }
+            var stored = localStorage.getItem(key);
+            var collapsed = stored === null
+                ? (section.dataset.module === 'shared' ? '1' : '0')
+                : stored;
+            section.classList.toggle('collapsed', collapsed === '1');
+            title.setAttribute('role', 'button');
+            title.setAttribute('tabindex', '0');
+            title.setAttribute('aria-expanded', collapsed === '1' ? 'false' : 'true');
+            function toggleSection() {
+                var next = !section.classList.contains('collapsed');
+                section.classList.toggle('collapsed', next);
+                title.setAttribute('aria-expanded', next ? 'false' : 'true');
+                localStorage.setItem(key, next ? '1' : '0');
+            }
+            title.addEventListener('click', toggleSection);
+            title.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggleSection();
+                }
+            });
+        });
+    })();
+
+    function revealActiveNavItem() {
+        var panel = document.getElementById('side-panel');
+        if (!panel) return;
+        var active = panel.querySelector('.spn-item.active');
+        if (!active) return;
+        var section = active.closest('.spn-section');
+        if (section && section.classList.contains('collapsed')) {
+            section.classList.remove('collapsed');
+            var title = section.querySelector(':scope > .spn-section-title');
+            if (title) title.setAttribute('aria-expanded', 'true');
+            if (section.dataset.navKey) {
+                localStorage.setItem(section.dataset.navKey, '0');
+            }
+        }
+        active.scrollIntoView({block: 'center', inline: 'nearest'});
+    }
+
+    /* Recently visited sidebar pages, filtered against the current role's nav. */
+    (function initRecentNav() {
+        var panel = document.getElementById('side-panel');
+        var section = document.getElementById('recentNavSection');
+        var container = document.getElementById('recentNavItems');
+        var countEl = document.getElementById('recentNavCount');
+        if (!panel || !section || !container) return;
+
+        var storageKey = 'vespid_recent_nav:' + {{ (current_user.username if current_user.is_authenticated else 'anonymous')|tojson }};
+        var moduleIcons = {security: '🔒', monitoring: '🔔', inventory: '🗄️', shared: '⚙️'};
+
+        function escapeNavHtml(text) {
+            return String(text == null ? '' : text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function loadRecent() {
+            try {
+                var parsed = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                return Array.isArray(parsed) ? parsed.filter(function(item) {
+                    return item && typeof item.href === 'string' && item.href.startsWith('/');
+                }) : [];
+            } catch (err) {
+                return [];
+            }
+        }
+
+        function saveRecent(items) {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(items));
+            } catch (err) {}
+        }
+
+        function liveNavEntries() {
+            var entries = {};
+            panel.querySelectorAll('.spn-item').forEach(function(link) {
+                if (link.classList.contains('spn-item-home')) return;
+                if (link.closest('#recentNavSection')) return;
+                var href = link.getAttribute('href');
+                if (!href || !href.startsWith('/')) return;
+                var parentSection = link.closest('.spn-section');
+                var clone = link.cloneNode(true);
+                clone.querySelectorAll('.nav-badge').forEach(function(el) { el.remove(); });
+                entries[href] = {
+                    href: href,
+                    label: clone.textContent.replace(/\s+/g, ' ').trim(),
+                    module: parentSection && parentSection.dataset.module ? parentSection.dataset.module : 'shared'
+                };
+            });
+            return entries;
+        }
+
+        function renderRecent() {
+            var live = liveNavEntries();
+            var seen = {};
+            var items = loadRecent().map(function(item) {
+                var current = live[item.href];
+                if (!current) return null;
+                if (seen[item.href]) return null;
+                seen[item.href] = true;
+                return current;
+            }).filter(Boolean);
+
+            saveRecent(items.slice(0, 6));
+
+            var visibleItems = items.filter(function(item) {
+                try {
+                    var itemPath = new URL(item.href, window.location.origin).pathname.replace(/\/+$/, '') || '/';
+                    var currentPath = window.location.pathname.replace(/\/+$/, '') || '/';
+                    return itemPath !== currentPath;
+                } catch (err) {
+                    return false;
+                }
+            });
+
+            if (!visibleItems.length) {
+                section.style.display = 'none';
+                return;
+            }
+            section.style.display = '';
+            if (countEl) countEl.textContent = visibleItems.length;
+            container.innerHTML = visibleItems.slice(0, 4).map(function(item) {
+                return '<a href="' + escapeNavHtml(item.href) + '" class="spn-item spn-item-sub spn-item-recent" onclick="closeSidePanel()">' +
+                    '<span class="spn-recent-icon">' + (moduleIcons[item.module] || '•') + '</span>' +
+                    '<span class="spn-recent-label">' + escapeNavHtml(item.label) + '</span></a>';
+            }).join('');
+        }
+
+        function rememberNavLink(link) {
+            if (link.classList.contains('spn-item-home')) return;
+            if (link.closest('#recentNavSection')) return;
+            var href = link.getAttribute('href');
+            if (!href || !href.startsWith('/')) return;
+            var parentSection = link.closest('.spn-section');
+            var clone = link.cloneNode(true);
+            clone.querySelectorAll('.nav-badge').forEach(function(el) { el.remove(); });
+            var label = clone.textContent.replace(/\s+/g, ' ').trim();
+            var recent = loadRecent().filter(function(item) { return item.href !== href; });
+            recent.unshift({
+                href: href,
+                label: label,
+                module: parentSection && parentSection.dataset.module ? parentSection.dataset.module : 'shared'
+            });
+            saveRecent(recent.slice(0, 6));
+        }
+
+        panel.addEventListener('click', function(event) {
+            var link = event.target.closest('.side-panel-nav .spn-item');
+            if (link) rememberNavLink(link);
+        });
+
+        var activeLink = panel.querySelector('.side-panel-nav .spn-item.active:not(.spn-item-home)');
+        if (activeLink) rememberNavLink(activeLink);
+        renderRecent();
+    })();
+
+    /* Mobile swipe-to-close and focus containment for the side panel. */
+    (function initSidePanelGestures() {
+        var panel = document.getElementById('side-panel');
+        if (!panel) return;
+        var startX = null;
+        var startY = null;
+        panel.addEventListener('touchstart', function(event) {
+            if (event.touches.length !== 1) return;
+            startX = event.touches[0].clientX;
+            startY = event.touches[0].clientY;
+        }, {passive: true});
+        panel.addEventListener('touchend', function(event) {
+            if (startX === null) return;
+            var dx = event.changedTouches[0].clientX - startX;
+            var dy = event.changedTouches[0].clientY - startY;
+            startX = null;
+            startY = null;
+            if (dx < -60 && Math.abs(dy) < 45) closeSidePanel();
+        }, {passive: true});
+        document.addEventListener('keydown', function(event) {
+            if (event.key !== 'Tab' || !panel.classList.contains('open')) return;
+            var focusable = Array.prototype.filter.call(
+                panel.querySelectorAll(
+                    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+                ),
+                function(el) { return el.offsetWidth > 0 || el.offsetHeight > 0; }
+            );
+            if (!focusable.length) return;
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            if (document.activeElement === panel || document.activeElement === document.body) {
+                event.preventDefault();
+                (event.shiftKey ? last : first).focus();
+            } else if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        });
+    })();
+
+    /* Arrow-key and type-ahead navigation for visible sidebar links. */
+    (function initSidePanelKeyboardNav() {
+        var panel = document.getElementById('side-panel');
+        if (!panel) return;
+
+        function visibleNavLinks() {
+            return Array.prototype.filter.call(
+                panel.querySelectorAll('.side-panel-nav a.spn-item[href]'),
+                function(link) { return link.offsetWidth > 0 || link.offsetHeight > 0; }
+            );
+        }
+
+        document.addEventListener('keydown', function(event) {
+            if (!panel.classList.contains('open')) return;
+            var active = document.activeElement;
+            var tag = active && active.tagName ? active.tagName : '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (active && active.isContentEditable)) return;
+            var palette = document.getElementById('cmd-palette-overlay');
+            if (palette && palette.style.display && palette.style.display !== 'none') return;
+
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End') {
+                var links = visibleNavLinks();
+                if (!links.length) return;
+                event.preventDefault();
+                var idx = links.indexOf(active);
+                if (event.key === 'Home') idx = 0;
+                else if (event.key === 'End') idx = links.length - 1;
+                else if (event.key === 'ArrowDown') idx = idx < 0 ? 0 : Math.min(idx + 1, links.length - 1);
+                else if (event.key === 'ArrowUp') idx = idx < 0 ? links.length - 1 : Math.max(idx - 1, 0);
+                links[idx].focus();
+                return;
+            }
+
+            if (event.key.length === 1 && /[a-z0-9]/i.test(event.key) && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                var links = visibleNavLinks();
+                if (!links.length) return;
+                var start = links.indexOf(active);
+                var needle = event.key.toLowerCase();
+                for (var i = 1; i <= links.length; i++) {
+                    var link = links[(start + i) % links.length];
+                    var label = (link.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                    if (label.indexOf(needle) === 0) {
+                        event.preventDefault();
+                        link.focus();
+                        break;
+                    }
+                }
+            }
+        });
+    })();
+
     window.toggleNotifPanel = function() {
         var panel = document.getElementById('notif-panel');
         if (!panel) return;
@@ -420,6 +755,167 @@ Vespid Nest&trade;
     var debounceTimer;
     var activeIdx = -1;
 
+    function escapeSearchHtml(text) {
+        return String(text == null ? '' : text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function getRecentSearches() {
+        try {
+            var parsed = JSON.parse(localStorage.getItem('vespid_recent_searches') || '[]');
+            return Array.isArray(parsed) ? parsed.filter(function(q) { return typeof q === 'string'; }).slice(0, 5) : [];
+        } catch (err) {
+            return [];
+        }
+    }
+
+    function rememberSearch(query) {
+        query = (query || '').trim();
+        if (!query) return;
+        var recent = getRecentSearches().filter(function(q) { return q !== query; });
+        recent.unshift(query);
+        try {
+            localStorage.setItem('vespid_recent_searches', JSON.stringify(recent.slice(0, 5)));
+        } catch (err) {}
+    }
+
+    var searchModuleIcons = {security: '🔒', monitoring: '🔔', inventory: '🗄️', shared: '⚙️', home: '📊'};
+    var searchActions = [
+        {
+            label: 'Open command palette',
+            desc: 'Jump to any page or action',
+            action: 'palette',
+            icon: '⌘',
+            keywords: 'command palette jump page action search'
+        },
+        {
+            label: 'Toggle theme',
+            desc: 'Switch between color themes',
+            action: 'theme',
+            icon: '🎨',
+            keywords: 'theme dark light color appearance toggle'
+        }
+    ];
+
+    function getPageSearchResults(query) {
+        var q = query.toLowerCase();
+        var results = [];
+        document.querySelectorAll('.side-panel-nav .spn-item').forEach(function(link) {
+            if (link.closest('#recentNavSection')) return;
+            var href = link.getAttribute('href');
+            if (!href || !href.startsWith('/')) return;
+            var clone = link.cloneNode(true);
+            clone.querySelectorAll('.nav-badge').forEach(function(el) { el.remove(); });
+            var label = clone.textContent.replace(/\s+/g, ' ').trim();
+            if (!label) return;
+            var lowerLabel = label.toLowerCase();
+            var lowerHref = href.toLowerCase();
+            if (lowerLabel.indexOf(q) === -1 && lowerHref.indexOf(q) === -1) return;
+            var parentSection = link.closest('.spn-section');
+            var module = link.classList.contains('spn-item-home')
+                ? 'home'
+                : (parentSection && parentSection.dataset.module ? parentSection.dataset.module : 'shared');
+            var score = lowerLabel.indexOf(q) === 0 ? 0 : (lowerLabel.indexOf(' ' + q) !== -1 ? 1 : 2);
+            if (lowerHref.indexOf(q) !== -1 && lowerLabel.indexOf(q) === -1) score = 3;
+            results.push({href: href, label: label, module: module, score: score});
+        });
+        results.sort(function(a, b) {
+            return a.score - b.score || a.label.localeCompare(b.label);
+        });
+        return results.slice(0, 5);
+    }
+
+    function getActionSearchResults(query) {
+        var q = query.toLowerCase();
+        return searchActions.filter(function(item) {
+            return (item.label + ' ' + item.keywords).toLowerCase().indexOf(q) !== -1;
+        }).slice(0, 3);
+    }
+
+    function renderQuickSearchResults(query, ipResults) {
+        var pages = getPageSearchResults(query);
+        var actions = getActionSearchResults(query);
+        var html = '';
+        var itemIndex = 0;
+
+        if (pages.length) {
+            html += '<div class="search-dropdown-heading">Pages</div>';
+            pages.forEach(function(page) {
+                html += '<div class="search-dropdown-item search-dropdown-action' + (itemIndex === activeIdx ? ' active' : '') + '" data-href="' + escapeSearchHtml(page.href) + '">' +
+                    '<span class="search-dropdown-action-icon">' + (searchModuleIcons[page.module] || '•') + '</span>' +
+                    '<span class="search-dropdown-action-body"><span class="search-dropdown-action-label">' + escapeSearchHtml(page.label) + '</span></span>' +
+                    '<span class="search-dropdown-meta">↵</span></div>';
+                itemIndex++;
+            });
+        }
+        if (actions.length) {
+            html += '<div class="search-dropdown-heading">Actions</div>';
+            actions.forEach(function(action) {
+                html += '<div class="search-dropdown-item search-dropdown-action' + (itemIndex === activeIdx ? ' active' : '') + '" data-action="' + escapeSearchHtml(action.action) + '">' +
+                    '<span class="search-dropdown-action-icon">' + action.icon + '</span>' +
+                    '<span class="search-dropdown-action-body"><span class="search-dropdown-action-label">' + escapeSearchHtml(action.label) + '</span>' +
+                    '<span class="search-dropdown-action-desc">' + escapeSearchHtml(action.desc) + '</span></span></div>';
+                itemIndex++;
+            });
+        }
+        if (ipResults.length) {
+            html += '<div class="search-dropdown-heading">IP Intelligence</div>';
+            ipResults.forEach(function(r) {
+                var badges = '';
+                if (r.repeat_offender) badges += '<span class="search-dropdown-badge" style="background:var(--danger);color:#fff;">repeat</span>';
+                if (r.total_times_blocked > 0) badges += '<span class="search-dropdown-badge" style="background:var(--border);color:var(--text);">' + r.total_times_blocked + ' blocks</span>';
+                if (r.geo_country) badges += '<span class="search-dropdown-flag">' + r.geo_country + '</span>';
+                html += '<div class="search-dropdown-item' + (itemIndex === activeIdx ? ' active' : '') + '" data-ip="' + escapeSearchHtml(r.ip_address) + '" onmousedown="selectIP(\'' + escapeSearchHtml(r.ip_address) + '\')">' +
+                    '<span class="search-dropdown-ip">' + escapeSearchHtml(r.ip_address) + '</span>' +
+                    '<span class="search-dropdown-meta">' + badges + '</span>' +
+                    '</div>';
+                itemIndex++;
+            });
+        }
+        if (!html) {
+            html = '<div class="search-dropdown-empty">Press Enter to search events</div>';
+        } else if (!ipResults.length) {
+            html += '<div class="search-dropdown-empty">Press Enter to search events</div>';
+        }
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
+    }
+
+    function renderSearchHome() {
+        var html = '<div class="search-dropdown-heading">Quick actions</div>' +
+            '<div class="search-dropdown-item search-dropdown-action" data-action="palette">' +
+            '<span class="search-dropdown-action-icon">⌘</span>' +
+            '<span class="search-dropdown-action-body">' +
+            '<span class="search-dropdown-action-label">Open command palette</span>' +
+            '<span class="search-dropdown-action-desc">Jump to any page or action</span>' +
+            '</span><kbd>⌘K</kbd></div>' +
+            '<div class="search-dropdown-item search-dropdown-action" data-action="theme">' +
+            '<span class="search-dropdown-action-icon">🎨</span>' +
+            '<span class="search-dropdown-action-body">' +
+            '<span class="search-dropdown-action-label">Toggle theme</span>' +
+            '<span class="search-dropdown-action-desc">Switch between color themes</span>' +
+            '</span></div>';
+        var recent = getRecentSearches();
+        if (recent.length) {
+            html += '<div class="search-dropdown-heading">Recent searches</div>';
+            recent.forEach(function(query) {
+                html += '<div class="search-dropdown-item search-dropdown-action" data-query="' + escapeSearchHtml(query) + '">' +
+                    '<span class="search-dropdown-action-icon">↺</span>' +
+                    '<span class="search-dropdown-action-body"><span class="search-dropdown-action-label">' + escapeSearchHtml(query) + '</span></span>' +
+                    '<span class="search-dropdown-meta">↵</span></div>';
+            });
+        } else {
+            html += '<div class="search-dropdown-empty">Type an IP, country code, or event type…</div>';
+        }
+        dropdown.innerHTML = html;
+        dropdown.style.display = 'block';
+        activeIdx = -1;
+    }
+
     function isValidIP(v) {
         v = v.trim();
         if (/^(\d{1,3}\.){3}\d{1,3}$/.test(v)) {
@@ -441,42 +937,56 @@ Vespid Nest&trade;
     window.quickSearch = function() {
         clearTimeout(debounceTimer);
         var q = input.value.trim();
-        if (q.length < 1) { dropdown.style.display = 'none'; activeIdx = -1; return; }
+        if (q.length < 1) { renderSearchHome(); return; }
+        activeIdx = -1;
+        renderQuickSearchResults(q, []);
         debounceTimer = setTimeout(function() {
             fetch('/intel/api/quick-search?q=' + encodeURIComponent(q))
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
-                    var results = data.results || [];
-                    if (!results.length) {
-                        dropdown.innerHTML = '<div class="search-dropdown-empty">Press Enter to search events</div>';
-                    } else {
-                        var html = '';
-                        results.forEach(function(r, i) {
-                            var badges = '';
-                            if (r.repeat_offender) badges += '<span class="search-dropdown-badge" style="background:var(--danger);color:#fff;">repeat</span>';
-                            if (r.total_times_blocked > 0) badges += '<span class="search-dropdown-badge" style="background:var(--border);color:var(--text);">' + r.total_times_blocked + ' blocks</span>';
-                            if (r.geo_country) badges += '<span class="search-dropdown-flag">' + r.geo_country + '</span>';
-                            html += '<div class="search-dropdown-item' + (i === activeIdx ? ' active' : '') + '" data-ip="' + r.ip_address + '" onmousedown="selectIP(\'' + r.ip_address + '\')">' +
-                                '<span class="search-dropdown-ip">' + r.ip_address + '</span>' +
-                                '<span class="search-dropdown-meta">' + badges + '</span>' +
-                                '</div>';
-                        });
-                        dropdown.innerHTML = html;
-                    }
-                    dropdown.style.display = 'block';
+                    if (input.value.trim() !== q) return;
+                    renderQuickSearchResults(q, data.results || []);
+                })
+                .catch(function() {
+                    if (input.value.trim() === q) renderQuickSearchResults(q, []);
                 });
         }, 150);
     };
 
     window.showSearchDropdown = function() {
-        if (input.value.trim().length > 0) dropdown.style.display = 'block';
+        if (input.value.trim().length > 0) {
+            dropdown.style.display = 'block';
+        } else {
+            renderSearchHome();
+        }
     };
 
     window.hideSearchDropdown = function() {
         setTimeout(function() { dropdown.style.display = 'none'; activeIdx = -1; }, 200);
     };
 
+    dropdown.addEventListener('mousedown', function(event) {
+        var item = event.target.closest('.search-dropdown-action');
+        if (!item) return;
+        event.preventDefault();
+        if (item.dataset.href) {
+            navigateTo(item.dataset.href);
+        } else if (item.dataset.action === 'palette') {
+            dropdown.style.display = 'none';
+            input.blur();
+            if (typeof openCmdPalette === 'function') openCmdPalette();
+        } else if (item.dataset.action === 'theme') {
+            dropdown.style.display = 'none';
+            input.blur();
+            if (typeof cycleTheme === 'function') cycleTheme();
+        } else if (item.dataset.query) {
+            input.value = item.dataset.query;
+            quickSearch();
+        }
+    });
+
     function navigateTo(url) {
+        rememberSearch(input.value);
         fetch(url).then(function(r) { return r.text(); }).then(function(html) {
             var parser = new DOMParser();
             var doc = parser.parseFromString(html, 'text/html');
@@ -514,8 +1024,22 @@ Vespid Nest&trade;
             updateActive(items);
         } else if (e.key === 'Enter') {
             e.preventDefault();
-            if (activeIdx >= 0 && items[activeIdx]) {
-                navigateTo('/intel/ip/' + items[activeIdx].getAttribute('data-ip'));
+            var activeItem = activeIdx >= 0 ? items[activeIdx] : null;
+            if (activeItem && activeItem.dataset.href) {
+                navigateTo(activeItem.dataset.href);
+            } else if (activeItem && activeItem.dataset.action === 'palette') {
+                dropdown.style.display = 'none';
+                input.blur();
+                if (typeof openCmdPalette === 'function') openCmdPalette();
+            } else if (activeItem && activeItem.dataset.action === 'theme') {
+                dropdown.style.display = 'none';
+                input.blur();
+                if (typeof cycleTheme === 'function') cycleTheme();
+            } else if (activeItem && activeItem.dataset.query) {
+                input.value = activeItem.dataset.query;
+                quickSearch();
+            } else if (activeItem) {
+                navigateTo('/intel/ip/' + activeItem.getAttribute('data-ip'));
             } else {
                 var q = input.value.trim();
                 if (!q) return;

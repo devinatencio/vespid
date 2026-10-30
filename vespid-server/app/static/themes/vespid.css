@@ -107,6 +107,28 @@ body.theme-vespid .nav-brand-logo {
     filter: drop-shadow(0 0 6px rgba(255, 230, 0, 0.3));
 }
 
+body.theme-vespid .hamburger {
+    color: #ffe600;
+    background: linear-gradient(135deg, rgba(255, 230, 0, 0.10), rgba(15, 21, 32, 0.82));
+    border-color: rgba(255, 230, 0, 0.38);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 230, 0, 0.08),
+        0 0 18px -10px rgba(255, 230, 0, 0.85);
+}
+body.theme-vespid .hamburger:hover,
+body.theme-vespid .hamburger.is-open {
+    color: #060503;
+    background: #ffe600;
+    border-color: #ffe600;
+    box-shadow:
+        0 0 0 3px rgba(255, 230, 0, 0.14),
+        0 0 26px -8px rgba(255, 230, 0, 0.95);
+}
+body.theme-vespid .hamburger:hover .hamburger-line,
+body.theme-vespid .hamburger.is-open .hamburger-line {
+    box-shadow: 0 0 8px rgba(6, 5, 3, 0.25);
+}
+
 body.theme-vespid .nav-links a,
 body.theme-vespid .nav-dropdown-toggle {
     color: #d4c490;
