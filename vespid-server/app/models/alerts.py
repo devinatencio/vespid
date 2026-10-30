@@ -407,6 +407,25 @@ def get_alert_history(
     }
 
 
+def purge_old_alert_events(db, retention_days: int) -> int:
+    """Delete resolved alert history older than *retention_days* days.
+
+    Only resolved events are purged. Firing and acknowledged events are kept
+    regardless of age so an unresolved incident never disappears from the
+    Active Alerts view.
+
+    Returns:
+        The number of alert events purged.
+    """
+    cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    result = db.execute(
+        "DELETE FROM alert_events WHERE state = 'resolved' AND COALESCE(resolved_at, fired_at) < ?",
+        (cutoff,),
+    )
+    db.commit()
+    return result.rowcount
+
+
 def get_latest_resolved_event(db, rule_id: int, labels: dict) -> dict | None:
     """Get the most recent resolved event for a rule+labels combination.
 

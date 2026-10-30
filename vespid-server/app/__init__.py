@@ -563,6 +563,7 @@ def create_app(config_path: str | None = None) -> Flask:
         # retention window (default 90 days).  Runs once per day plus on
         # startup to catch any backlog after restarts.
         from app.models import get_setting
+        from app.models import purge_old_alert_events as _purge_old_alert_events
         from app.models import purge_old_audit_log as _purge_old_audit_log
         from app.models import purge_old_events as _purge_old_events
 
@@ -587,26 +588,31 @@ def create_app(config_path: str | None = None) -> Flask:
                 purged = _purge_old_events(db, retention_days)
                 audit_retention_days = int(get_setting(db, "audit_retention_days", "90"))
                 audit_purged = _purge_old_audit_log(db, audit_retention_days)
+                alert_retention_days = int(get_setting(db, "alert_retention_days", "90"))
+                alerts_purged = _purge_old_alert_events(db, alert_retention_days)
                 db.close()
-                total = sum(purged.values()) + audit_purged
+                total = sum(purged.values()) + audit_purged + alerts_purged
                 if total:
                     logger.info(
                         "Retention reaper purged %d rows (events=%d, context=%d, counters=%d, audit=%d, "
-                        "event_retention=%dd, audit_retention=%dd)",
+                        "alerts=%d, event_retention=%dd, audit_retention=%dd, alert_retention=%dd)",
                         total,
                         purged["events"],
                         purged["event_context"],
                         purged["counters"],
                         audit_purged,
+                        alerts_purged,
                         retention_days,
                         audit_retention_days,
+                        alert_retention_days,
                     )
                 else:
                     logger.debug(
                         "Retention reaper cycle: nothing to purge "
-                        "(event_retention=%dd, audit_retention=%dd)",
+                        "(event_retention=%dd, audit_retention=%dd, alert_retention=%dd)",
                         retention_days,
                         audit_retention_days,
+                        alert_retention_days,
                     )
             except Exception:
                 logger.exception("Retention reaper encountered an error")

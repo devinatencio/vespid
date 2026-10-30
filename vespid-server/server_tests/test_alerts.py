@@ -6,12 +6,13 @@ silence matching, and eval locking.
 
 import json
 import time
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from app.models import (
-    acquire_eval_lock,
     acknowledge_alert_event,
+    acquire_eval_lock,
     can_manage_rule,
     create_alert_event,
     create_alert_rule,
@@ -30,13 +31,13 @@ from app.models import (
     get_notification_channels,
     get_silences,
     is_silenced,
+    purge_old_alert_events,
     release_eval_lock,
     resolve_alert_event,
     set_rule_channels,
     update_alert_rule,
     update_notification_channel,
 )
-
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ from app.models import (
 def alert_admin_user(app, db):
     """Create an admin user and return the user_id."""
     from app.models import create_user
+
     return create_user(db, "alert_admin", "password", "admin")
 
 
@@ -55,7 +57,7 @@ def alert_rule(db, alert_admin_user):
         db,
         user_id=None,
         name="High CPU",
-        query='100 - (avg(rate(cpu_idle[2m])) * 100)',
+        query="100 - (avg(rate(cpu_idle[2m])) * 100)",
         operator=">",
         threshold=90.0,
         severity="critical",
@@ -123,7 +125,7 @@ class TestAlertSchema:
 class TestAlertRules:
     def test_create_promql_rule(self, db, alert_rule):
         assert alert_rule["name"] == "High CPU"
-        assert alert_rule["query"] == '100 - (avg(rate(cpu_idle[2m])) * 100)'
+        assert alert_rule["query"] == "100 - (avg(rate(cpu_idle[2m])) * 100)"
         assert alert_rule["check_name"] is None
         assert alert_rule["operator"] == ">"
         assert alert_rule["threshold"] == 90.0
@@ -168,9 +170,7 @@ class TestAlertRules:
         event = create_alert_event(db, alert_rule["id"], {"host": "web-1"}, 95.0)
         delete_alert_rule(db, alert_rule["id"])
         # Events are resolved then deleted along with the rule
-        rows = db.execute(
-            "SELECT state FROM alert_events WHERE id = ?", (event["id"],)
-        ).fetchall()
+        rows = db.execute("SELECT state FROM alert_events WHERE id = ?", (event["id"],)).fetchall()
         assert len(rows) == 0
 
 
@@ -221,6 +221,46 @@ class TestAlertEvents:
         assert history["total"] == 1
         assert len(history["events"]) == 1
 
+    def test_purge_old_alert_events_only_removes_old_resolved(self, db, alert_rule):
+        old = create_alert_event(db, alert_rule["id"], {"host": "old"}, 95.0)
+        resolve_alert_event(db, old["id"])
+        fresh = create_alert_event(db, alert_rule["id"], {"host": "fresh"}, 95.0)
+        resolve_alert_event(db, fresh["id"])
+        firing = create_alert_event(db, alert_rule["id"], {"host": "firing"}, 95.0)
+        old_ts = (datetime.now(UTC) - timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        db.execute(
+            "UPDATE alert_events SET fired_at = ?, resolved_at = ? WHERE id = ?",
+            (old_ts, old_ts, old["id"]),
+        )
+        db.execute(
+            "UPDATE alert_events SET fired_at = ? WHERE id = ?",
+            (old_ts, firing["id"]),
+        )
+        db.commit()
+
+        purged = purge_old_alert_events(db, 90)
+
+        assert purged == 1
+        remaining = {row["id"] for row in db.execute("SELECT id FROM alert_events").fetchall()}
+        assert remaining == {fresh["id"], firing["id"]}
+
+    def test_purge_old_alert_events_uses_resolved_at_when_present(self, db, alert_rule):
+        event = create_alert_event(db, alert_rule["id"], {"host": "long-running"}, 95.0)
+        resolve_alert_event(db, event["id"])
+        old_ts = (datetime.now(UTC) - timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fresh_ts = (datetime.now(UTC) - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        db.execute(
+            "UPDATE alert_events SET fired_at = ?, resolved_at = ? WHERE id = ?",
+            (old_ts, fresh_ts, event["id"]),
+        )
+        db.commit()
+
+        purged = purge_old_alert_events(db, 90)
+
+        assert purged == 0
+        row = db.execute("SELECT id FROM alert_events WHERE id = ?", (event["id"],)).fetchone()
+        assert row is not None
+
 
 # ── Notification Channel Tests ─────────────────────────────────────────────
 
@@ -229,7 +269,10 @@ class TestNotificationChannels:
     def test_create_channel(self, db, notification_channel):
         assert notification_channel["name"] == "Ops Slack"
         assert notification_channel["type"] == "slack"
-        assert json.loads(notification_channel["config"])["webhook_url"] == "https://hooks.slack.com/test"
+        assert (
+            json.loads(notification_channel["config"])["webhook_url"]
+            == "https://hooks.slack.com/test"
+        )
 
     def test_get_channels(self, db, notification_channel):
         channels = get_notification_channels(db)
@@ -483,11 +526,14 @@ class TestAlertsAPI:
         assert len(resp.get_json()["channels"]) == 1
 
     def test_create_channel(self, admin_client):
-        resp = admin_client.post("/alerts/api/channels", json={
-            "name": "Email Ops",
-            "type": "email",
-            "config": {"recipients": ["ops@example.com"]},
-        })
+        resp = admin_client.post(
+            "/alerts/api/channels",
+            json={
+                "name": "Email Ops",
+                "type": "email",
+                "config": {"recipients": ["ops@example.com"]},
+            },
+        )
         assert resp.status_code == 201
 
     def test_list_silences(self, admin_client, db, alert_admin_user):

@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and event details, with the full rule name wrapping as needed instead of
   appearing as an abruptly clipped code chip. The production table's Top
   Detection column truncates cleanly with a hover tooltip.
+- Alert history now has its own retention window (default 90 days). The daily
+  retention reaper purges old resolved alerts, while firing and acknowledged
+  alerts are kept until resolved. The Data Cleanup page exposes the setting
+  and includes alerts in the manual purge counts.
 
 ## [1.0.3] - 2026-10-25
 

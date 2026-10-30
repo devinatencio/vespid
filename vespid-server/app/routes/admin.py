@@ -1097,12 +1097,19 @@ def audit():
 @require_role("admin")
 def cleanup():
     """Display and manage data retention / cleanup settings."""
-    from app.models import get_setting, purge_old_audit_log, purge_old_events, set_setting
+    from app.models import (
+        get_setting,
+        purge_old_alert_events,
+        purge_old_audit_log,
+        purge_old_events,
+        set_setting,
+    )
 
     db_path = current_app.config["DATABASE_PATH"]
     db = get_db(db_path)
     try:
         audit_retention_days = int(get_setting(db, "audit_retention_days", "90"))
+        alert_retention_days = int(get_setting(db, "alert_retention_days", "90"))
         if request.method == "POST":
             if _wants_json():
                 data = request.get_json(silent=True) or {}
@@ -1118,15 +1125,36 @@ def cleanup():
                         )
                     )
                     set_setting(db, "audit_retention_days", audit_days)
+                    alert_days = str(
+                        data.get(
+                            "alert_retention_days",
+                            get_setting(db, "alert_retention_days", "90"),
+                        )
+                    )
+                    set_setting(db, "alert_retention_days", alert_days)
                     return jsonify(
-                        {"ok": True, "retention_days": days, "audit_retention_days": audit_days}
+                        {
+                            "ok": True,
+                            "retention_days": days,
+                            "audit_retention_days": audit_days,
+                            "alert_retention_days": alert_days,
+                        }
                     )
                 elif action == "purge_now":
                     retention_days = int(get_setting(db, "event_retention_days", "90"))
                     result = purge_old_events(db, retention_days)
                     audit_retention_days = int(get_setting(db, "audit_retention_days", "90"))
                     audit_purged = purge_old_audit_log(db, audit_retention_days)
-                    return jsonify({"ok": True, "purged": result, "audit_purged": audit_purged})
+                    alert_retention_days = int(get_setting(db, "alert_retention_days", "90"))
+                    alerts_purged = purge_old_alert_events(db, alert_retention_days)
+                    return jsonify(
+                        {
+                            "ok": True,
+                            "purged": result,
+                            "audit_purged": audit_purged,
+                            "alerts_purged": alerts_purged,
+                        }
+                    )
                 return jsonify(
                     {"error": "unknown_action", "message": f"Unknown action '{action}'"}
                 ), 400
@@ -1141,8 +1169,13 @@ def cleanup():
                         db, "audit_retention_days", "90"
                     )
                     set_setting(db, "audit_retention_days", audit_days)
+                    alert_days = request.form.get("alert_retention_days") or get_setting(
+                        db, "alert_retention_days", "90"
+                    )
+                    set_setting(db, "alert_retention_days", alert_days)
                     flash(
-                        f"Event retention set to {days} days; audit retention set to {audit_days} days.",
+                        f"Event retention set to {days} days; audit retention set to "
+                        f"{audit_days} days; alert retention set to {alert_days} days.",
                         "success",
                     )
                 elif action == "purge_now":
@@ -1150,17 +1183,21 @@ def cleanup():
                     result = purge_old_events(db, retention_days)
                     audit_retention_days = int(get_setting(db, "audit_retention_days", "90"))
                     audit_purged = purge_old_audit_log(db, audit_retention_days)
-                    total = sum(result.values()) + audit_purged
+                    alert_retention_days = int(get_setting(db, "alert_retention_days", "90"))
+                    alerts_purged = purge_old_alert_events(db, alert_retention_days)
+                    total = sum(result.values()) + audit_purged + alerts_purged
                     flash(
                         f"Purged {total} rows (events={result['events']}, "
                         f"context={result['event_context']}, counters={result['counters']}, "
-                        f"audit={audit_purged}). Events older than {retention_days}d, "
-                        f"audit entries older than {audit_retention_days}d.",
+                        f"audit={audit_purged}, alerts={alerts_purged}). Events older than "
+                        f"{retention_days}d, audit entries older than {audit_retention_days}d, "
+                        f"alerts older than {alert_retention_days}d.",
                         "success",
                     )
 
         retention_days = get_setting(db, "event_retention_days", "90")
         audit_retention_days = get_setting(db, "audit_retention_days", "90")
+        alert_retention_days = int(get_setting(db, "alert_retention_days", "90"))
 
         total_events = db.execute("SELECT COUNT(*) FROM events").fetchone()[0]
         oldest_event = db.execute("SELECT MIN(timestamp) FROM events").fetchone()[0] or ""
@@ -1184,6 +1221,19 @@ def cleanup():
         audit_purgeable = db.execute(
             "SELECT COUNT(*) FROM audit_log WHERE timestamp < ?", (audit_cutoff,)
         ).fetchone()[0]
+
+        total_alerts = db.execute("SELECT COUNT(*) FROM alert_events").fetchone()[0]
+        oldest_alert = db.execute("SELECT MIN(fired_at) FROM alert_events").fetchone()[0] or ""
+        newest_alert = db.execute("SELECT MAX(fired_at) FROM alert_events").fetchone()[0] or ""
+        alert_cutoff = (datetime.now(UTC) - timedelta(days=alert_retention_days)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+        alert_purgeable = db.execute(
+            "SELECT COUNT(*) FROM alert_events "
+            "WHERE state = 'resolved' "
+            "AND COALESCE(resolved_at, fired_at) < ?",
+            (alert_cutoff,),
+        ).fetchone()[0]
     finally:
         db.close()
 
@@ -1200,6 +1250,11 @@ def cleanup():
                 "oldest_audit": oldest_audit,
                 "newest_audit": newest_audit,
                 "audit_purgeable": audit_purgeable,
+                "alert_retention_days": int(alert_retention_days),
+                "total_alerts": total_alerts,
+                "oldest_alert": oldest_alert,
+                "newest_alert": newest_alert,
+                "alert_purgeable": alert_purgeable,
             }
         )
 
@@ -1215,6 +1270,11 @@ def cleanup():
         oldest_audit=oldest_audit,
         newest_audit=newest_audit,
         audit_purgeable=audit_purgeable,
+        alert_retention_days=alert_retention_days,
+        total_alerts=total_alerts,
+        oldest_alert=oldest_alert,
+        newest_alert=newest_alert,
+        alert_purgeable=alert_purgeable,
     )
 
 

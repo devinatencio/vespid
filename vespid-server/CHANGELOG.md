@@ -8,6 +8,13 @@
 - Host Threats mode changes target the most recent node for a hostname
   (falling back to the node's display name), and the dashboard reports failed
   or timed-out `set_auditd_mode` commands instead of staying on "pending"
+- Alert history now has its own retention window (default 90 days). The daily
+  retention reaper purges old resolved alerts while keeping firing and
+  acknowledged alerts, and the Data Cleanup page exposes the setting and
+  includes alerts in the manual purge counts
+- Host Summary cards show the top rule on its own line with the full name,
+  and the production table's Top Detection column truncates cleanly with a
+  hover tooltip
 
 ## 1.0.3 — 2026-10-25
 

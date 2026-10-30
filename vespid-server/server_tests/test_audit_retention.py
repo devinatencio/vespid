@@ -1,10 +1,18 @@
 """Tests for audit log retention / purge."""
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from app.models import get_setting, purge_old_audit_log, record_audit
+
+from app.models import (
+    create_alert_event,
+    create_alert_rule,
+    get_setting,
+    purge_old_audit_log,
+    record_audit,
+    resolve_alert_event,
+)
 
 
 @pytest.fixture()
@@ -29,9 +37,7 @@ def audit_db():
 
 def _add_entry_with_age(conn, age_days, action_type="block"):
     """Insert an audit entry with a timestamp *age_days* in the past."""
-    ts = (datetime.now(timezone.utc) - timedelta(days=age_days)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    ts = (datetime.now(UTC) - timedelta(days=age_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn.execute(
         "INSERT INTO audit_log (timestamp, actor, action_type, details) "
         "VALUES (?, 'test-user', ?, '{}')",
@@ -66,7 +72,7 @@ def test_purge_old_audit_log_uses_record_audit_entries(audit_db):
     record_audit(audit_db, "admin", "127.0.0.1", "login", "console", {})
     audit_db.execute(
         "UPDATE audit_log SET timestamp = ?",
-        ((datetime.now(timezone.utc) - timedelta(days=100)).strftime("%Y-%m-%dT%H:%M:%SZ"),),
+        ((datetime.now(UTC) - timedelta(days=100)).strftime("%Y-%m-%dT%H:%M:%SZ"),),
     )
     audit_db.commit()
 
@@ -95,14 +101,27 @@ def test_cleanup_page_shows_audit_section(admin_client):
     assert b"audit_retention_days" in resp.data
 
 
+def test_cleanup_page_shows_alert_section(admin_client):
+    resp = admin_client.get("/admin/cleanup")
+    assert resp.status_code == 200
+    assert b"Alert History Retention" in resp.data
+    assert b"alert_retention_days" in resp.data
+
+
 def test_save_retention_updates_audit_setting(admin_client, db):
     resp = admin_client.post(
         "/admin/cleanup",
-        data={"action": "save_retention", "retention_days": "60", "audit_retention_days": "120"},
+        data={
+            "action": "save_retention",
+            "retention_days": "60",
+            "audit_retention_days": "120",
+            "alert_retention_days": "45",
+        },
     )
     assert resp.status_code == 200
     assert get_setting(db, "audit_retention_days") == "120"
     assert get_setting(db, "event_retention_days") == "60"
+    assert get_setting(db, "alert_retention_days") == "45"
 
 
 def test_save_retention_without_audit_keeps_existing(admin_client, db):
@@ -121,7 +140,7 @@ def test_purge_now_purges_expired_audit_entries(admin_client, db):
     record_audit(db, "old-actor", "127.0.0.1", "login", "console", {})
     db.execute(
         "UPDATE audit_log SET timestamp = ? WHERE actor = 'old-actor'",
-        ((datetime.now(timezone.utc) - timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%SZ"),),
+        ((datetime.now(UTC) - timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%SZ"),),
     )
     db.commit()
 
@@ -143,3 +162,22 @@ def test_purge_now_keeps_fresh_audit_entries(admin_client, db):
         "SELECT COUNT(*) AS c FROM audit_log WHERE actor = 'fresh-actor'"
     ).fetchone()["c"]
     assert remaining == 1
+
+
+def test_purge_now_purges_expired_resolved_alerts(admin_client, db):
+    rule = create_alert_rule(db, None, "Old alert", check_name="disk_root", threshold=1.0)
+    event = create_alert_event(db, rule["id"], {"host": "old"}, 2.0)
+    resolve_alert_event(db, event["id"])
+    old_ts = (datetime.now(UTC) - timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.execute(
+        "UPDATE alert_events SET fired_at = ?, resolved_at = ? WHERE id = ?",
+        (old_ts, old_ts, event["id"]),
+    )
+    db.commit()
+
+    resp = admin_client.post("/admin/cleanup", data={"action": "purge_now"})
+    assert resp.status_code == 200
+    remaining = db.execute(
+        "SELECT COUNT(*) AS c FROM alert_events WHERE id = ?", (event["id"],)
+    ).fetchone()["c"]
+    assert remaining == 0
