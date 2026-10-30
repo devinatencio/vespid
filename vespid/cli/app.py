@@ -10,13 +10,22 @@ from datetime import datetime, timezone
 from typing import Any
 
 import typer
-from rich.console import Console
-from rich.json import JSON
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from ..control_socket import send_command
+from ._common import (
+    JsonOption,
+    check_resp,
+    console,
+    dump_json,
+    err_console,
+    make_table,
+    print_count,
+    print_empty,
+    sort_entries_by_ip,
+)
 
 app = typer.Typer(
     name="vespid-cli",
@@ -65,14 +74,6 @@ app.add_typer(
     name="synthetic-checks",
     rich_help_panel="Server Commands",
 )
-
-console = Console()
-err_console = Console(stderr=True)
-
-# ---------------------------------------------------------------------------
-# Reusable --json option
-# ---------------------------------------------------------------------------
-JsonOption = typer.Option(False, "--json", help="Output raw JSON instead of pretty tables.")
 
 
 # ---------------------------------------------------------------------------
@@ -134,45 +135,12 @@ def _safe(cmd: str, **kwargs: Any) -> dict[str, Any]:
         return send_command(cmd, **kwargs)
     except FileNotFoundError:
         return {"ok": False, "error": "daemon_not_running (control socket missing)"}
-    except (TimeoutError, ConnectionRefusedError) as exc:
-        return {"ok": False, "error": f"daemon_unreachable: {exc}"}
     except PermissionError as exc:
         return {"ok": False, "error": f"permission_denied: {exc}"}
-
-
-def _dump_json(payload: dict[str, Any]) -> int:
-    console.print(JSON(json.dumps(payload, sort_keys=True)))
-    return 0 if payload.get("ok") else 1
-
-
-def _print_error(resp: dict[str, Any]) -> int:
-    """Print a user-friendly error panel and return exit code 1."""
-    error = resp.get("error", "unknown error")
-    hint = ""
-    if "daemon_not_running" in error:
-        hint = "Start the daemon with: [bold]sudo systemctl start vespid[/bold]"
-    elif "daemon_unreachable" in error:
-        hint = "The daemon may be overloaded or restarting. Try again in a moment."
-    elif "permission_denied" in error:
-        hint = "Try running with [bold]sudo[/bold] or check socket permissions."
-
-    body = Text(error, style="red")
-    if hint:
-        body.append(f"\n\n💡 {hint}")
-
-    err_console.print(Panel(body, title="[red]✖ Error[/red]", border_style="red", expand=False))
-    return 1
-
-
-def _check_resp(resp: dict[str, Any], json_output: bool) -> bool:
-    """If response is an error, print it and return False."""
-    if resp.get("ok"):
-        return True
-    if json_output:
-        _dump_json(resp)
-    else:
-        _print_error(resp)
-    return False
+    except (TimeoutError, ConnectionRefusedError, OSError) as exc:
+        return {"ok": False, "error": f"daemon_unreachable: {exc}"}
+    except (json.JSONDecodeError, ValueError) as exc:
+        return {"ok": False, "error": f"invalid_daemon_response: {exc}"}
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +161,10 @@ def status(
     """Show daemon status overview."""
 
     resp = _safe("status")
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
     nft = resp.get("nft", {})
@@ -343,7 +311,7 @@ def counters(
 
     while True:
         resp = _safe("counters")
-        if not _check_resp(resp, json_output):
+        if not check_resp(resp, json_output):
             raise typer.Exit(1)
 
         raw_counters = resp.get("counters", [])
@@ -353,7 +321,7 @@ def counters(
             raw_counters = [c for c in raw_counters if chain in c.get("chain", "")]
 
         if json_output:
-            _dump_json({"counters": raw_counters})
+            dump_json({"counters": raw_counters})
             if watch <= 0:
                 return
             _time.sleep(watch)
@@ -465,10 +433,10 @@ def block(
 ) -> None:
     """Manually block an IP in shield_local."""
     resp = _safe("block", ip=ip, reason=reason)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
     console.print(
         f"[bold red]🚫 Blocked[/bold red] [white]{ip}[/white]  reason=[dim]{reason}[/dim]"
@@ -483,10 +451,10 @@ def unblock(
 ) -> None:
     """Manually unblock an IP."""
     resp = _safe("unblock", ip=ip, reason=reason)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
     console.print(
         f"[bold green]✅ Unblocked[/bold green] [white]{ip}[/white]  reason=[dim]{reason}[/dim]"
@@ -500,10 +468,10 @@ def sync_feeds(
     """Force a subscription feed sync."""
     with console.status("[bold cyan]Syncing feeds…[/bold cyan]", spinner="dots"):
         resp = _safe("sync_feeds")
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
     console.print("[bold green]✅ Feed sync complete.[/bold green]")
 
@@ -514,37 +482,18 @@ def list_local(
 ) -> None:
     """List every IP currently in shield_local with TTL and reason."""
     resp = _safe("list_local")
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
-    rows = resp.get("entries", [])
+    rows = sort_entries_by_ip(resp.get("entries", []), key="ip")
     if not rows:
-        console.print("[dim](shield_local is empty)[/dim]")
+        print_empty("shield_local is empty")
         return
 
-    # Sort by IP address numerically
-    import ipaddress
-
-    def _sort_key(entry: dict[str, Any]) -> tuple:
-        try:
-            return (0, ipaddress.ip_address(entry["ip"].split("/")[0]))
-        except (ValueError, KeyError):
-            return (1, entry.get("ip", ""))
-
-    rows.sort(key=_sort_key)
-
-    table = Table(
-        title="shield_local",
-        border_style="red",
-        show_lines=False,
-        padding=(0, 1),
-        title_style="bold red",
-        header_style="bold",
-        row_styles=["", "dim"],
-    )
+    table = make_table("shield_local", "red", row_styles=["", "dim"])
     table.add_column("IP", style="bold white", min_width=20)
     table.add_column("TTL", justify="right")
     table.add_column("Strike", justify="center")
@@ -556,7 +505,7 @@ def list_local(
         strike = r.get("strike", 1)
         strike_style = "bold red" if strike >= 3 else ("yellow" if strike >= 2 else "dim")
         table.add_row(
-            r["ip"],
+            r.get("ip", "-"),
             Text(_fmt_ttl(ttl), style=_ttl_style(ttl)),
             Text(str(strike), style=strike_style),
             _fmt_ts(r.get("blocked_at", 0)),
@@ -564,7 +513,7 @@ def list_local(
         )
 
     console.print(table)
-    console.print(f"[dim]{len(rows)} entries[/dim]")
+    print_count(len(rows), "entries")
 
 
 @app.command("list-subscribed", rich_help_panel="Local Commands")
@@ -574,34 +523,27 @@ def list_subscribed(
 ) -> None:
     """List entries in shield_subscribed."""
     resp = _safe("list_subscribed", limit=None if limit == 0 else limit)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
-    entries = resp.get("entries", [])
+    entries = sort_entries_by_ip(resp.get("entries", []), key=None)
     total = resp.get("count", len(entries))
     returned = resp.get("returned", len(entries))
 
     if not entries:
-        console.print("[dim](shield_subscribed is empty)[/dim]")
+        print_empty("shield_subscribed is empty")
         return
 
-    table = Table(
-        title="shield_subscribed",
-        border_style="blue",
-        show_lines=False,
-        padding=(0, 1),
-        title_style="bold blue",
-        header_style="bold",
-    )
+    table = make_table("shield_subscribed", "blue")
     table.add_column("Entry", style="white")
     for e in entries:
         table.add_row(str(e))
 
     console.print(table)
-    console.print(f"[dim]showing {returned} of {total} entries[/dim]")
+    print_count(returned, "entries", total=total)
 
 
 @app.command(rich_help_panel="Local Commands")
@@ -611,10 +553,10 @@ def check(
 ) -> None:
     """Check whether an IP is blocked and why."""
     resp = _safe("check", ip=ip)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
     r = resp.get("result", {})
@@ -669,10 +611,10 @@ def recidive(
     seen, and what TTL it would receive on its next offense.
     """
     resp = _safe("recidive_info", ip=ip)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
     r = resp.get("result", {})
@@ -708,10 +650,10 @@ def recent(
 ) -> None:
     """Show recent block/unblock decisions."""
     resp = _safe("recent", limit=limit)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
     entries = resp.get("entries", [])
@@ -757,10 +699,10 @@ def allowlist_add(
     Also auto-unblocks the IP from shield_local if it was blocked.
     """
     resp = _safe("allowlist_add", entry=entry)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
     normalized = resp.get("entry", entry)
@@ -787,10 +729,10 @@ def allowlist_remove(
     Config-file entries require editing the config and restarting.
     """
     resp = _safe("allowlist_remove", entry=entry)
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
     console.print(
@@ -804,36 +746,28 @@ def allowlist_list(
 ) -> None:
     """Show all allowlisted IPs/CIDRs with their source."""
     resp = _safe("allowlist_list")
-    if not _check_resp(resp, json_output):
+    if not check_resp(resp, json_output):
         raise typer.Exit(1)
     if json_output:
-        _dump_json(resp)
+        dump_json(resp)
         return
 
-    entries = resp.get("entries", [])
+    entries = sort_entries_by_ip(resp.get("entries", []), key="entry")
     if not entries:
-        console.print("[dim](allowlist is empty)[/dim]")
+        print_empty("allowlist is empty")
         return
 
-    table = Table(
-        title="Allowlist",
-        border_style="green",
-        show_lines=False,
-        padding=(0, 1),
-        title_style="bold green",
-        header_style="bold",
-        row_styles=["", "dim"],
-    )
+    table = make_table("Allowlist", "green", row_styles=["", "dim"])
     table.add_column("Entry", style="bold white", min_width=20)
     table.add_column("Source")
 
     for e in entries:
         source = e.get("source", "unknown")
         style = "dim cyan" if source == "config" else "green"
-        table.add_row(e["entry"], Text(source, style=style))
+        table.add_row(e.get("entry", "-"), Text(source, style=style))
 
     console.print(table)
-    console.print(f"[dim]{len(entries)} entries[/dim]")
+    print_count(len(entries), "entries")
 
 
 @app.command("tail-log", rich_help_panel="Local Commands")
@@ -1096,7 +1030,7 @@ def spool(
 
     if not os.path.exists(path):
         if json_output:
-            _dump_json({"ok": True, "spool": "empty", "path": path})
+            dump_json({"ok": True, "spool": "empty", "path": path})
         else:
             console.print(f"[dim]Spool file does not exist yet:[/dim] {path}")
         return
@@ -1111,7 +1045,7 @@ def spool(
         with open(path, "w") as fh:
             fh.truncate(0)
         if json_output:
-            _dump_json({"ok": True, "purged_bytes": size_before, "path": path})
+            dump_json({"ok": True, "purged_bytes": size_before, "path": path})
         else:
             console.print(f"[bold green]Purged[/bold green] {_fmt_bytes(size_before)} from {path}")
         return
@@ -1123,7 +1057,7 @@ def spool(
         events = [e for line in raw_lines if (e := _parse_spool_line(line)) is not None]
 
         if json_output:
-            _dump_json({"ok": True, "count": len(events), "events": events})
+            dump_json({"ok": True, "count": len(events), "events": events})
             return
 
         if not events:
@@ -1166,7 +1100,7 @@ def spool(
         summary = _spool_summary(path)
 
     if json_output:
-        _dump_json({"ok": True, **summary})
+        dump_json({"ok": True, **summary})
         return
 
     if summary["event_count"] == 0:

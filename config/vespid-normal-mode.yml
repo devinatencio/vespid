@@ -125,6 +125,9 @@ fleet_local_allow_list: []
 flush_interval_seconds: 5
 flush_batch_size: 100
 heartbeat_interval_seconds: 300
+# Poll for queued operator commands (e.g. mode changes) independently of
+# the full heartbeat, so interactive commands apply quickly.
+command_poll_interval_seconds: 30
 
 # --- Logging ---------------------------------------------------------------
 log_level: "INFO"

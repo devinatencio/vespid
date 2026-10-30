@@ -6,7 +6,7 @@ PYTHON   ?= python3
 PYTEST   ?= python3 -m pytest
 PIP      ?= pip3
 NAME     := vespid
-VERSION  := 1.0.3
+VERSION  := 1.0.4
 
 # Put a rustup-installed toolchain on PATH for the build recipes even when the
 # user's shell has not sourced ~/.cargo/env yet (e.g. right after package-deps

@@ -167,11 +167,17 @@ stateDiagram-v2
 ### Changing Mode from the Dashboard
 
 Mode changes made from the Host Threats Dashboard are queued as a
-`set_auditd_mode` command for the agent. The agent applies the command on its
-next poll and reports the new mode in its next heartbeat
+`set_auditd_mode` command for the agent. The agent polls for commands every
+30 seconds by default (`command_poll_interval_seconds`), applies the command,
+and reports the live mode in its next heartbeat
 (`nodes.last_host_info.auditd.mode`). The dashboard shows **Applying…** and
-polls until the host confirms, so the change is not instant — a page refreshed
-before the heartbeat may still show the previous mode.
+polls the command status until the host confirms. If the agent rejects the
+command (for example because the auditd pipeline is not initialized) the
+dashboard reports the failure instead of leaving the mode pending
+indefinitely.
+
+The heartbeat reports the **live** `ModeManager` value, not just the state
+file, so the dashboard cannot show a stale mode after a config override.
 
 ### Learning Mode
 
@@ -197,8 +203,10 @@ before the heartbeat may still show the previous mode.
   the cooldown period expires
 
 !!! tip "Mode Override"
-    The operator can force any mode at any time via the config file. Config
-    overrides always take precedence over the persisted state machine.
+    A config-file mode change always overrides the persisted runtime mode.
+    If the config mode is unchanged, the persisted mode wins — so a mode
+    selected from the dashboard (or an auto-promotion) survives daemon
+    restarts.
 
 ---
 
@@ -541,6 +549,57 @@ Returns per-host summary card data for all active hosts.
 
 ---
 
+### POST /admin/host-threats/set-mode
+
+Queue a `set_auditd_mode` command for the node currently reporting events for
+a host. The command is delivered on the agent's next heartbeat poll.
+
+**Request body:**
+
+```json
+{"hostname": "web-01", "mode": "alerting"}
+```
+
+Valid modes: `learning`, `detecting`, `alerting`.
+
+**Response (200):**
+
+```json
+{"success": true, "mode": "alerting", "command_id": "..."}
+```
+
+---
+
+### GET /admin/host-threats/mode-status
+
+Returns the host's last reported auditd mode and the status of a queued mode
+change. The dashboard uses this to distinguish "applied but not yet
+heartbeated" from "the agent rejected the command".
+
+**Query Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `hostname` | string | Host to look up (required) |
+| `command_id` | string | Queued command returned by `set-mode` (optional) |
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "hostname": "web-01",
+  "node_id": "node-123",
+  "mode": "detecting",
+  "command_status": "failed",
+  "command_result": "auditd pipeline is not initialized; cannot change mode"
+}
+```
+
+`command_status` is `null` when no matching command is found for that node.
+
+---
+
 ### GET /admin/host-threats/score-history
 
 Returns 24h score timeseries (288 points at 5-minute intervals).
@@ -695,7 +754,9 @@ Use exclusion lists to reduce noise at the source:
 ### State Persistence
 
 - **Mode state**: Persisted to `STATE_DIR/auditd_mode_state.json`; survives
-  daemon restarts
+  daemon restarts. The file records the runtime mode and the config mode it
+  was saved under, so config changes still override it while dashboard modes
+  and auto-promotion persist.
 - **Suppression rules**: Stored server-side in `config_profiles.settings` JSON
 - **Process tree**: In-memory only; rebuilt from auditd logs after restart
 

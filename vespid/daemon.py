@@ -665,10 +665,15 @@ class Vespid:
                 if not mode:
                     return {"ok": False, "error": "missing mode in payload"}
                 try:
-                    self.logproc.set_auditd_mode(mode)
-                    return {"ok": True, "mode": mode}
+                    applied = self.logproc.set_auditd_mode(mode)
                 except ValueError as e:
                     return {"ok": False, "error": str(e)}
+                if applied == "unknown":
+                    return {
+                        "ok": False,
+                        "error": "auditd pipeline is not initialized; cannot change mode",
+                    }
+                return {"ok": True, "mode": applied}
             else:
                 return {"ok": False, "error": f"unknown command: {command_type}"}
         except Exception as exc:
@@ -1070,6 +1075,7 @@ class Vespid:
         self.bus._get_feeds = self._get_feed_snapshot
         self.bus._get_counters_cb = self.nft.get_counters
         self.bus._exec_cmd = self._dispatch_command
+        self.bus._get_auditd_mode = self.logproc.get_auditd_mode
 
         loop = asyncio.get_running_loop()
         self._main_loop = loop

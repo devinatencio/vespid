@@ -1,5 +1,5 @@
 %define name        vespid
-%define version     1.0.3
+%define version     1.0.4
 %define release     1%{?dist}
 %define install_dir /opt/vespid
 %define config_dir  /etc/vespid
@@ -248,6 +248,8 @@ fi
 %license LICENSE
 
 %changelog
+* Fri Oct 30 2026 Vespid Team <team@vespid.dev> - 1.0.4-1
+- Host threat mode reliability and CLI list rendering fixes
 * Sun Oct 25 2026 Vespid Team <team@vespid.dev> - 1.0.3-1
 - Version bump to 1.0.3 (server-side intelligence fixes)
 * Mon Oct 12 2026 Vespid Team <team@vespid.dev> - 1.0.2-1

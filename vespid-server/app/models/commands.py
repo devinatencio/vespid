@@ -99,6 +99,18 @@ def acknowledge_command(
     return True
 
 
+def get_command(db: sqlite3.Connection, command_id: str) -> dict | None:
+    """Fetch a single queued command by its command_id.
+
+    Returns the command row as a dict, or ``None`` when it does not exist.
+    """
+    row = db.execute(
+        "SELECT * FROM pending_commands WHERE command_id = ?",
+        (command_id,),
+    ).fetchone()
+    return _row_to_dict(row) if row is not None else None
+
+
 def list_commands(
     db: sqlite3.Connection,
     node_id: str | None = None,

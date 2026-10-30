@@ -4,11 +4,17 @@ Manages the learning → detecting → alerting state machine, persisting
 state to STATE_DIR/auditd_mode_state.json so transitions survive daemon
 restarts.
 
+The state file records both the effective runtime mode and the config mode
+that was in effect when it was written. On startup the persisted runtime
+mode wins as long as the config mode has not changed; a config change still
+overrides it, so operators can force a mode from the config file.
+
 State file format:
     {
         "mode": "learning",
         "learning_started_at": 1705312200.0,
-        "promoted_at": null
+        "promoted_at": null,
+        "config_mode": "learning"
     }
 """
 
@@ -36,8 +42,9 @@ class ModeManager:
     On each pipeline cycle, checks whether learning_duration_hours has
     elapsed and auto-promotes to "detecting" if so.
 
-    Manual config overrides are always honored — the operator can force
-    any mode at any time via the config file.
+    A config-mode change always overrides the persisted runtime mode. If the
+    config mode is unchanged, the persisted runtime mode wins, so a mode
+    selected from the dashboard survives daemon restarts.
     """
 
     def __init__(
@@ -47,9 +54,14 @@ class ModeManager:
         state_dir: str | Path | None = None,
     ) -> None:
         self._config_mode = config_mode
+        # Config mode recorded in the state file. ``None`` means the state
+        # file is missing or was written by an older version that did not
+        # track it, in which case the config value is applied once.
+        self._state_config_mode: str | None = None
         self._learning_duration_hours = learning_duration_hours
         self._state_dir = Path(state_dir) if state_dir else STATE_DIR
         self._state_path = self._state_dir / _STATE_FILENAME
+        self._had_state_file = self._state_path.exists()
 
         # Internal state
         self._mode: str = "learning"
@@ -77,8 +89,14 @@ class ModeManager:
         """Return the timestamp when auto-promotion occurred (if applicable)."""
         return self._promoted_at
 
-    def set_mode(self, mode: str, now: float | None = None) -> str:
-        """Programmatically set the mode (e.g. from a server command).
+    def set_mode(
+        self,
+        mode: str,
+        now: float | None = None,
+        *,
+        from_config: bool = False,
+    ) -> str:
+        """Programmatically set the mode.
 
         Persists the new state and resets the learning timer when entering
         'learning' mode.
@@ -86,6 +104,9 @@ class ModeManager:
         Args:
             mode: One of 'learning', 'detecting', 'alerting'.
             now: Current time override (defaults to time.time()).
+            from_config: True when applying a config-file/profile value. In
+                that case the recorded config mode is updated too, so a later
+                restart knows the config has already been applied.
 
         Returns:
             The new effective mode.
@@ -99,12 +120,18 @@ class ModeManager:
         if now is None:
             now = time.time()
 
+        source = "config" if from_config else "server command"
         log.info(
-            "Mode set programmatically: %r -> %r (server command)",
+            "Mode set programmatically: %r -> %r (%s)",
             self._mode,
             mode,
+            source,
         )
         self._mode = mode
+
+        if from_config:
+            self._config_mode = mode
+            self._state_config_mode = mode
 
         if mode == "learning":
             # Reset the learning timer when going back to learning
@@ -165,33 +192,69 @@ class ModeManager:
         return self._mode
 
     def _apply_config_override(self) -> None:
-        """Honor manual config override.
+        """Apply the config mode when it is new or has changed.
 
-        If config_mode differs from the persisted mode, the config value
-        is used immediately. The operator can force any mode at any time.
+        The state file records the config mode that was in effect when the
+        runtime mode was last persisted. If the config mode is unchanged, the
+        persisted runtime mode wins, so dashboard changes and auto-promotion
+        survive restarts. If the config mode changed, the operator's config
+        value takes precedence.
         """
         now = time.time()
 
         if self._config_mode not in _VALID_MODES:
             log.warning("Invalid config mode %r; ignoring override", self._config_mode)
-            # Fall through to normal initialization
-        else:
-            # If config mode differs from persisted mode, honor config
-            if self._config_mode != self._mode:
-                log.info(
-                    "Config override: mode changed from %r to %r",
-                    self._mode,
-                    self._config_mode,
-                )
-                self._mode = self._config_mode
+            self._ensure_state(now)
+            return
 
-        # On first startup with mode="learning" and no persisted state,
-        # record the learning start timestamp
+        if self._state_config_mode is None and self._had_state_file:
+            # State written by an older daemon version: we cannot tell
+            # whether the config mode changed since then, so preserve the
+            # persisted runtime mode and start tracking config changes now.
+            log.info(
+                "Legacy mode state has no config_mode; preserving runtime mode %r "
+                "and recording config mode %r",
+                self._mode,
+                self._config_mode,
+            )
+            self._state_config_mode = self._config_mode
+            self._persist_state()
+            return
+
+        config_changed = (
+            self._state_config_mode is None or self._state_config_mode != self._config_mode
+        )
+        if config_changed:
+            log.info(
+                "Config mode override: %r -> %r (recorded config mode was %r)",
+                self._mode,
+                self._config_mode,
+                self._state_config_mode,
+            )
+            self._mode = self._config_mode
+            self._state_config_mode = self._config_mode
+            if self._config_mode == "learning":
+                self._learning_started_at = now
+                self._promoted_at = None
+            elif self._config_mode == "detecting" and self._learning_started_at is not None:
+                self._promoted_at = now
+            self._persist_state()
+            return
+
+        # Config is unchanged. Keep the persisted runtime mode, but make sure
+        # the state file is complete.
+        self._ensure_state(now)
+
+    def _ensure_state(self, now: float) -> None:
+        """Ensure the state file exists and records the current config mode."""
+        changed = False
+        if self._state_config_mode is None and self._config_mode in _VALID_MODES:
+            self._state_config_mode = self._config_mode
+            changed = True
         if self._mode == "learning" and self._learning_started_at is None:
             self._learning_started_at = now
-            self._persist_state()
-        elif self._mode != "learning" and self._learning_started_at is None:
-            # Non-learning mode from the start — no learning timestamp needed
+            changed = True
+        if changed:
             self._persist_state()
 
     def _load_state(self) -> None:
@@ -234,6 +297,17 @@ class ModeManager:
             if isinstance(promoted_at, (int, float)) and promoted_at > 0:
                 self._promoted_at = float(promoted_at)
 
+            # Extract the config mode recorded with this state. Missing means
+            # an older state file; the config value is applied once.
+            state_config_mode = data.get("config_mode")
+            if state_config_mode in _VALID_MODES:
+                self._state_config_mode = state_config_mode
+            elif state_config_mode is not None:
+                log.warning(
+                    "Persisted config mode %r is invalid — ignoring",
+                    state_config_mode,
+                )
+
         except json.JSONDecodeError as exc:
             log.warning(
                 "Mode state file contains invalid JSON (%s) — using defaults",
@@ -256,6 +330,7 @@ class ModeManager:
             "mode": self._mode,
             "learning_started_at": self._learning_started_at,
             "promoted_at": self._promoted_at,
+            "config_mode": self._state_config_mode,
         }
 
         try:

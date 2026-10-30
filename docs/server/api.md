@@ -286,6 +286,8 @@ event schema and detection pipeline.
 | GET | `/admin/host-threats/timeline` | Analyst+ | Kill chain timeline JSON (Chart.js) |
 | GET | `/admin/host-threats/score-history` | Analyst+ | 24h score timeseries (288 data points) |
 | GET | `/admin/host-threats/summary` | Analyst+ | Per-host summary cards JSON |
+| POST | `/admin/host-threats/set-mode` | Analyst+ | Queue a `set_auditd_mode` command for a host |
+| GET | `/admin/host-threats/mode-status` | Analyst+ | Host mode plus queued command status |
 
 ## Config management API
 

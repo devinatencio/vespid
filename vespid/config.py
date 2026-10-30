@@ -395,6 +395,9 @@ class ShieldConfig:
     spool_max_size_bytes: int = 100 * 1024 * 1024  # 100 MiB
     spool_max_events: int = 100_000
     heartbeat_interval_seconds: int = 300  # 5 minutes
+    # How often to poll the server for queued operator commands. Kept
+    # independent of the full heartbeat so mode changes apply quickly.
+    command_poll_interval_seconds: int = 30
 
     # --- Log processor --------------------------------------------------
     # Auto-detected based on OS family (Debian, RedHat, SUSE).

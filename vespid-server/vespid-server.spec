@@ -1,5 +1,5 @@
 %define name        vespid-server
-%{!?version:%define version 1.0.3}
+%{!?version:%define version 1.0.4
 %define release     1%{?dist}
 %define install_dir /opt/vespid-server
 %define config_dir  /etc/vespid-server
@@ -283,6 +283,8 @@ fi
 %license LICENSE
 
 %changelog
+* Fri Oct 30 2026 Vespid Team <team@vespid.dev> - 1.0.4-1
+- Host threat mode reliability and CLI list rendering fixes
 * Sun Oct 25 2026 Vespid Team <team@vespid.dev> - 1.0.3-1
 - Fix block episode under-counting when fleet blocks are propagated
 - Record unblock events in the IP intelligence history timeline

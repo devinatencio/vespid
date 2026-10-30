@@ -144,6 +144,12 @@ class LogProcessor:
             return "unknown"
         return self._mode_manager.set_mode(mode)
 
+    def get_auditd_mode(self) -> str:
+        """Return the live auditd mode for heartbeat/status reporting."""
+        if not hasattr(self, "_mode_manager"):
+            return "unknown"
+        return self._mode_manager.current_mode
+
     def _spawn_auditd_tailer_tasks(self, loop=None, catchup=False) -> None:
         """Spawn the auditd file tailer and flush loop tasks."""
         if loop is None:
@@ -213,7 +219,7 @@ class LogProcessor:
 
         if self._auditd_enabled and hasattr(self, "_mode_manager"):
             if new_cfg.mode != old.mode:
-                self._mode_manager.set_mode(new_cfg.mode)
+                self._mode_manager.set_mode(new_cfg.mode, from_config=True)
                 changes.append("mode")
 
             if new_cfg.learning_duration_hours != old.learning_duration_hours:

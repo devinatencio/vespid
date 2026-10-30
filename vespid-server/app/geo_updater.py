@@ -44,7 +44,7 @@ def _download_file(url: str, target: str) -> bool:
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "Vespid-Server/1.0.3",
+            "User-Agent": "Vespid-Server/1.0.4",
             "Accept": "*/*",
         },
     )

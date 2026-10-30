@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-10-30
+
+### Fixed
+
+- Host Threats mode changes now target the host's most recent `node_id`
+  (falling back to `nodes.display_name`), so a command is no longer queued to
+  a stale node after a re-enrollment or cloned VM. The dashboard also tracks
+  the queued command and reports agent-side failures instead of remaining on
+  "Pending next heartbeat", and the agent now fails the command when the
+  auditd pipeline is not initialized.
+- `vespid-cli list-local` no longer crashes with
+  `... are not of the same version` when the local blocklist contains both
+  IPv4 and IPv6 entries. `list-local`, `list-subscribed`, and
+  `allowlist-list` now share one IP-aware renderer, sort mixed address
+  families deterministically, and use the same `--json`/error helpers.
+- Auditd mode changes now apply promptly: the agent polls for queued commands
+  every 30 seconds instead of waiting for the 5-minute heartbeat.
+- Heartbeats report the live `ModeManager` mode rather than a potentially
+  stale state file, and the persisted mode now records the config mode it was
+  saved under. Dashboard-selected modes and auto-promotion survive agent
+  restarts while genuine config-mode changes still take precedence.
+- Host Summary cards now show the top rule on its own line beneath the host
+  and event details, with the full rule name wrapping as needed instead of
+  appearing as an abruptly clipped code chip. The production table's Top
+  Detection column truncates cleanly with a hover tooltip.
+
 ## [1.0.3] - 2026-10-25
 
 ### Added
@@ -195,6 +221,7 @@ Linux systems running nftables.
 - Ruff and mypy are clean across the Python agent; ruff is clean across the
   server.
 
+[1.0.4]: https://github.com/vespid/vespid/releases/tag/v1.0.4
 [1.0.3]: https://github.com/vespid/vespid/releases/tag/v1.0.3
 [1.0.2]: https://github.com/vespid/vespid/releases/tag/v1.0.2
 [1.0.1]: https://github.com/vespid/vespid/releases/tag/v1.0.1

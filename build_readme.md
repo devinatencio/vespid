@@ -3,8 +3,8 @@ build_deb.sh
 :
 
 Package	What it installs
-vespid_1.0.3_all.deb	Daemon + CLI (the node agent)
-vespid-server_1.0.3_all.deb	Flask dashboard server
+vespid_1.0.4_all.deb	Daemon + CLI (the node agent)
+vespid-server_1.0.4_all.deb	Flask dashboard server
 File layout:
 
 build_deb.sh                          # Main build script
@@ -32,8 +32,8 @@ Usage:
 ./build_deb.sh server
 
 # Install
-sudo dpkg -i dist/deb/vespid_1.0.3_all.deb
-sudo dpkg -i dist/deb/vespid-server_1.0.3_all.deb
+sudo dpkg -i dist/deb/vespid_1.0.4_all.deb
+sudo dpkg -i dist/deb/vespid-server_1.0.4_all.deb
 sudo apt-get install -f   # resolve any missing deps
 The packages mirror the same layout and lifecycle as your existing RPM specs — virtualenv created in postinst, config files protected from overwrites on upgrade, systemd services enabled automatically, and clean removal/purge behavior.
 

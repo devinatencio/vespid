@@ -27,7 +27,7 @@ from flask_login import login_required
 from app.config_resolution import resolve_effective_profile
 from app.decorators import require_role
 from app.default_noise_rules import is_default_noise
-from app.models import create_command, get_db
+from app.models import create_command, get_command, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ def _host_event_ts(dt: datetime) -> str:
     format keeps both backends consistent.
     """
     return dt.strftime("%Y-%m-%d %H:%M:%S")
+
 
 # ── ATT&CK Tactic Color Mapping ─────────────────────────────────────────────
 # Maps Sigma rule tag prefixes to human-readable tactic names and Chart.js colors.
@@ -1490,7 +1491,7 @@ def set_host_threat_mode():
     Valid modes: learning, detecting, alerting
 
     Returns JSON:
-        {"success": true, "mode": "alerting"}
+        {"success": true, "mode": "alerting", "command_id": "..."}
     """
     body = request.get_json(silent=True)
     if not body or not isinstance(body, dict):
@@ -1513,22 +1514,106 @@ def set_host_threat_mode():
     db_path = current_app.config["DATABASE_PATH"]
     db = get_db(db_path)
     try:
-        node_row = db.execute(
-            "SELECT node_id FROM host_events WHERE hostname = ? LIMIT 1",
-            (hostname,),
-        ).fetchone()
-        if node_row is None:
+        node_id = _resolve_host_node_id(db, hostname)
+        if not node_id:
             return jsonify({"error": "host_not_found"}), 404
 
-        node_id = node_row["node_id"]
-
         # Queue the command for the agent to pick up
-        create_command(db, node_id, "set_auditd_mode", {"mode": mode})
+        command_id = create_command(db, node_id, "set_auditd_mode", {"mode": mode})
 
-        logger.info("Queued set_auditd_mode=%s command for node %s (%s)", mode, node_id, hostname)
-        return jsonify({"success": True, "mode": mode})
+        logger.info(
+            "Queued set_auditd_mode=%s command %s for node %s (%s)",
+            mode,
+            command_id,
+            node_id,
+            hostname,
+        )
+        return jsonify({"success": True, "mode": mode, "command_id": command_id})
     finally:
         db.close()
+
+
+@host_threats_bp.route("/admin/host-threats/mode-status")
+@login_required
+def host_threat_mode_status():
+    """Return the host's current mode and the status of a queued mode change.
+
+    The dashboard uses this to distinguish "the agent applied the change but
+    the heartbeat hasn't arrived yet" from "the agent rejected the command"
+    instead of polling until a fixed timeout.
+
+    Query params:
+        hostname: Host to look up.
+        command_id: Optional queued command to report the status of.
+    """
+    hostname = request.args.get("hostname", "").strip()
+    command_id = request.args.get("command_id", "").strip()
+    if not hostname:
+        return jsonify({"error": "invalid_request"}), 400
+
+    db_path = current_app.config["DATABASE_PATH"]
+    db = get_db(db_path)
+    try:
+        node_id = _resolve_host_node_id(db, hostname)
+        mode = "unknown"
+        if node_id:
+            row = db.execute(
+                "SELECT last_host_info FROM nodes WHERE node_id = ?",
+                (node_id,),
+            ).fetchone()
+            if row is not None:
+                try:
+                    raw_hi = row["last_host_info"]
+                    hi = json.loads(raw_hi) if isinstance(raw_hi, str) else raw_hi
+                    if isinstance(hi, dict):
+                        auditd = hi.get("auditd", {})
+                        if isinstance(auditd, dict):
+                            mode = auditd.get("mode", "unknown")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        command = None
+        if command_id:
+            command = get_command(db, command_id)
+            # Never expose a command that belongs to a different node.
+            if command is not None and command.get("node_id") not in (node_id, "*"):
+                command = None
+
+        return jsonify(
+            {
+                "success": True,
+                "hostname": hostname,
+                "node_id": node_id,
+                "mode": mode,
+                "command_status": command.get("status") if command else None,
+                "command_result": command.get("result") if command else None,
+            }
+        )
+    finally:
+        db.close()
+
+
+def _resolve_host_node_id(db, hostname: str) -> str | None:
+    """Resolve the node that currently reports events for *hostname*.
+
+    ``host_events`` can contain more than one ``node_id`` for the same
+    hostname (for example after an agent re-enrollment or when a VM was
+    cloned). Queueing a command against an arbitrary historical row sends
+    it to a node that is no longer running, so always prefer the most
+    recent event and fall back to the ``nodes`` table by display name.
+    """
+    row = db.execute(
+        "SELECT node_id FROM host_events WHERE hostname = ? ORDER BY timestamp DESC LIMIT 1",
+        (hostname,),
+    ).fetchone()
+    if row is not None and row["node_id"]:
+        return row["node_id"]
+
+    row = db.execute(
+        "SELECT node_id FROM nodes WHERE display_name = ? ORDER BY last_seen_at DESC LIMIT 1",
+        (hostname,),
+    ).fetchone()
+    return row["node_id"] if row is not None else None
 
 
 # ── Alert Notification Dispatch ───────────────────────────────────────────

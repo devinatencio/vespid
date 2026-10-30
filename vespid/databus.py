@@ -125,6 +125,9 @@ class DataBus:
         self._get_feeds: Callable[[], list[dict[str, Any]]] | None = None
         self._get_counters_cb: Callable[[], list[dict[str, Any]]] | None = None
         self._exec_cmd: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None
+        self._get_auditd_mode: Callable[[], str] | None = None
+        self._command_poll_lock = threading.Lock()
+        self._command_poll_thread: threading.Thread | None = None
         self._stats = {
             "published": 0,
             "dropped": 0,
@@ -197,9 +200,17 @@ class DataBus:
                 target=self._heartbeat_loop, name="vespid-heartbeat", daemon=True
             )
             self._heartbeat_worker.start()
+            self._command_poll_thread = threading.Thread(
+                target=self._command_poll_loop, name="vespid-command-poll", daemon=True
+            )
+            self._command_poll_thread.start()
             log.info(
                 "Heartbeat thread started (interval=%ds)",
                 getattr(self.config, "heartbeat_interval_seconds", 300),
+            )
+            log.info(
+                "Command poll thread started (interval=%ds)",
+                getattr(self.config, "command_poll_interval_seconds", 30),
             )
 
         log.info("DataBus worker started (node_id=%s)", self.config.node_id)
@@ -210,6 +221,8 @@ class DataBus:
             self._worker.join(timeout=timeout)
         if hasattr(self, "_heartbeat_worker") and self._heartbeat_worker:
             self._heartbeat_worker.join(timeout=timeout)
+        if self._command_poll_thread:
+            self._command_poll_thread.join(timeout=timeout)
 
     def stats(self) -> dict[str, int]:
         with self._lock:
@@ -541,6 +554,23 @@ class DataBus:
         while not self._stop.wait(timeout=interval):
             self._send_heartbeat()
 
+    def _command_poll_loop(self) -> None:
+        """Poll for pending commands more often than the full heartbeat.
+
+        Operator commands are queued server-side and would otherwise wait for
+        the next heartbeat (5 minutes by default). A faster command poll keeps
+        mode changes and similar actions responsive without increasing full
+        heartbeat traffic.
+        """
+        interval = getattr(self.config, "command_poll_interval_seconds", 30)
+        # Let the heartbeat thread send the first heartbeat and establish
+        # connectivity before polling separately.
+        if not self._stop.wait(timeout=10):
+            return
+        while not self._stop.wait(timeout=interval):
+            if self._poll_commands():
+                self._send_state_update()
+
     def _get_api_base(self) -> str:
         """Derive the /api/v1 base URL from SERVER_URL.
 
@@ -554,6 +584,40 @@ class DataBus:
         if "/api/v1" in base:
             return base.rsplit("/api/v1", 1)[0] + "/api/v1"
         return base + "/api/v1"
+
+    def _build_auditd_state(self, auditd_cfg: Any) -> dict[str, Any]:
+        """Build the ``host_info.auditd`` heartbeat block.
+
+        The live ModeManager value is authoritative. The state file is only a
+        fallback for fields it owns (learning timer) and for older daemon
+        versions that did not expose the callback.
+        """
+        auditd_state: dict[str, Any] = {"mode": "unknown"}
+        state_path = STATE_DIR / "auditd_mode_state.json"
+        try:
+            if state_path.exists():
+                raw = state_path.read_text(encoding="utf-8")
+                state_data = json.loads(raw)
+                auditd_state["mode"] = state_data.get("mode", auditd_cfg.mode)
+                if state_data.get("learning_started_at"):
+                    auditd_state["learning_started_at"] = state_data["learning_started_at"]
+                auditd_state["learning_duration_hours"] = auditd_cfg.learning_duration_hours
+            else:
+                # No state file yet — use configured mode
+                auditd_state["mode"] = auditd_cfg.mode
+                auditd_state["learning_duration_hours"] = auditd_cfg.learning_duration_hours
+        except (OSError, json.JSONDecodeError, TypeError):
+            auditd_state["mode"] = auditd_cfg.mode
+
+        if self._get_auditd_mode is not None:
+            try:
+                live_mode = self._get_auditd_mode()
+            except Exception as exc:
+                log.debug("Could not read live auditd mode: %s", exc)
+            else:
+                if live_mode:
+                    auditd_state["mode"] = live_mode
+        return auditd_state
 
     def _send_heartbeat(self) -> None:
         """POST a heartbeat to the server's /api/v1/heartbeat endpoint.
@@ -627,26 +691,10 @@ class DataBus:
             )
         )
 
-        # Include auditd mode state if available (from persisted state file)
+        # Include auditd mode state if available
         auditd_cfg = getattr(self.config, "auditd", None)
         if auditd_cfg and auditd_cfg.enabled:
-            auditd_state: dict[str, Any] = {"mode": "unknown"}
-            state_path = STATE_DIR / "auditd_mode_state.json"
-            try:
-                if state_path.exists():
-                    raw = state_path.read_text(encoding="utf-8")
-                    state_data = json.loads(raw)
-                    auditd_state["mode"] = state_data.get("mode", auditd_cfg.mode)
-                    if state_data.get("learning_started_at"):
-                        auditd_state["learning_started_at"] = state_data["learning_started_at"]
-                    auditd_state["learning_duration_hours"] = auditd_cfg.learning_duration_hours
-                else:
-                    # No state file yet — use configured mode
-                    auditd_state["mode"] = auditd_cfg.mode
-                    auditd_state["learning_duration_hours"] = auditd_cfg.learning_duration_hours
-            except (OSError, json.JSONDecodeError, TypeError):
-                auditd_state["mode"] = auditd_cfg.mode
-            payload["host_info"]["auditd"] = auditd_state
+            payload["host_info"]["auditd"] = self._build_auditd_state(auditd_cfg)
 
         log.debug(
             "Sending heartbeat to %s (attempt %d/%d, node_id=%s, ts=%s)",
@@ -726,11 +774,21 @@ class DataBus:
 
     # --- command polling -----------------------------------------------
     def _poll_commands(self) -> bool:
-        """GET pending commands from the server and execute them locally.
+        """GET pending commands and execute them locally.
 
-        Called after each successful heartbeat. Commands are dispatched
-        to the local control socket (same handlers the CLI uses), and
-        results are reported back to the server.
+        Called by both the heartbeat and the faster command-poll loop. The
+        non-blocking lock prevents the two threads from fetching and executing
+        the same command twice.
+        """
+        if not self._command_poll_lock.acquire(blocking=False):
+            return False
+        try:
+            return self._poll_commands_locked()
+        finally:
+            self._command_poll_lock.release()
+
+    def _poll_commands_locked(self) -> bool:
+        """Execute a command poll while holding ``_command_poll_lock``.
 
         Returns True if any commands were executed, False otherwise.
         """
@@ -956,22 +1014,7 @@ class DataBus:
         # Include auditd mode state if available
         auditd_cfg = getattr(self.config, "auditd", None)
         if auditd_cfg and auditd_cfg.enabled:
-            auditd_state: dict[str, Any] = {"mode": "unknown"}
-            state_path = STATE_DIR / "auditd_mode_state.json"
-            try:
-                if state_path.exists():
-                    raw = state_path.read_text(encoding="utf-8")
-                    state_data = json.loads(raw)
-                    auditd_state["mode"] = state_data.get("mode", auditd_cfg.mode)
-                    if state_data.get("learning_started_at"):
-                        auditd_state["learning_started_at"] = state_data["learning_started_at"]
-                    auditd_state["learning_duration_hours"] = auditd_cfg.learning_duration_hours
-                else:
-                    auditd_state["mode"] = auditd_cfg.mode
-                    auditd_state["learning_duration_hours"] = auditd_cfg.learning_duration_hours
-            except (OSError, json.JSONDecodeError, TypeError):
-                auditd_state["mode"] = auditd_cfg.mode
-            host_info["auditd"] = auditd_state
+            host_info["auditd"] = self._build_auditd_state(auditd_cfg)
 
         payload = {
             "node_id": self.config.node_id,

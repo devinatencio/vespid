@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.0.4 — 2026-10-30
+
+### Fixed
+- Host Threats mode changes target the most recent node for a hostname
+  (falling back to the node's display name), and the dashboard reports failed
+  or timed-out `set_auditd_mode` commands instead of staying on "pending"
+
 ## 1.0.3 — 2026-10-25
 
 ### Added

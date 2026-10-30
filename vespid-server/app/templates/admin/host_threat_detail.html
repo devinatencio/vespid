@@ -154,27 +154,33 @@
     var _modePollSeq = 0;
     window.CAN_EDIT_HOST_THREATS = {{ 'true' if can_edit_host_threats else 'false' }};
 
-    function fetchHostMode(hostname) {
-        return fetch('/admin/host-threats/summary?hostname=' + encodeURIComponent(hostname) + '&per_page=1')
-            .then(function(r) { return r.ok ? r.json() : null; })
-            .then(function(data) {
-                if (!data || !data.cards || data.cards.length === 0) return null;
-                return data.cards[0].mode || null;
-            });
+    function fetchHostModeStatus(hostname, commandId) {
+        var url = '/admin/host-threats/mode-status?hostname=' + encodeURIComponent(hostname);
+        if (commandId) url += '&command_id=' + encodeURIComponent(commandId);
+        return fetch(url).then(function(r) { return r.ok ? r.json() : null; });
     }
 
-    function waitForHostMode(hostname, desiredMode, timeoutMs) {
+    function waitForHostMode(hostname, desiredMode, commandId, timeoutMs) {
         var deadline = Date.now() + timeoutMs;
         return new Promise(function(resolve) {
+            function finish(confirmed, error) {
+                resolve({ confirmed: confirmed, error: error || null });
+            }
+            function schedule() {
+                if (Date.now() >= deadline) { finish(false, null); return; }
+                setTimeout(poll, 5000);
+            }
             function poll() {
-                fetchHostMode(hostname).then(function(currentMode) {
-                    if (currentMode === desiredMode) { resolve(true); return; }
-                    if (Date.now() >= deadline) { resolve(false); return; }
-                    setTimeout(poll, 5000);
-                }).catch(function() {
-                    if (Date.now() >= deadline) { resolve(false); return; }
-                    setTimeout(poll, 5000);
-                });
+                fetchHostModeStatus(hostname, commandId).then(function(data) {
+                    if (!data) { schedule(); return; }
+                    var status = data.command_status || '';
+                    if (status === 'failed' || status === 'expired') {
+                        finish(false, data.command_result || ('command ' + status));
+                        return;
+                    }
+                    if (String(data.mode || '').toLowerCase() === desiredMode) { finish(true, null); return; }
+                    schedule();
+                }).catch(schedule);
             }
             poll();
         });
@@ -206,14 +212,18 @@
                 selectEl.setAttribute('data-prev-mode', mode);
                 if (statusEl) statusEl.textContent = 'Applying…';
                 showToast('Mode change queued; waiting for the host to confirm…', 'info');
-                waitForHostMode(hostname, mode, 5 * 60 * 1000).then(function(confirmed) {
+                waitForHostMode(hostname, mode, result.command_id, 15 * 60 * 1000).then(function(outcome) {
                     if (seq !== _modePollSeq) return;  /* superseded by a newer change */
-                    if (statusEl) statusEl.textContent = confirmed ? '' : 'Pending next heartbeat';
-                    if (confirmed) {
+                    if (outcome.error) {
+                        if (statusEl) statusEl.textContent = 'Failed: ' + outcome.error;
+                        showToast('Mode change failed: ' + outcome.error, 'error');
+                    } else if (outcome.confirmed) {
+                        if (statusEl) statusEl.textContent = '';
                         window._noiseHostMode = mode;
                         showToast('Mode confirmed: ' + mode.toUpperCase(), 'success');
                     } else {
-                        showToast('Mode queued, but the host has not confirmed yet (next heartbeat).', 'warning');
+                        if (statusEl) statusEl.textContent = 'Not confirmed yet — check the agent';
+                        showToast('Mode queued, but the host has not confirmed yet.', 'warning');
                     }
                 });
             } else {

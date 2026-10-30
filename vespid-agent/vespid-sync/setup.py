@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="vespid-sync",
-    version="1.0.3",
+    version="1.0.4",
     description="Vespid Sync Agent — discover infrastructure assets from Proxmox and other providers",
     author="Vespid Team",
     author_email="dev@vespid.io",
