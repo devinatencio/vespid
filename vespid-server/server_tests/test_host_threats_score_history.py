@@ -52,9 +52,9 @@ def _insert_host_event(db, hostname, rule_name, timestamp, node_id="node-1", eve
 
 
 def _ts(hours_ago):
-    """Return an ISO UTC timestamp for N hours ago."""
+    """Return a timestamp in the format stored in host_events for N hours ago."""
     dt = datetime.now(timezone.utc) - timedelta(hours=hours_ago)
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 class TestScoreHistoryBasics:

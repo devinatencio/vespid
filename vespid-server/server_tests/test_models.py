@@ -258,7 +258,7 @@ class TestNodesSchema:
             "id", "node_id", "display_name", "first_seen_at", "last_event_at",
             "total_events", "last_geo_data", "last_whitelist", "last_allowlist",
             "last_feeds", "last_counters", "last_host_info", "asset_id",
-            "agent_version", "last_seen_at",
+            "agent_version", "last_seen_at", "last_ip", "last_node_geo_data",
         ]
         assert set(cols.keys()) == set(expected)
 
