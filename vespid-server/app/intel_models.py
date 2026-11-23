@@ -890,9 +890,7 @@ def upsert_ip_record(
     new_block_episode_count = current_block_episode_count
     new_last_episode_block_at = current_last_episode_block_at
     if is_block:
-        previous_episode_block_at = (
-            current_last_episode_block_at or current_last_blocked_at
-        )
+        previous_episode_block_at = current_last_episode_block_at or current_last_blocked_at
         if current_block_episode_count == 0:
             # First block ever for this IP — start first episode
             new_block_episode_count = 1

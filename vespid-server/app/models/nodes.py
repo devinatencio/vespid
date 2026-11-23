@@ -179,8 +179,7 @@ def update_last_seen(
         geo_data = geo_lookup(ip)
 
     db.execute(
-        "UPDATE nodes SET last_seen_at = ?, last_ip = ?, last_node_geo_data = ? "
-        "WHERE node_id = ?",
+        "UPDATE nodes SET last_seen_at = ?, last_ip = ?, last_node_geo_data = ? WHERE node_id = ?",
         (now, ip, json.dumps(geo_data or {}), node_id),
     )
     db.commit()
