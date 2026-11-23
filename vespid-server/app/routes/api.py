@@ -38,6 +38,7 @@ from app.models import (
     insert_counter_snapshots,
     insert_event_context,
     insert_events,
+    normalize_context_lines,
     record_audit,
     search_events,
     touch_node,
@@ -340,7 +341,7 @@ def ingest_events():
     for ev in validation.valid:
         meta = ev.get("metadata")
         if isinstance(meta, dict) and "surrounding_logs" in meta:
-            ctx = meta.pop("surrounding_logs")
+            ctx = normalize_context_lines(meta.pop("surrounding_logs") or [])
             if ctx:
                 key = (ev.get("source_ip", ""), ev.get("node_id", ""))
                 log_context_map[key] = json.dumps(ctx, separators=(",", ":"))
@@ -366,7 +367,7 @@ def ingest_events():
 
     # Update agent liveness for each distinct node
     for nid in seen_nodes:
-        update_last_seen(db, nid)
+        update_last_seen(db, nid, ip=request.remote_addr)
 
     # Publish events to SSE manager as rendered HTML fragments
     _event_row_tpl = current_app.jinja_env.get_template("fragments/event_row.html")
@@ -897,7 +898,7 @@ def _parse_inline_context(inline: list) -> list[dict]:
                     "repeat": 1,
                 }
             )
-    return lines
+    return normalize_context_lines(lines)
 
 
 @api_bp.route("/events/<event_id>/detail-modal")
@@ -1389,7 +1390,7 @@ def node_commands(node_id):
         for cmd in commands:
             acknowledge_command(db, cmd["command_id"], status="acknowledged")
 
-        update_last_seen(db, node_id)
+        update_last_seen(db, node_id, ip=request.remote_addr)
     finally:
         db.close()
 
@@ -1459,7 +1460,7 @@ def command_result(node_id, command_id):
     db = get_db(db_path)
     try:
         found = acknowledge_command(db, command_id, status=status, result=result_msg)
-        update_last_seen(db, node_id)
+        update_last_seen(db, node_id, ip=request.remote_addr)
     finally:
         db.close()
 
@@ -1529,7 +1530,7 @@ def heartbeat():
     db = get_db(db_path)
     try:
         touch_node(db, node_id, timestamp, geo_data)
-        update_last_seen(db, node_id)
+        update_last_seen(db, node_id, ip=request.remote_addr)
         if display_name and isinstance(display_name, str) and display_name.strip():
             dn = display_name.strip()
             db.execute(

@@ -8,7 +8,7 @@
 %global debug_package %{nil}
 
 Name:           vespid-agent
-Version:        1.0.4
+Version:        1.0.5
 Release:        1%{?dist}
 Summary:        Vespid Agent system metrics collection agent
 
@@ -179,6 +179,8 @@ fi
 %{_unitdir}/vespid-worker.service
 
 %changelog
+* Sun Nov 15 2026 Vespid Team <dev@vespid.io> - 1.0.5-1
+- Automatic nginx log discovery when /var/log/nginx/access.log or error.log exists
 * Fri Oct 30 2026 Vespid Team <dev@vespid.io> - 1.0.4-1
 - Host threat mode reliability and CLI list rendering fixes
 * Sun Oct 25 2026 Vespid Team <dev@vespid.io> - 1.0.3-1

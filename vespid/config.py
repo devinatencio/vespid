@@ -93,6 +93,40 @@ def detect_distro_family() -> str:
     return FAMILY_UNKNOWN
 
 
+_NGINX_LOG_PATHS = (
+    ("/var/log/nginx/access.log", "apache"),
+    ("/var/log/nginx/error.log", "apache"),
+)
+
+
+def _log_file_exists(path: str) -> bool:
+    """Return True if *path* exists and is a regular file."""
+    try:
+        return os.path.isfile(path)
+    except OSError:
+        return False
+
+
+def _append_detected_nginx_sources(sources: list[LogSource]) -> list[LogSource]:
+    """Append nginx log sources for files that exist on this host.
+
+    Nginx is not part of the distro-family defaults because it can be
+    installed alongside (or instead of) Apache. Probing the standard paths
+    lets nodes with nginx start monitoring without a manual profile entry.
+    """
+    known_paths = {src.path for src in sources}
+    detected: list[str] = []
+    for path, parser in _NGINX_LOG_PATHS:
+        if path in known_paths or not _log_file_exists(path):
+            continue
+        sources.append(LogSource(path=path, parser=parser))
+        known_paths.add(path)
+        detected.append(path)
+    if detected:
+        log.info("Detected nginx log source(s): %s", ", ".join(detected))
+    return sources
+
+
 def _default_log_sources() -> list[LogSource]:
     """Return the appropriate default log sources for the detected OS.
 
@@ -115,6 +149,7 @@ def _default_log_sources() -> list[LogSource]:
 
         All distros:
             HAProxy    → /var/log/haproxy/access.log (standard rsyslog template)
+            Nginx      → /var/log/nginx/access.log, error.log (when present)
 
         Unknown:
             Includes both RedHat and Debian paths (original behaviour).
@@ -127,44 +162,44 @@ def _default_log_sources() -> list[LogSource]:
     _haproxy_path = "/var/log/haproxy/access.log"
 
     if family == FAMILY_DEBIAN:
-        return [
+        sources = [
             LogSource(path="/var/log/auth.log", parser="secure"),
             LogSource(path="/var/log/syslog", parser="messages"),
             LogSource(path="/var/log/apache2/access.log", parser="apache"),
             LogSource(path="/var/log/apache2/error.log", parser="apache"),
             LogSource(path=_haproxy_path, parser="haproxy"),
         ]
-
-    if family == FAMILY_REDHAT:
-        return [
+    elif family == FAMILY_REDHAT:
+        sources = [
             LogSource(path="/var/log/secure", parser="secure"),
             LogSource(path="/var/log/messages", parser="messages"),
             LogSource(path="/var/log/httpd/access_log", parser="apache"),
             LogSource(path="/var/log/httpd/error_log", parser="apache"),
             LogSource(path=_haproxy_path, parser="haproxy"),
         ]
-
-    if family == FAMILY_SUSE:
-        return [
+    elif family == FAMILY_SUSE:
+        sources = [
             LogSource(path="/var/log/messages", parser="secure"),
             LogSource(path="/var/log/messages", parser="messages"),
             LogSource(path="/var/log/apache2/access_log", parser="apache"),
             LogSource(path="/var/log/apache2/error_log", parser="apache"),
             LogSource(path=_haproxy_path, parser="haproxy"),
         ]
+    else:
+        # Unknown: include both families as a safe fallback
+        sources = [
+            LogSource(path="/var/log/secure", parser="secure"),
+            LogSource(path="/var/log/auth.log", parser="secure"),
+            LogSource(path="/var/log/messages", parser="messages"),
+            LogSource(path="/var/log/syslog", parser="messages"),
+            LogSource(path="/var/log/httpd/access_log", parser="apache"),
+            LogSource(path="/var/log/httpd/error_log", parser="apache"),
+            LogSource(path="/var/log/apache2/access.log", parser="apache"),
+            LogSource(path="/var/log/apache2/error.log", parser="apache"),
+            LogSource(path=_haproxy_path, parser="haproxy"),
+        ]
 
-    # Unknown: include both families as a safe fallback
-    return [
-        LogSource(path="/var/log/secure", parser="secure"),
-        LogSource(path="/var/log/auth.log", parser="secure"),
-        LogSource(path="/var/log/messages", parser="messages"),
-        LogSource(path="/var/log/syslog", parser="messages"),
-        LogSource(path="/var/log/httpd/access_log", parser="apache"),
-        LogSource(path="/var/log/httpd/error_log", parser="apache"),
-        LogSource(path="/var/log/apache2/access.log", parser="apache"),
-        LogSource(path="/var/log/apache2/error.log", parser="apache"),
-        LogSource(path=_haproxy_path, parser="haproxy"),
-    ]
+    return _append_detected_nginx_sources(sources)
 
 
 # ---------------------------------------------------------------------------

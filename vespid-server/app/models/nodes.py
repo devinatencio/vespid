@@ -123,20 +123,65 @@ def touch_node(
     db.commit()
 
 
-def update_last_seen(db: sqlite3.Connection, node_id: str) -> None:
-    """Update a node's last_seen_at timestamp to the current time.
+def update_last_seen(
+    db: sqlite3.Connection,
+    node_id: str,
+    ip: str | None = None,
+    geo_data: dict | None = None,
+) -> None:
+    """Update a node's last_seen_at timestamp and, optionally, its origin.
 
     Called on every agent-facing request (heartbeat, events, commands,
     check-in) to track agent liveness independent of event activity.
 
+    When ``ip`` is supplied, the node's own public/egress IP and its GeoIP
+    location are stored separately from ``last_geo_data``. ``last_geo_data``
+    is the location of the most recent event source (the attacker), so it is
+    not suitable for the Nodes page location pill.
+
     Args:
         db: An open SQLite connection.
         node_id: The unique identifier of the node.
+        ip: The agent's observed source IP, usually ``request.remote_addr``.
+        geo_data: Optional pre-resolved GeoIP dict. If omitted, a lookup is
+            performed for ``ip`` when the IP is new or its geo is missing.
     """
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if not ip:
+        db.execute(
+            "UPDATE nodes SET last_seen_at = ? WHERE node_id = ?",
+            (now, node_id),
+        )
+        db.commit()
+        return
+
+    row = db.execute(
+        "SELECT last_ip, last_node_geo_data FROM nodes WHERE node_id = ?",
+        (node_id,),
+    ).fetchone()
+    if row is None:
+        return
+
+    existing_geo = row["last_node_geo_data"]
+    has_geo = existing_geo not in (None, "", "{}")
+    if row["last_ip"] == ip and has_geo:
+        db.execute(
+            "UPDATE nodes SET last_seen_at = ? WHERE node_id = ?",
+            (now, node_id),
+        )
+        db.commit()
+        return
+
+    if geo_data is None:
+        from app.geo import lookup as geo_lookup
+
+        geo_data = geo_lookup(ip)
+
     db.execute(
-        "UPDATE nodes SET last_seen_at = ? WHERE node_id = ?",
-        (now, node_id),
+        "UPDATE nodes SET last_seen_at = ?, last_ip = ?, last_node_geo_data = ? "
+        "WHERE node_id = ?",
+        (now, ip, json.dumps(geo_data or {}), node_id),
     )
     db.commit()
 

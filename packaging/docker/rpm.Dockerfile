@@ -4,8 +4,9 @@
 # `make package-rpm` is run inside.
 FROM almalinux:9
 
-RUN dnf install -y --setopt=install_weak_deps=False \
-        rpm-build protobuf-compiler gcc make curl gzip tar \
+RUN dnf install -y --enablerepo=crb --setopt=install_weak_deps=False \
+        rpm-build systemd-rpm-macros python3-devel glibc-devel \
+        protobuf-compiler gcc make gzip tar \
     && dnf clean all
 
 # Rust is installed via rustup (not dnf) so edition 2024 (Rust >= 1.85) works.

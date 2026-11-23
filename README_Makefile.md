@@ -18,7 +18,7 @@ make help         # Show all targets
 | `lint` | Run ruff linter + formatter check on `vespid/` and `tests/` |
 | `rpm` | Build agent RPM package → `rpmbuild/RPMS/` |
 | `deb` | Build Debian/Ubuntu `.deb` packages via `build_deb.sh` |
-| `bump-version` | Bump every version reference (`make bump-version NEW_VERSION=1.0.4`) |
+| `bump-version` | Bump every version reference (`make bump-version NEW_VERSION=1.0.5`) |
 | `version-check` | Verify all version references match `vespid-server/VERSION` |
 | `docs` | Build MkDocs documentation site → `website/docs/` |
 | `docs-serve` | Serve built docs locally at `http://localhost:8000` |
@@ -37,7 +37,7 @@ PYTEST="pytest -x" make test         # Pass custom pytest flags
 | `PYTEST` | `python3 -m pytest` | Test runner |
 | `PIP` | `pip3` | Package installer |
 | `NAME` | `vespid` | Package name for RPM |
-| `VERSION` | `1.0.4` | Package version for RPM |
+| `VERSION` | `1.0.5` | Package version for RPM |
 
 ## Server Makefile (`vespid-server/`)
 
@@ -69,7 +69,7 @@ PYTHON=.venv/bin/python make dev     # Use venv Python
 | `PIP` | `.venv/bin/pip` | Package installer |
 | `FLASK` | `.venv/bin/flask` | Flask CLI |
 | `NAME` | `vespid-server` | Package name for RPM |
-| `VERSION` | `1.0.4` | Package version for RPM |
+| `VERSION` | `1.0.5` | Package version for RPM |
 
 ## Common workflows
 
@@ -116,13 +116,13 @@ Rust toolchain) before building. It is idempotent, so it is cheap to re-run.
 ```bash
 # Update the canonical VERSION, package manifests, RPM/Debian metadata,
 # changelog placeholders, and build-doc examples in one pass.
-make bump-version NEW_VERSION=1.0.4
+make bump-version NEW_VERSION=1.0.5
 
 # Verify that no version reference has drifted.
 make version-check
 
 # Preview without writing anything.
-python3 packaging/bump_version.py --dry-run 1.0.4
+python3 packaging/bump_version.py --dry-run 1.0.5
 ```
 
 `vespid-server/VERSION` is the canonical version. `bump-version` leaves the

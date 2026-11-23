@@ -6,7 +6,7 @@ FROM debian:12
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        dpkg-dev fakeroot protobuf-compiler gcc make curl gzip tar ca-certificates \
+        dpkg-dev fakeroot protobuf-compiler gcc libc6-dev make python3 curl gzip tar ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Rust is installed via rustup (not apt) so edition 2024 (Rust >= 1.85) works.

@@ -9,9 +9,10 @@ description: >
   bot/scanner detection, SQL injection, XSS, shellshock, request smuggling,
   and sensitive file probing.
 prerequisite: >
-  Requires NGINX access log in Combined Log Format configured in
-  log_sources with parser "apache". The parser handles both Apache
-  and NGINX combined format identically.
+  Requires an NGINX access log in Combined Log Format. Agent 1.0.5+
+  auto-discovers /var/log/nginx/access.log when it exists; otherwise
+  configure it in log_sources with parser "apache". The parser handles
+  both Apache and NGINX combined format identically.
 
 rules:
   - name: nginx_http_auth_failure

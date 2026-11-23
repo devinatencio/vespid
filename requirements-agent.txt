@@ -2,6 +2,6 @@
 # Install with: pip install -r requirements-agent.txt
 typer==0.25.1
 rich==14.3.3
-pyyaml==6.0.2
+pyyaml==6.0.4
 httpx==0.28.1
 maxminddb>=2.0.0

@@ -65,6 +65,10 @@
             <span class="host-pill-value"><span data-ts="{{ node.last_event_at or '' }}">{{ node.last_event_at or '—' }}</span></span>
         </div>
         <div class="host-pill host-pill-purple">
+            <span class="host-pill-label">Node Location</span>
+            <span class="host-pill-value"{% if node.last_ip %} title="Based on node IP {{ node.last_ip }}"{% endif %}>{{ node_location or '—' }}</span>
+        </div>
+        <div class="host-pill host-pill-purple">
             <span class="host-pill-label">Last Event Origin</span>
             <span class="host-pill-value">{{ location or '—' }}</span>
         </div>

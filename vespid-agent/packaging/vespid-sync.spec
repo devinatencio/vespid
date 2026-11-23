@@ -6,9 +6,10 @@
 %global debug_package %{nil}
 
 Name:           vespid-sync
-Version:        1.0.4
+Version:        1.0.5
 Release:        1%{?dist}
 Summary:        Vespid Sync Agent — infrastructure asset discovery
+BuildArch:      noarch
 
 License:        GPL-3.0-or-later
 URL:            https://github.com/vespid/hivemonitor
@@ -18,8 +19,7 @@ BuildRequires:  python3
 BuildRequires:  python3-devel
 BuildRequires:  systemd-rpm-macros
 
-Requires:       python3
-Requires:       python3-pip
+Requires:       ((python3 >= 3.10 and python3-pip) or (python3.11 and python3.11-pip))
 
 %description
 Vespid Sync Agent discovers infrastructure assets from hypervisors
@@ -62,7 +62,11 @@ install -D -m 644 systemd/vespid-sync-agent.timer %{buildroot}%{_unitdir}/vespid
 %post
 # Create virtual environment and install dependencies on first install
 if [ $1 -eq 1 ]; then
-    %{_bindir}/python3 -m venv --system-site-packages %{install_dir}/.venv
+    VESPID_PYTHON=python3
+    if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        VESPID_PYTHON=python3.11
+    fi
+    "$VESPID_PYTHON" -m venv --system-site-packages %{install_dir}/.venv
     %{install_dir}/.venv/bin/pip install --no-cache-dir \
         requests pyyaml proxmoxer 2>&1 || :
     echo ""
@@ -109,6 +113,8 @@ fi
 %{_unitdir}/vespid-sync-agent.timer
 
 %changelog
+* Sun Nov 15 2026 Vespid Team <dev@vespid.io> - 1.0.5-1
+- Automatic nginx log discovery when /var/log/nginx/access.log or error.log exists
 * Fri Oct 30 2026 Vespid Team <dev@vespid.io> - 1.0.4-1
 - Host threat mode reliability and CLI list rendering fixes
 * Sun Oct 25 2026 Vespid Team <dev@vespid.io> - 1.0.3-1

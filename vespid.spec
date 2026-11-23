@@ -1,5 +1,5 @@
 %define name        vespid
-%define version     1.0.4
+%define version     1.0.5
 %define release     1%{?dist}
 %define install_dir /opt/vespid
 %define config_dir  /etc/vespid
@@ -19,8 +19,7 @@ URL:            https://github.com/vespid/vespid
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
-Requires:       python3 >= 3.10
-Requires:       python3-pip
+Requires:       ((python3 >= 3.10 and python3-pip) or (python3.11 and python3.11-pip))
 Requires:       nftables
 Requires:       audit
 Requires(post): systemd
@@ -150,9 +149,16 @@ rpm --eval '%__os_install_post'
 
 
 %post
+# EL9 ships Python 3.9 as python3; EL10 ships 3.12. Prefer python3 when it
+# meets the agent's >=3.10 floor, otherwise use the EL9 python3.11 package.
+VESPID_PYTHON=python3
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+    VESPID_PYTHON=python3.11
+fi
+
 # Set up Python virtual environment and install dependencies
 if [ ! -d %{install_dir}/.venv ]; then
-    python3 -m venv %{install_dir}/.venv
+    "$VESPID_PYTHON" -m venv %{install_dir}/.venv
 fi
 %{install_dir}/.venv/bin/pip install --quiet --upgrade pip
 %{install_dir}/.venv/bin/pip install --quiet \
@@ -248,6 +254,8 @@ fi
 %license LICENSE
 
 %changelog
+* Sun Nov 15 2026 Vespid Team <team@vespid.dev> - 1.0.5-1
+- Automatic nginx log discovery when /var/log/nginx/access.log or error.log exists
 * Fri Oct 30 2026 Vespid Team <team@vespid.dev> - 1.0.4-1
 - Host threat mode reliability and CLI list rendering fixes
 * Sun Oct 25 2026 Vespid Team <team@vespid.dev> - 1.0.3-1
@@ -259,7 +267,7 @@ fi
 - Runtime log-source reconciliation (profile-added sources are tailed without a restart)
 - File tailer survives logrotate copytruncate / in-place truncation
 - Configuration profiles can remove previously-added log sources
-* %(date "+%%a %%b %%d %%Y") Vespid Team <team@vespid.dev> - 1.0.0-1
+* Wed Oct 07 2026 Vespid Team <team@vespid.dev> - 1.0.0-1
 - Version 1.0.0 release
 - Server-to-node command channel (allowlist, block, feed management)
 - Heartbeat reports block list, allowlist, and feed state to server

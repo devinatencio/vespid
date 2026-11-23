@@ -100,6 +100,32 @@ def insert_events(db: sqlite3.Connection, events: list[dict]) -> set[str]:
 # ---------------------------------------------------------------------------
 # Event log context — raw log lines surrounding a block event.
 # ---------------------------------------------------------------------------
+def normalize_context_lines(context_lines: list[dict]) -> list[dict]:
+    """Drop blank lines from the start and end of a context window.
+
+    Agents occasionally include empty lines captured from the log source at
+    the edges of ``surrounding_logs``. Those lines carry no information but
+    render as leading blank lines in the event detail view. Internal blank
+    lines are preserved because some multi-line logs use them as separators.
+
+    Args:
+        context_lines: Context entries with a ``raw`` key.
+
+    Returns:
+        The trimmed list (may be empty).
+    """
+    if not context_lines:
+        return []
+
+    start = 0
+    end = len(context_lines)
+    while start < end and not str(context_lines[start].get("raw") or "").strip():
+        start += 1
+    while end > start and not str(context_lines[end - 1].get("raw") or "").strip():
+        end -= 1
+    return context_lines[start:end]
+
+
 def insert_event_context(db: sqlite3.Connection, event_id: str, context_lines: list[dict]) -> None:
     """Store surrounding log context for an event in ``event_log_context``.
 
@@ -110,6 +136,7 @@ def insert_event_context(db: sqlite3.Connection, event_id: str, context_lines: l
             ``timestamp`` (optional), ``trigger`` (optional bool),
             ``repeat`` (optional int), ``last_ts`` (optional).
     """
+    context_lines = normalize_context_lines(context_lines)
     if not context_lines:
         return
     sql = (
@@ -155,7 +182,8 @@ def get_event_context(db: sqlite3.Connection, event_id: str) -> list[dict]:
         if row["last_ts"]:
             entry["last_ts"] = row["last_ts"]
         result.append(entry)
-    return result
+    # Older rows may contain blank lines captured at the window edges.
+    return normalize_context_lines(result)
 
 
 EVENT_SORT_COLUMNS = frozenset(

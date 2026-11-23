@@ -2,7 +2,9 @@
 
 import sqlite3
 
-from app.models import add_ip_rule, get_db, get_user_by_username
+from datetime import UTC, datetime
+
+from app.models import add_ip_rule, get_db, get_user_by_username, touch_node
 from app.models.db_core import _migrate_sqlite_users_readonly_role
 
 
@@ -280,3 +282,25 @@ def test_sqlite_users_migration_allows_readonly(tmp_path):
     _migrate_sqlite_users_readonly_role(conn)
     assert conn.execute("SELECT COUNT(*) FROM users").fetchone()[0] == 2
     conn.close()
+
+
+class TestNodesPageRoleGating:
+    """Policy assignment and delete controls are admin-only on /nodes."""
+
+    def _node(self, db, node_id="node-gated"):
+        touch_node(db, node_id, datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+    def test_readonly_nodes_page_hides_policy_and_delete(self, db, auth_client):
+        self._node(db)
+        resp = auth_client("readonly").get("/nodes")
+        assert resp.status_code == 200
+        assert b'name="profile_id"' not in resp.data
+        assert b"Permanently delete node" not in resp.data
+        assert b'class="node-policy-pill"' in resp.data
+
+    def test_admin_nodes_page_shows_policy_and_delete(self, db, auth_client):
+        self._node(db)
+        resp = auth_client("admin").get("/nodes")
+        assert resp.status_code == 200
+        assert b'name="profile_id"' in resp.data
+        assert b"Permanently delete node" in resp.data

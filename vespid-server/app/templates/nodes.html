@@ -1,93 +1,986 @@
 {% extends "base.html" %}
 {% block title %}Nodes — Vespid Server{% endblock %}
 {% block content %}
-<h1 class="page-title">🖥️ Node Management</h1>
+{% set total_nodes = nodes|length %}
+{% set healthy_count = nodes|selectattr('health', 'equalto', 'healthy')|list|length %}
+{% set degraded_count = nodes|selectattr('health', 'equalto', 'degraded')|list|length %}
+{% set offline_count = nodes|selectattr('health', 'equalto', 'offline')|list|length %}
+{% set online_count = healthy_count + degraded_count %}
+{% set health_pct = (online_count * 100 / total_nodes) if total_nodes else 0 %}
+{% set sparse_cards = total_nodes <= 4 %}
 
-<div class="stats-grid" style="margin-bottom:1.5rem;">
-    <div class="stat-card">
-        <div class="stat-label">Total Nodes</div>
-        <div class="stat-value">{{ nodes|length }}</div>
+<div class="nodes-page-head">
+    <div>
+        <h1 class="page-title">🖥️ Node Management</h1>
+        <p class="nodes-page-subtitle">Fleet health, agent versions, and policy assignments at a glance.</p>
     </div>
-    <div class="stat-card">
-        <div class="stat-label">Healthy</div>
-        <div class="stat-value" style="color:var(--success)">{{ nodes|selectattr('health', 'equalto', 'healthy')|list|length }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">Degraded</div>
-        <div class="stat-value" style="color:var(--warning)">{{ nodes|selectattr('health', 'equalto', 'degraded')|list|length }}</div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-label">Offline</div>
-        <div class="stat-value" style="color:var(--danger)">{{ nodes|selectattr('health', 'equalto', 'offline')|list|length }}</div>
+    <div class="nodes-page-actions">
+        <a href="{{ url_for('dashboard.rules') }}" class="btn btn-sm btn-secondary">Rules</a>
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('admin.enrollment') }}" class="btn btn-sm btn-secondary">Enrollment</a>
+        {% endif %}
     </div>
 </div>
 
-<div class="card">
-    <h2 class="card-title">Registered Nodes</h2>
-    {% if nodes %}
-    <table>
-        <thead>
-            <tr>
-                <th>Node</th>
-                <th>Version</th>
-                <th>OS</th>
-                <th>Health</th>
-                <th>Policy</th>
-                <th>Last Seen</th>
-                <th>Last Event</th>
-                <th>Total Events</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
+<section class="nodes-hero">
+    <div class="nodes-hero-main">
+        <div class="nodes-hero-kicker">Fleet status</div>
+        <div class="nodes-hero-count">
+            <strong>{{ online_count }}</strong>
+            <span>/ {{ total_nodes }} online</span>
+        </div>
+        <div class="nodes-hero-bar" role="img" aria-label="{{ online_count }} of {{ total_nodes }} nodes online">
+            {% if total_nodes %}
+            <span class="nodes-hero-seg seg-healthy" style="width: {{ '%.1f'|format(healthy_count * 100 / total_nodes) }}%"></span>
+            <span class="nodes-hero-seg seg-degraded" style="width: {{ '%.1f'|format(degraded_count * 100 / total_nodes) }}%"></span>
+            <span class="nodes-hero-seg seg-offline" style="width: {{ '%.1f'|format(offline_count * 100 / total_nodes) }}%"></span>
+            {% endif %}
+        </div>
+        <div class="nodes-hero-legend">
+            <span><i class="nodes-legend-dot healthy"></i>{{ healthy_count }} healthy</span>
+            <span><i class="nodes-legend-dot degraded"></i>{{ degraded_count }} degraded</span>
+            <span><i class="nodes-legend-dot offline"></i>{{ offline_count }} offline</span>
+        </div>
+        <div class="nodes-hero-foot">
+            <span class="nodes-hero-pct">{{ '%.0f'|format(health_pct) }}% reachable</span>
+            {% if offline_count %}
+            <span class="nodes-hero-alert">⚠ {{ offline_count }} node{{ 's' if offline_count != 1 }} need{{ 's' if offline_count == 1 else '' }} attention</span>
+            {% else %}
+            <span class="nodes-hero-ok">✓ All nodes reachable</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="nodes-pulse-panel">
+        <div class="nodes-pulse-head">
+            <span>Fleet pulse</span>
+            <span>{{ total_nodes }} node{{ 's' if total_nodes != 1 }}</span>
+        </div>
+        {% if nodes %}
+        <div class="fleet-pulse-grid{% if total_nodes <= 6 %} fleet-pulse-grid--sparse{% endif %}" id="fleet-pulse-grid" aria-label="Fleet health map">
             {% for node in nodes %}
-            <tr>
-                <td>
-                    <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}"><strong>{{ node.node_display or node.node_id }}</strong></a>
-                    <br><code style="font-size:0.7rem; color:var(--text-muted);">{{ node.node_id }}</code>
-                </td>
-                <td style="font-size:0.8rem; white-space:nowrap;">{{ node.agent_version or '—' }}</td>
-                <td style="font-size:0.8rem; white-space:nowrap;">{{ node.os_name or '—' }}</td>
-                <td>
-                    <span class="badge badge-{{ node.health }}">
-                        {% if node.health == 'healthy' %}● {% elif node.health == 'degraded' %}◐ {% else %}○ {% endif %}
-                        {{ node.health }}
-                    </span>
-                </td>
-                <td>
-                    {% set current_profile = node_profiles.get(node.node_id) %}
-                    <form method="POST" action="{{ url_for('dashboard.node_assign_profile', node_id=node.node_id) }}" style="display:inline-flex; align-items:center; gap:0.25rem;">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <select name="profile_id" style="font-size:0.8rem; padding:0.2rem 0.4rem; max-width:140px;"
-                                onchange="if(confirm('Change policy for node {{ node.node_id }} to &quot;' + this.options[this.selectedIndex].text + '&quot;?')) { this.form.submit(); } else { this.selectedIndex = this.dataset.prev; }"
-                                onfocus="this.dataset.prev = this.selectedIndex">
-                            <option value="">— None —</option>
-                            {% for p in profiles %}
-                            <option value="{{ p.id }}" {% if current_profile and current_profile.id == p.id %}selected{% endif %}>{{ p.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </form>
-                </td>
-                <td><span data-ts="{{ node.last_seen_at or node.last_event_at or '' }}">{{ node.last_seen_at or node.last_event_at or '—' }}</span></td>
-                <td><span data-ts="{{ node.last_event_at or '' }}">{{ node.last_event_at or '—' }}</span></td>
-                <td>{{ "{:,}".format(node.total_events) }}</td>
-                <td>
-                    <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}" class="btn btn-sm" title="View node details and manage blocks">View</a>
-                    <a href="{{ url_for('dashboard.rules') }}" class="btn btn-sm btn-secondary" title="Global rules management">Rules</a>
+            <a class="fleet-pulse-tile health-{{ node.health }}"
+               href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}"
+               data-name="{{ node.node_display or node.node_id }}"
+               data-health="{{ node.health }}"
+               data-policy="{{ node_profiles.get(node.node_id).id if node_profiles.get(node.node_id) else '' }}"
+               data-last-seen="{{ node.last_seen_at or node.last_event_at or '' }}"
+               data-events="{{ node.total_events or 0 }}"
+               data-search="{{ node.node_display or node.node_id }} {{ node.node_id }} {{ node.os_name or '' }} {{ node.agent_version or '' }} {{ node.location or '' }} {{ node_profiles.get(node.node_id).name if node_profiles.get(node.node_id) else 'unassigned' }}"
+               title="{{ node.node_display or node.node_id }} — {{ node.health }} — last seen {{ node.last_seen_at or node.last_event_at or 'unknown' }}"
+               aria-label="{{ node.node_display or node.node_id }}, {{ node.health }}, last seen {{ node.last_seen_at or node.last_event_at or 'unknown' }}">
+                {% if total_nodes <= 6 %}<span class="fleet-pulse-label">{{ node.node_display or node.node_id }}</span>{% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        <div class="nodes-pulse-foot">
+            <span>Each tile is a node.</span>
+            <span class="nodes-pulse-key">
+                <i class="nodes-legend-dot healthy"></i>
+                <i class="nodes-legend-dot degraded"></i>
+                <i class="nodes-legend-dot offline"></i>
+            </span>
+        </div>
+        {% else %}
+        <div class="nodes-pulse-empty">No nodes yet. The pulse map fills in as agents register.</div>
+        {% endif %}
+    </div>
+</section>
+
+{% if nodes %}
+<div class="nodes-toolbar">
+    <label class="nodes-search-wrap" for="nodes-search">
+        <span class="nodes-search-icon" aria-hidden="true">⌕</span>
+        <input type="search" id="nodes-search" class="nodes-search-input" placeholder="Search name, ID, OS, location…" autocomplete="off">
+    </label>
+    <select id="nodes-health-filter" class="nodes-filter" aria-label="Filter by health">
+        <option value="">All health</option>
+        <option value="healthy">Healthy</option>
+        <option value="degraded">Degraded</option>
+        <option value="offline">Offline</option>
+    </select>
+    <select id="nodes-policy-filter" class="nodes-filter" aria-label="Filter by policy">
+        <option value="">All policies</option>
+        <option value="__none__">Unassigned</option>
+        {% for p in profiles %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+        {% endfor %}
+    </select>
+    <select id="nodes-sort" class="nodes-filter" aria-label="Sort nodes">
+        <option value="health">Health (attention first)</option>
+        <option value="name">Name A–Z</option>
+        <option value="last-seen">Last seen (recent)</option>
+        <option value="events">Events (high)</option>
+    </select>
+    <div class="nodes-view-toggle" role="group" aria-label="Node view">
+        <button type="button" class="nodes-view-btn" data-view="rows" aria-pressed="false">Rows</button>
+        <button type="button" class="nodes-view-btn" data-view="cards" aria-pressed="false">Cards</button>
+    </div>
+</div>
+
+<div class="nodes-result-bar">
+    <span id="nodes-visible-count" aria-live="polite">Showing {{ total_nodes }} of {{ total_nodes }} nodes</span>
+    <button type="button" id="nodes-clear-filters" class="nodes-clear-btn" hidden>Clear filters</button>
+</div>
+{% endif %}
+
+<div id="nodes-rows" class="nodes-view">
+    {% if nodes %}
+    <div class="card nodes-table-card">
+        <table class="nodes-table">
+            <thead>
+                <tr>
+                    <th scope="col">Node</th>
+                    <th scope="col">Health</th>
+                    <th scope="col" class="col-system">System</th>
+                    <th scope="col">Policy</th>
+                    <th scope="col">Last Seen</th>
+                    <th scope="col" class="col-events">Events</th>
+                    <th scope="col" class="node-actions-head">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="nodes-row-body">
+                {% for node in nodes %}
+                {% set current_profile = node_profiles.get(node.node_id) %}
+                <tr class="node-row health-{{ node.health }}"
+                    data-href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}"
+                    tabindex="0"
+                    aria-label="View node {{ node.node_display or node.node_id }}"
+                    data-name="{{ node.node_display or node.node_id }}"
+                    data-health="{{ node.health }}"
+                    data-policy="{{ current_profile.id if current_profile else '' }}"
+                    data-last-seen="{{ node.last_seen_at or node.last_event_at or '' }}"
+                    data-events="{{ node.total_events or 0 }}"
+                    data-search="{{ node.node_display or node.node_id }} {{ node.node_id }} {{ node.os_name or '' }} {{ node.agent_version or '' }} {{ node.location or '' }} {{ current_profile.name if current_profile else 'unassigned' }}">
+                    <td class="node-name-cell">
+                        <span class="node-status-dot" aria-hidden="true"></span>
+                        <div class="node-name-main">
+                            <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}" class="node-name">{{ node.node_display or node.node_id }}</a>
+                            <code class="node-id">{{ node.node_id }}</code>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ node.health }}">
+                            {% if node.health == 'healthy' %}● {% elif node.health == 'degraded' %}◐ {% else %}○ {% endif %}
+                            {{ node.health }}
+                        </span>
+                        {% if node.agent_version and node.agent_version != app_version %}
+                        <span class="node-update-chip" title="Agent version differs from server {{ app_version }}">update</span>
+                        {% endif %}
+                    </td>
+                    <td class="col-system">
+                        <div class="node-meta-line">
+                            <span class="node-chip">{{ node.os_name or 'Unknown OS' }}</span>
+                            <span class="node-chip node-chip-version">{{ node.agent_version or '—' }}</span>
+                            {% if node.location %}
+                            <span class="node-chip node-chip-location"{% if node.last_ip %} title="Based on node IP {{ node.last_ip }}"{% endif %}>📍 {{ node.location }}</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% if current_user.role == 'admin' %}
+                        <form method="POST" action="{{ url_for('dashboard.node_assign_profile', node_id=node.node_id) }}" class="node-policy-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <select name="profile_id" class="node-policy-select"
+                                    onchange="if(confirm('Change policy for node {{ node.node_id }} to &quot;' + this.options[this.selectedIndex].text + '&quot;?')) { this.form.submit(); } else { this.selectedIndex = this.dataset.prev; }"
+                                    onfocus="this.dataset.prev = this.selectedIndex">
+                                <option value="">— None —</option>
+                                {% for p in profiles %}
+                                <option value="{{ p.id }}" {% if current_profile and current_profile.id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </form>
+                        {% else %}
+                        <span class="node-policy-pill">{{ current_profile.name if current_profile else 'Unassigned' }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="node-time-cell">
+                        <span class="ts-rel node-last-seen" data-ts="{{ node.last_seen_at or node.last_event_at or '' }}">{{ node.last_seen_at or node.last_event_at or '—' }}</span>
+                        <div class="node-subtime"><span class="node-subtime-label">Last Event</span> <span class="ts-rel" data-ts="{{ node.last_event_at or '' }}">{{ node.last_event_at or '—' }}</span></div>
+                    </td>
+                    <td class="col-events"><span class="node-event-count">{{ "{:,}".format(node.total_events or 0) }}</span></td>
+                    <td class="node-actions-cell">
+                        <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}" class="btn btn-sm" title="View node details and manage blocks">View</a>
+                        {% if current_user.role == 'admin' %}
+                        <form method="POST" action="{{ url_for('dashboard.node_delete', node_id=node.node_id) }}" class="node-delete-form"
+                              onsubmit="return confirm('Permanently delete node {{ node.node_id }}? It will re-register if it connects again.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm btn-danger" title="Delete this node">Delete</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div id="nodes-empty-rows" class="nodes-empty-filter" hidden>
+            <span class="nodes-empty-icon">⌕</span>
+            <strong>No nodes match those filters.</strong>
+            <span>Try a different search or clear the filters.</span>
+        </div>
+    </div>
+    {% else %}
+    <div class="card nodes-empty-state">
+        <div class="nodes-empty-icon">🖥️</div>
+        <h2>No nodes registered yet</h2>
+        <p>Nodes are auto-registered when they send their first event batch. Open Enrollment to connect your first agent.</p>
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('admin.enrollment') }}" class="btn">Open Enrollment</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<div id="nodes-cards" class="nodes-view" hidden>
+    {% if nodes %}
+    <div class="nodes-grid{% if sparse_cards %} nodes-grid--sparse{% endif %}" id="nodes-card-grid">
+        {% for node in nodes %}
+        {% set current_profile = node_profiles.get(node.node_id) %}
+        <article class="node-card health-{{ node.health }}"
+                 data-href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}"
+                 tabindex="0"
+                 aria-label="View node {{ node.node_display or node.node_id }}"
+                 data-name="{{ node.node_display or node.node_id }}"
+                 data-health="{{ node.health }}"
+                 data-policy="{{ current_profile.id if current_profile else '' }}"
+                 data-last-seen="{{ node.last_seen_at or node.last_event_at or '' }}"
+                 data-events="{{ node.total_events or 0 }}"
+                 data-search="{{ node.node_display or node.node_id }} {{ node.node_id }} {{ node.os_name or '' }} {{ node.agent_version or '' }} {{ node.location or '' }} {{ current_profile.name if current_profile else 'unassigned' }}"
+                 style="--i: {{ loop.index0 if loop.index0 < 20 else 20 }}">
+            <div class="node-card-top">
+                <span class="node-status-dot" aria-hidden="true"></span>
+                <div class="node-card-title">
+                    <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}" class="node-name">{{ node.node_display or node.node_id }}</a>
+                    <code class="node-id">{{ node.node_id }}</code>
+                </div>
+                <span class="badge badge-{{ node.health }}">{{ node.health }}</span>
+            </div>
+
+            <div class="node-card-meta">
+                <span class="node-chip">{{ node.os_name or 'Unknown OS' }}</span>
+                <span class="node-chip node-chip-version">{{ node.agent_version or '—' }}</span>
+                {% if node.location %}
+                <span class="node-chip node-chip-location"{% if node.last_ip %} title="Based on node IP {{ node.last_ip }}"{% endif %}>📍 {{ node.location }}</span>
+                {% endif %}
+                {% if node.agent_version and node.agent_version != app_version %}
+                <span class="node-update-chip" title="Agent version differs from server {{ app_version }}">update</span>
+                {% endif %}
+            </div>
+
+            <div class="node-card-policy">
+                <span class="node-card-label">Policy</span>
+                {% if current_user.role == 'admin' %}
+                <form method="POST" action="{{ url_for('dashboard.node_assign_profile', node_id=node.node_id) }}" class="node-policy-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <select name="profile_id" class="node-policy-select"
+                            onchange="if(confirm('Change policy for node {{ node.node_id }} to &quot;' + this.options[this.selectedIndex].text + '&quot;?')) { this.form.submit(); } else { this.selectedIndex = this.dataset.prev; }"
+                            onfocus="this.dataset.prev = this.selectedIndex">
+                        <option value="">— None —</option>
+                        {% for p in profiles %}
+                        <option value="{{ p.id }}" {% if current_profile and current_profile.id == p.id %}selected{% endif %}>{{ p.name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                {% else %}
+                <span class="node-policy-pill">{{ current_profile.name if current_profile else 'Unassigned' }}</span>
+                {% endif %}
+            </div>
+
+            <div class="node-card-foot">
+                <div class="node-card-stats">
+                    <span class="node-event-count">{{ "{:,}".format(node.total_events or 0) }} <small>events</small></span>
+                    <span class="node-card-seen">Last seen <span class="ts-rel" data-ts="{{ node.last_seen_at or node.last_event_at or '' }}">{{ node.last_seen_at or node.last_event_at or '—' }}</span></span>
+                </div>
+                <div class="node-card-actions">
+                    <a href="{{ url_for('dashboard.node_detail', node_id=node.node_id) }}" class="btn btn-sm">View</a>
                     {% if current_user.role == 'admin' %}
-                    <form method="POST" action="{{ url_for('dashboard.node_delete', node_id=node.node_id) }}" style="display:inline;"
+                    <form method="POST" action="{{ url_for('dashboard.node_delete', node_id=node.node_id) }}" class="node-delete-form"
                           onsubmit="return confirm('Permanently delete node {{ node.node_id }}? It will re-register if it connects again.');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-sm btn-danger" title="Delete this node">Delete</button>
                     </form>
                     {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p style="color:var(--text-muted)">No nodes registered yet. Nodes are auto-registered when they send their first event batch.</p>
+                </div>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    <div id="nodes-empty-cards" class="nodes-empty-filter" hidden>
+        <span class="nodes-empty-icon">⌕</span>
+        <strong>No nodes match those filters.</strong>
+        <span>Try a different search or clear the filters.</span>
+    </div>
     {% endif %}
 </div>
+
+<style>
+.nodes-page-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.nodes-page-subtitle {
+    margin: 0.25rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+.nodes-page-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+.nodes-hero {
+    display: grid;
+    grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.nodes-hero-main,
+.nodes-pulse-panel {
+    background: color-mix(in srgb, var(--bg-card) 78%, transparent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.nodes-hero-main { padding: 1.2rem 1.3rem; }
+.nodes-hero-kicker,
+.nodes-pulse-head {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.nodes-hero-count {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    margin: 0.35rem 0 0.8rem;
+}
+.nodes-hero-count strong {
+    font-size: 2.6rem;
+    line-height: 1;
+    letter-spacing: -0.04em;
+    color: var(--text-heading);
+}
+.nodes-hero-count span { color: var(--text-muted); font-size: 0.9rem; }
+.nodes-hero-bar {
+    display: flex;
+    height: 10px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text-muted) 13%, transparent);
+    gap: 2px;
+}
+.nodes-hero-seg { display: block; height: 100%; min-width: 0; }
+.nodes-hero-seg.seg-healthy { background: var(--success); }
+.nodes-hero-seg.seg-degraded { background: var(--warning); }
+.nodes-hero-seg.seg-offline { background: color-mix(in srgb, var(--text-muted) 55%, transparent); }
+.nodes-hero-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    margin-top: 0.75rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+.nodes-hero-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.nodes-legend-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    display: inline-block;
+}
+.nodes-legend-dot.healthy { background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 13%, transparent); }
+.nodes-legend-dot.degraded { background: var(--warning); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 13%, transparent); }
+.nodes-legend-dot.offline { background: color-mix(in srgb, var(--text-muted) 55%, transparent); }
+.nodes-hero-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+    font-size: 0.78rem;
+}
+.nodes-hero-pct { color: var(--text-muted); }
+.nodes-hero-alert { color: var(--warning); font-weight: 600; }
+.nodes-hero-ok { color: var(--success); font-weight: 600; }
+
+.nodes-pulse-panel { padding: 1.1rem 1.2rem; display: flex; flex-direction: column; }
+.nodes-pulse-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.nodes-pulse-head span:last-child { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.fleet-pulse-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(14px, 1fr));
+    gap: 4px;
+    margin: 0.8rem 0 0.65rem;
+    align-content: start;
+}
+.fleet-pulse-tile {
+    position: relative;
+    display: block;
+    aspect-ratio: 1;
+    min-height: 14px;
+    max-height: 48px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--node-tone) 72%, transparent);
+    border: 1px solid color-mix(in srgb, var(--node-tone) 35%, transparent);
+    transition: transform 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+}
+.fleet-pulse-tile.health-healthy { --node-tone: var(--success); }
+.fleet-pulse-tile.health-degraded { --node-tone: var(--warning); }
+.fleet-pulse-tile.health-offline { --node-tone: color-mix(in srgb, var(--text-muted) 60%, transparent); }
+.fleet-pulse-tile:hover,
+.fleet-pulse-tile:focus-visible {
+    transform: scale(1.45);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-tone) 45%, transparent);
+    z-index: 2;
+    outline: none;
+}
+.fleet-pulse-tile.is-dim { opacity: 0.16; }
+
+/* Small fleets: let the tiles fill the panel instead of leaving a tiny cluster. */
+.fleet-pulse-grid--sparse {
+    gap: 8px;
+    align-content: center;
+}
+.fleet-pulse-grid--sparse .fleet-pulse-tile {
+    display: flex;
+    align-items: flex-end;
+    aspect-ratio: auto;
+    min-height: 56px;
+    max-height: 72px;
+    padding: 0.45rem 0.55rem;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--node-tone) 82%, #000000);
+    border-color: color-mix(in srgb, var(--node-tone) 55%, transparent);
+}
+.fleet-pulse-grid--sparse .fleet-pulse-tile:hover,
+.fleet-pulse-grid--sparse .fleet-pulse-tile:focus-visible {
+    transform: scale(1.02);
+}
+.fleet-pulse-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #ffffff;
+    font-size: 0.66rem;
+    font-weight: 700;
+    line-height: 1.2;
+    text-shadow: 0 1px 2px color-mix(in srgb, #000000 55%, transparent);
+}
+.nodes-pulse-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: auto;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+.nodes-pulse-key { display: inline-flex; gap: 0.35rem; align-items: center; }
+.nodes-pulse-empty { color: var(--text-muted); font-size: 0.82rem; padding: 1rem 0; }
+
+.nodes-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 0 0.55rem;
+}
+.nodes-search-wrap {
+    position: relative;
+    flex: 1 1 240px;
+    min-width: 200px;
+}
+.nodes-search-icon {
+    position: absolute;
+    left: 0.7rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 1rem;
+    pointer-events: none;
+}
+.nodes-search-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem 0.5rem 2rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-input, var(--bg-card));
+    color: var(--text);
+    font-size: 0.85rem;
+}
+.nodes-search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent); }
+.nodes-filter {
+    padding: 0.5rem 0.65rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-input, var(--bg-card));
+    color: var(--text);
+    font-size: 0.82rem;
+}
+.nodes-view-toggle {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+}
+.nodes-view-btn {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 0.38rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.nodes-view-btn[aria-pressed="true"] {
+    background: var(--bg-card);
+    color: var(--text-heading);
+    box-shadow: 0 1px 4px color-mix(in srgb, #000000 18%, transparent);
+}
+.nodes-result-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+.nodes-clear-btn {
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font-size: 0.78rem;
+    cursor: pointer;
+    padding: 0;
+}
+.nodes-clear-btn:hover { text-decoration: underline; }
+
+.nodes-view[hidden],
+.node-row[hidden],
+.node-card[hidden],
+.nodes-empty-filter[hidden] { display: none !important; }
+.nodes-table-card { padding: 0; overflow: hidden; }
+.nodes-table { width: 100%; }
+.nodes-table th {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--text-muted) 4%, transparent);
+    padding-top: 0.7rem;
+    padding-bottom: 0.7rem;
+    white-space: nowrap;
+}
+.nodes-table td { vertical-align: middle; padding: 0.7rem 0.75rem; }
+.nodes-table tbody tr:last-child td { border-bottom: 0; }
+.node-row[data-href],
+.node-card[data-href] { cursor: pointer; }
+.node-row:focus-visible,
+.node-card:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+    outline-offset: -2px;
+}
+.node-row { transition: background 0.15s ease; }
+.node-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.node-row td:first-child { border-left: 3px solid var(--node-tone, transparent); }
+.node-row.health-healthy { --node-tone: var(--success); }
+.node-row.health-degraded { --node-tone: var(--warning); }
+.node-row.health-offline { --node-tone: color-mix(in srgb, var(--text-muted) 45%, transparent); }
+.node-name-cell { display: flex; align-items: flex-start; gap: 0.65rem; }
+.node-status-dot {
+    width: 8px;
+    height: 8px;
+    margin-top: 0.35rem;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--node-tone, var(--text-muted));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-tone, var(--text-muted)) 14%, transparent);
+}
+.node-row.health-healthy .node-status-dot { animation: nodeStatusPulse 2.8s ease-in-out infinite; }
+.node-name-main { min-width: 0; }
+.node-name {
+    color: var(--text-heading);
+    font-weight: 650;
+    text-decoration: none;
+    line-height: 1.25;
+}
+.node-name:hover { color: var(--accent); }
+.node-id {
+    display: block;
+    max-width: 240px;
+    margin-top: 0.18rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.node-meta-line { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.node-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0.16rem 0.45rem;
+    border-radius: 5px;
+    border: 1px solid color-mix(in srgb, var(--text-muted) 16%, transparent);
+    background: color-mix(in srgb, var(--text-muted) 6%, transparent);
+    color: var(--text-muted);
+    font-size: 0.68rem;
+    line-height: 1.3;
+}
+.node-chip-version { font-family: var(--font-mono, monospace); }
+.node-chip-location { color: var(--text); }
+.node-update-chip {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0.08rem 0.35rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--warning) 14%, transparent);
+    color: var(--warning);
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+}
+.node-policy-form { margin: 0; }
+.node-policy-select {
+    max-width: 150px;
+    padding: 0.28rem 0.45rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-input, var(--bg-card));
+    color: var(--text);
+    font-size: 0.76rem;
+}
+.node-policy-pill {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--info) 12%, transparent);
+    color: var(--info);
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.node-time-cell { white-space: nowrap; }
+.node-last-seen { font-size: 0.8rem; }
+.node-subtime { margin-top: 0.15rem; font-size: 0.68rem; color: var(--text-muted); }
+.node-subtime-label { opacity: 0.75; }
+.node-event-count { font-variant-numeric: tabular-nums; font-weight: 600; }
+.node-actions-cell { white-space: nowrap; }
+.node-actions-cell .btn,
+.node-card-actions .btn {
+    height: 1.85rem;
+    min-width: 4.25rem;
+    padding: 0 0.55rem;
+    justify-content: center;
+    box-sizing: border-box;
+    font-size: 0.74rem;
+    line-height: 1;
+    vertical-align: middle;
+}
+.node-delete-form { display: inline-flex; vertical-align: middle; margin-left: 0.25rem; }
+.node-actions-head { text-align: right; }
+.node-actions-cell { text-align: right; }
+
+.nodes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.85rem;
+}
+/* Few nodes: let the cards fill the row instead of clustering on the left. */
+.nodes-grid--sparse { gap: 1rem; }
+.nodes-grid--sparse .node-card {
+    min-height: 190px;
+    padding: 1.15rem 1.25rem 1rem;
+}
+.nodes-grid--sparse .node-card-title .node-name { font-size: 1.08rem; }
+.nodes-grid--sparse .node-card-meta { gap: 0.4rem; }
+.nodes-grid--sparse .node-card-foot { padding-top: 0.8rem; }
+.nodes-grid--sparse .node-event-count { font-size: 1.05rem; }
+.node-card {
+    --node-tone: var(--text-muted);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 0.95rem 1rem 0.85rem;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--node-tone);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bg-card) 82%, transparent);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    animation: nodeCardIn 0.35s ease both;
+    animation-delay: calc(var(--i, 0) * 4ms);
+}
+.node-card.health-healthy { --node-tone: var(--success); }
+.node-card.health-degraded { --node-tone: var(--warning); }
+.node-card.health-offline { --node-tone: color-mix(in srgb, var(--text-muted) 45%, transparent); }
+.node-card:hover {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--node-tone) 35%, var(--border));
+    box-shadow: 0 10px 28px -18px color-mix(in srgb, var(--node-tone) 55%, transparent), var(--shadow);
+}
+.node-card-top { display: flex; align-items: flex-start; gap: 0.55rem; }
+.node-card-title { min-width: 0; flex: 1; }
+.node-card-title .node-name { display: block; font-size: 0.95rem; }
+.node-card-meta { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.node-card-policy { display: flex; align-items: center; gap: 0.5rem; min-height: 1.6rem; }
+.node-card-label {
+    font-size: 0.64rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.node-card-foot {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: auto;
+    padding-top: 0.65rem;
+    border-top: 1px solid color-mix(in srgb, var(--text-muted) 12%, transparent);
+}
+.node-card-stats { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.node-card-stats small { color: var(--text-muted); font-weight: 400; font-size: 0.68rem; }
+.node-card-seen { color: var(--text-muted); font-size: 0.7rem; }
+.node-card-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
+
+.nodes-empty-filter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 2rem 1rem;
+    color: var(--text-muted);
+    text-align: center;
+    font-size: 0.82rem;
+}
+.nodes-empty-filter strong { color: var(--text-heading); font-size: 0.95rem; }
+.nodes-empty-icon { font-size: 1.6rem; opacity: 0.7; }
+.nodes-empty-state { text-align: center; padding: 2.5rem 1.5rem; }
+.nodes-empty-state h2 { margin: 0.5rem 0 0.35rem; font-size: 1.1rem; }
+.nodes-empty-state p { margin: 0 auto 1rem; max-width: 520px; color: var(--text-muted); font-size: 0.85rem; }
+
+@keyframes nodeStatusPulse {
+    0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 14%, transparent); }
+    50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 4%, transparent); }
+}
+@keyframes nodeCardIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 900px) {
+    .nodes-hero { grid-template-columns: 1fr; }
+    .nodes-page-head { align-items: flex-start; flex-direction: column; }
+    .col-system, .col-events { display: none; }
+    .nodes-table th, .nodes-table td { padding-left: 0.55rem; padding-right: 0.55rem; }
+}
+@media (max-width: 560px) {
+    .nodes-toolbar { gap: 0.4rem; }
+    .nodes-filter { flex: 1 1 calc(50% - 0.4rem); min-width: 0; }
+    .nodes-view-toggle { margin-left: auto; }
+    .nodes-grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .node-card { animation: none; }
+    .node-row.health-healthy .node-status-dot { animation: none; }
+    .node-card, .fleet-pulse-tile { transition: none; }
+}
+</style>
+
+<script>
+(function initNodesPage() {
+    var search = document.getElementById('nodes-search');
+    var healthFilter = document.getElementById('nodes-health-filter');
+    var policyFilter = document.getElementById('nodes-policy-filter');
+    var sortSelect = document.getElementById('nodes-sort');
+    var rowsView = document.getElementById('nodes-rows');
+    var cardsView = document.getElementById('nodes-cards');
+    var rowBody = document.getElementById('nodes-row-body');
+    var cardGrid = document.getElementById('nodes-card-grid');
+    var pulseGrid = document.getElementById('fleet-pulse-grid');
+    var visibleCount = document.getElementById('nodes-visible-count');
+    var clearBtn = document.getElementById('nodes-clear-filters');
+    var emptyRows = document.getElementById('nodes-empty-rows');
+    var emptyCards = document.getElementById('nodes-empty-cards');
+    var viewButtons = Array.prototype.slice.call(document.querySelectorAll('.nodes-view-btn'));
+    if (!search || !rowsView || !cardsView) return;
+
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.node-row'));
+    var cards = Array.prototype.slice.call(document.querySelectorAll('.node-card'));
+    var tiles = Array.prototype.slice.call(document.querySelectorAll('.fleet-pulse-tile'));
+    var total = rows.length;
+    var storageKey = 'vespid_nodes_view';
+
+    function nodeMatches(el) {
+        var q = (search.value || '').trim().toLowerCase();
+        if (q && (el.dataset.search || '').toLowerCase().indexOf(q) === -1) return false;
+        var health = healthFilter ? healthFilter.value : '';
+        if (health && el.dataset.health !== health) return false;
+        var policy = policyFilter ? policyFilter.value : '';
+        if (policy) {
+            var assigned = el.dataset.policy || '';
+            if (policy === '__none__' ? assigned !== '' : assigned !== policy) return false;
+        }
+        return true;
+    }
+
+    function healthRank(value) {
+        if (value === 'offline') return 0;
+        if (value === 'degraded') return 1;
+        return 2;
+    }
+
+    function timestampValue(raw) {
+        if (!raw) return 0;
+        var normalized = raw;
+        if (raw.indexOf('T') === -1 && raw.indexOf(' ') !== -1) {
+            normalized = raw.replace(' ', 'T') + 'Z';
+        }
+        var d = new Date(normalized);
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+    }
+
+    function compareNodes(a, b) {
+        var mode = sortSelect ? sortSelect.value : 'health';
+        if (mode === 'name') {
+            return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+        }
+        if (mode === 'last-seen') {
+            return timestampValue(b.dataset.lastSeen) - timestampValue(a.dataset.lastSeen);
+        }
+        if (mode === 'events') {
+            return Number(b.dataset.events || 0) - Number(a.dataset.events || 0);
+        }
+        return healthRank(a.dataset.health) - healthRank(b.dataset.health) ||
+            (a.dataset.name || '').localeCompare(b.dataset.name || '');
+    }
+
+    function reorder(container, items) {
+        if (!container) return;
+        items.slice().sort(compareNodes).forEach(function(el) {
+            container.appendChild(el);
+        });
+    }
+
+    function applyFilters() {
+        var shown = 0;
+        rows.forEach(function(el) {
+            var match = nodeMatches(el);
+            el.hidden = !match;
+            if (match) shown++;
+        });
+        cards.forEach(function(el) {
+            var match = nodeMatches(el);
+            el.hidden = !match;
+        });
+        tiles.forEach(function(el) {
+            el.classList.toggle('is-dim', !nodeMatches(el));
+        });
+        if (emptyRows) emptyRows.hidden = shown !== 0;
+        if (emptyCards) emptyCards.hidden = shown !== 0;
+        if (visibleCount) visibleCount.textContent = 'Showing ' + shown + ' of ' + total + ' nodes';
+        var active = !!(search.value.trim() || (healthFilter && healthFilter.value) || (policyFilter && policyFilter.value));
+        if (clearBtn) clearBtn.hidden = !active;
+    }
+
+    function setView(mode, persist) {
+        var cardsMode = mode === 'cards';
+        rowsView.hidden = cardsMode;
+        cardsView.hidden = !cardsMode;
+        viewButtons.forEach(function(btn) {
+            btn.setAttribute('aria-pressed', String(btn.dataset.view === mode));
+        });
+        if (persist) {
+            try { localStorage.setItem(storageKey, mode); } catch (err) {}
+        }
+        applyFilters();
+    }
+
+    function currentView() {
+        return cardsView.hidden ? 'rows' : 'cards';
+    }
+
+    search.addEventListener('input', applyFilters);
+    if (healthFilter) healthFilter.addEventListener('change', applyFilters);
+    if (policyFilter) policyFilter.addEventListener('change', applyFilters);
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+            search.value = '';
+            if (healthFilter) healthFilter.value = '';
+            if (policyFilter) policyFilter.value = '';
+            applyFilters();
+            search.focus();
+        });
+    }
+    if (sortSelect) {
+        sortSelect.addEventListener('change', function() {
+            reorder(rowBody, rows);
+            reorder(cardGrid, cards);
+            reorder(pulseGrid, tiles);
+        });
+    }
+    viewButtons.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            setView(btn.dataset.view, true);
+        });
+    });
+
+    var stored = null;
+    try { stored = localStorage.getItem(storageKey); } catch (err) {}
+    var defaultView = total > 16 ? 'rows' : 'cards';
+    setView(stored === 'rows' || stored === 'cards' ? stored : defaultView, false);
+
+    reorder(rowBody, rows);
+    reorder(cardGrid, cards);
+    reorder(pulseGrid, tiles);
+    applyFilters();
+
+    function openNode(el) {
+        if (!el || !el.dataset.href) return;
+        var selection = window.getSelection ? String(window.getSelection()) : '';
+        if (selection) return;
+        window.location.href = el.dataset.href;
+    }
+
+    function isInteractive(target) {
+        return target && target.closest &&
+            target.closest('a, button, select, input, textarea, label, form');
+    }
+
+    rows.concat(cards).forEach(function(el) {
+        el.addEventListener('click', function(event) {
+            if (isInteractive(event.target)) return;
+            openNode(el);
+        });
+        el.addEventListener('keydown', function(event) {
+            if (event.target !== el) return;
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openNode(el);
+            }
+        });
+    });
+})();
+</script>
 {% endblock %}

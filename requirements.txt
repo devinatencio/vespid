@@ -14,7 +14,7 @@ rich==14.3.3
 httpx==0.28.1
 
 # Shared
-PyYAML==6.0.2
+PyYAML==6.0.4
 maxminddb>=2.0.0
 
 # Test

@@ -618,9 +618,10 @@ def nodes():
             healthy_seconds=healthy_seconds,
             degraded_seconds=degraded_seconds,
         )
-        # Parse last_geo_data for location display
+        # Parse last_node_geo_data for the node's own IP location. The older
+        # last_geo_data column holds the last event source (attacker) geo.
         location = None
-        geo_raw = node.get("last_geo_data", "{}")
+        geo_raw = node.get("last_node_geo_data", "{}")
         try:
             geo = json.loads(geo_raw) if isinstance(geo_raw, str) else geo_raw
             parts = []
@@ -984,7 +985,7 @@ def node_detail(node_id):
         degraded_seconds=degraded_seconds,
     )
 
-    # Parse location
+    # Parse the last event source location and the node's own IP location.
     location = None
     geo_raw = node.get("last_geo_data", "{}")
     try:
@@ -996,6 +997,20 @@ def node_detail(node_id):
             parts.append(geo["country"])
         if parts:
             location = ", ".join(parts)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    node_location = None
+    node_geo_raw = node.get("last_node_geo_data", "{}")
+    try:
+        node_geo = json.loads(node_geo_raw) if isinstance(node_geo_raw, str) else node_geo_raw
+        parts = []
+        if node_geo.get("city"):
+            parts.append(node_geo["city"])
+        if node_geo.get("country"):
+            parts.append(node_geo["country"])
+        if parts:
+            node_location = ", ".join(parts)
     except (json.JSONDecodeError, TypeError):
         pass
 
@@ -1047,7 +1062,12 @@ def node_detail(node_id):
     if "application/json" in accept or auth.startswith("Bearer "):
         return jsonify(
             {
-                "node": {**node, "health": health, "location": location},
+                "node": {
+                    **node,
+                    "health": health,
+                    "location": location,
+                    "node_location": node_location,
+                },
                 "block_list": block_list,
                 "allowlist": allowlist,
                 "feeds": feeds,
@@ -1061,6 +1081,7 @@ def node_detail(node_id):
         node=node,
         health=health,
         location=location,
+        node_location=node_location,
         block_list=block_list,
         allowlist=allowlist,
         feeds=feeds,

@@ -2269,6 +2269,29 @@ def _migrate(conn, db_type: str = "sqlite") -> None:
         conn.commit()
         logger.info("Migration 38: added severity_tier column to host_threat_notifications")
 
+    # Migration 39: track the node's own last-seen IP and its GeoIP location.
+    # Event geo stays in last_geo_data (attack source); node geo must be kept
+    # separate or the Nodes page shows where the last attacker came from.
+    node_cols = _get_table_columns(conn, "nodes", db_type)
+    if "last_ip" not in node_cols:
+        if db_type == "sqlite":
+            conn.execute("ALTER TABLE nodes ADD COLUMN last_ip TEXT")
+        else:
+            conn.execute("ALTER TABLE nodes ADD COLUMN last_ip VARCHAR(45) DEFAULT NULL")
+        conn.commit()
+        logger.info("Migration 39: added last_ip column to nodes")
+    if "last_node_geo_data" not in node_cols:
+        if db_type == "sqlite":
+            conn.execute(
+                "ALTER TABLE nodes ADD COLUMN last_node_geo_data TEXT NOT NULL DEFAULT '{}'"
+            )
+        else:
+            conn.execute(
+                "ALTER TABLE nodes ADD COLUMN last_node_geo_data TEXT NOT NULL DEFAULT ('{}')"
+            )
+        conn.commit()
+        logger.info("Migration 39: added last_node_geo_data column to nodes")
+
 
 def _migrate_host_threat_alert_config(conn, db_type: str) -> None:
     """Create host_threat_alert_config table and migrate existing data.
@@ -2888,6 +2911,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     last_event_at   TEXT,
     total_events    INTEGER NOT NULL DEFAULT 0,
     last_geo_data   TEXT    NOT NULL DEFAULT '{}',
+    last_ip         TEXT,
+    last_node_geo_data TEXT NOT NULL DEFAULT '{}',
     -- last_block_list moved to node_blocks table
     last_allowlist  MEDIUMTEXT NOT NULL DEFAULT '[]',
     last_feeds      MEDIUMTEXT NOT NULL DEFAULT '[]',
