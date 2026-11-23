@@ -364,9 +364,12 @@ class TestInitDbIdempotent:
 from datetime import datetime, timedelta, timezone
 
 from app.models import (
+    get_event_context,
     get_recent_events,
     get_events_after_id,
+    insert_event_context,
     insert_events,
+    normalize_context_lines,
     search_events,
     get_dashboard_stats,
 )
@@ -458,6 +461,65 @@ class TestInsertEvents:
         row = db.execute("SELECT * FROM events WHERE event_id = ?", (ev["event_id"],)).fetchone()
         assert row["geo_country"] is None
         assert row["geo_city"] is None
+
+
+class TestEventContext:
+    """Tests for surrounding log context normalization."""
+
+    def test_normalize_strips_edge_blanks_but_keeps_internal_blank(self):
+        lines = [
+            {"raw": ""},
+            {"raw": "   "},
+            {"raw": "first"},
+            {"raw": ""},
+            {"raw": "trigger"},
+            {"raw": "\t"},
+        ]
+        assert normalize_context_lines(lines) == [
+            {"raw": "first"},
+            {"raw": ""},
+            {"raw": "trigger"},
+        ]
+
+    def test_insert_strips_edge_blanks(self, db):
+        ev = _make_event(event_id="ctx-insert")
+        insert_events(db, [ev])
+        insert_event_context(
+            db,
+            ev["event_id"],
+            [
+                {"raw": "", "trigger": False},
+                {"raw": " ", "trigger": False},
+                {"raw": "first", "trigger": False},
+                {"raw": "", "trigger": False},
+                {"raw": "trigger", "trigger": True},
+                {"raw": "", "trigger": False},
+            ],
+        )
+        rows = db.execute(
+            "SELECT raw FROM event_log_context WHERE event_id = ? ORDER BY line_idx",
+            (ev["event_id"],),
+        ).fetchall()
+        assert [row["raw"] for row in rows] == ["first", "", "trigger"]
+
+    def test_get_strips_legacy_edge_blanks(self, db):
+        ev = _make_event(event_id="ctx-legacy")
+        insert_events(db, [ev])
+        # Simulate rows written before normalization was added.
+        db.executemany(
+            "INSERT INTO event_log_context (event_id, line_idx, raw, is_trigger, repeat_count) "
+            "VALUES (?, ?, ?, ?, ?)",
+            [
+                (ev["event_id"], 0, "", 0, 1),
+                (ev["event_id"], 1, "  ", 0, 1),
+                (ev["event_id"], 2, "first", 0, 1),
+                (ev["event_id"], 3, "trigger", 1, 1),
+                (ev["event_id"], 4, "", 0, 1),
+            ],
+        )
+        db.commit()
+        lines = get_event_context(db, ev["event_id"])
+        assert [line["raw"] for line in lines] == ["first", "trigger"]
 
 
 class TestSearchEvents:

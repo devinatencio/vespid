@@ -113,6 +113,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     last_event_at   VARCHAR(255),
     total_events    INT NOT NULL DEFAULT 0,
     last_geo_data   TEXT NOT NULL DEFAULT ('{}'),
+    last_ip         VARCHAR(45) DEFAULT NULL,
+    last_node_geo_data TEXT NOT NULL DEFAULT ('{}'),
     -- last_block_list moved to node_blocks table
     last_whitelist  TEXT NOT NULL DEFAULT ('[]'),
     last_feeds      TEXT NOT NULL DEFAULT ('[]'),

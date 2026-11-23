@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from app.intel_dashboard_service import (
+    _parse_log_context,
     execute_search,
     get_attack_frequency_distribution,
     get_hourly_distribution,
@@ -69,6 +70,35 @@ def _insert_ip_record(conn, ip_address="192.168.1.1", ip_version="v4", **kwargs)
 
 
 # ── parse_search_query tests ─────────────────────────────────────────────
+
+
+class TestParseLogContext:
+    """Tests for parsing stored intel log_context values."""
+
+    def test_strips_blank_edges_from_json(self):
+        raw = json.dumps(
+            [
+                {"raw": "", "trigger": False},
+                {"raw": "  ", "trigger": False},
+                {"raw": "first", "trigger": False},
+                {"raw": "trigger", "trigger": True},
+                {"raw": "", "trigger": False},
+            ]
+        )
+        assert _parse_log_context(raw) == [
+            {"raw": "first", "trigger": False},
+            {"raw": "trigger", "trigger": True},
+        ]
+
+    def test_strips_blank_edges_from_list(self):
+        raw = [
+            {"raw": "", "trigger": False},
+            {"raw": "first", "trigger": False},
+        ]
+        assert _parse_log_context(raw) == [{"raw": "first", "trigger": False}]
+
+    def test_returns_none_for_empty_string(self):
+        assert _parse_log_context("") is None
 
 
 class TestParseSearchQuery:

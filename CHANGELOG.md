@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-15
+
+### Added
+
+- Nodes relying on auto-detected log sources now also discover nginx: if
+  `/var/log/nginx/access.log` or `/var/log/nginx/error.log` exists, it is
+  tailed with the `apache` parser (nginx combined format). Explicit local
+  `log_sources` still replace the auto-detected set, and duplicate paths are
+  skipped.
+
 ## [1.0.4] - 2026-10-30
 
 ### Fixed
@@ -22,6 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   IPv4 and IPv6 entries. `list-local`, `list-subscribed`, and
   `allowlist-list` now share one IP-aware renderer, sort mixed address
   families deterministically, and use the same `--json`/error helpers.
+- Node location now comes from the node's own last-seen IP via GeoIP instead
+  of the most recent event source (attacker) location. The node detail page
+  shows both `Node Location` and `Last Event Origin`, and existing nodes
+  populate the new field on their next heartbeat or event upload.
+- The Nodes page now has a fleet-health hero, a 100-node-friendly pulse map,
+  compact node rows with a card view toggle, search/health/policy filters,
+  relative last-seen times, version-drift chips, and admin-only policy and
+  delete controls.
+- Event detail log context no longer renders blank lines at the top when the
+  agent captures empty log lines at the edges of the surrounding-log window.
+  Leading and trailing blank context lines are trimmed on ingestion and when
+  reading older stored events, while internal blank lines are preserved.
 - Auditd mode changes now apply promptly: the agent polls for queued commands
   every 30 seconds instead of waiting for the 5-minute heartbeat.
 - Heartbeats report the live `ModeManager` mode rather than a potentially
@@ -254,6 +276,7 @@ Linux systems running nftables.
 - Ruff and mypy are clean across the Python agent; ruff is clean across the
   server.
 
+[1.0.5]: https://github.com/vespid/vespid/releases/tag/v1.0.5
 [1.0.4]: https://github.com/vespid/vespid/releases/tag/v1.0.4
 [1.0.3]: https://github.com/vespid/vespid/releases/tag/v1.0.3
 [1.0.2]: https://github.com/vespid/vespid/releases/tag/v1.0.2

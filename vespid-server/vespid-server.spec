@@ -1,5 +1,5 @@
 %define name        vespid-server
-%{!?version:%define version 1.0.4
+%{!?version:%define version 1.0.4}
 %define release     1%{?dist}
 %define install_dir /opt/vespid-server
 %define config_dir  /etc/vespid-server

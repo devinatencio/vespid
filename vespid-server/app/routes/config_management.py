@@ -1452,8 +1452,8 @@ def agent_check_in():
 
     upsert_agent_config_status(db, node_id, **status_kwargs)
 
-    # Track agent liveness
-    update_last_seen(db, node_id)
+    # Track agent liveness and the node's own IP/location.
+    update_last_seen(db, node_id, ip=request.remote_addr)
 
     # 4. If standalone mode: acknowledge without config data
     if management_mode == "standalone":

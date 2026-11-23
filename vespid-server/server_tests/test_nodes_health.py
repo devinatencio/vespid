@@ -1,5 +1,6 @@
 """Tests for node health using the canonical liveness timestamp."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 from app.models import get_node, touch_node, update_last_seen
@@ -64,3 +65,61 @@ def test_nodes_page_shows_last_seen_and_last_event(db, auth_client):
     assert b"Last Seen" in resp.data
     assert b"Last Event" in resp.data
     assert old_event_ts.encode() in resp.data
+
+
+def test_update_last_seen_tracks_node_origin_separately(db):
+    touch_node(db, "node-origin", _age(minutes=1))
+
+    update_last_seen(
+        db,
+        "node-origin",
+        ip="15.204.238.218",
+        geo_data={"country": "US", "city": "Dallas"},
+    )
+
+    node = get_node(db, "node-origin")
+    assert node["last_ip"] == "15.204.238.218"
+    assert json.loads(node["last_node_geo_data"]) == {"country": "US", "city": "Dallas"}
+
+
+def test_nodes_page_shows_node_location_not_event_source(db, auth_client):
+    touch_node(
+        db,
+        "node-geo",
+        _age(minutes=1),
+        geo_data={"country": "CN", "city": "Guangzhou"},
+    )
+    update_last_seen(
+        db,
+        "node-geo",
+        ip="15.204.238.218",
+        geo_data={"country": "US", "city": "Dallas"},
+    )
+
+    resp = auth_client("viewer").get("/nodes")
+
+    assert resp.status_code == 200
+    assert b"Dallas, US" in resp.data
+    assert b"Guangzhou" not in resp.data
+
+
+def test_node_detail_shows_node_location_and_event_origin(db, auth_client):
+    touch_node(
+        db,
+        "node-both",
+        _age(minutes=1),
+        geo_data={"country": "CN", "city": "Guangzhou"},
+    )
+    update_last_seen(
+        db,
+        "node-both",
+        ip="15.204.238.218",
+        geo_data={"country": "US", "city": "Dallas"},
+    )
+
+    resp = auth_client("viewer").get("/nodes/node-both")
+
+    assert resp.status_code == 200
+    assert b"Node Location" in resp.data
+    assert b"Dallas, US" in resp.data
+    assert b"Guangzhou, CN" in resp.data

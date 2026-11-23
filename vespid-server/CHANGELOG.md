@@ -4,7 +4,21 @@
 
 ## 1.0.4 — 2026-10-30
 
+### Changed
+- Node location now comes from the node's own last-seen IP via GeoIP instead
+  of the most recent event source (attacker) location. The node detail page
+  shows both `Node Location` and `Last Event Origin`, and existing nodes
+  populate the new field on their next heartbeat or event upload.
+- The Nodes page now has a fleet-health hero, a fleet pulse map that stays
+  readable at 100 nodes, compact node rows with a card view toggle, search and
+  health/policy filters, relative last-seen times, version-drift chips, and
+  admin-only policy and delete controls
+
 ### Fixed
+- Event detail log context no longer renders blank lines at the top when the
+  agent captures empty log lines at the edges of the surrounding-log window;
+  leading and trailing blank context lines are trimmed on ingestion and when
+  reading older stored events, while internal blank lines are preserved
 - Host Threats mode changes target the most recent node for a hostname
   (falling back to the node's display name), and the dashboard reports failed
   or timed-out `set_auditd_mode` commands instead of staying on "pending"

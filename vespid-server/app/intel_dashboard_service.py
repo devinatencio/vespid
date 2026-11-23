@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.country_codes import COUNTRY_NAMES
 from app.intel_models import compute_block_status, search_ip_records
+from app.models.events import normalize_context_lines
 
 logger = logging.getLogger(__name__)
 
@@ -1410,9 +1411,9 @@ def _parse_log_context(raw: str | list | None) -> list[dict] | None:
     if raw is None:
         return None
     if isinstance(raw, list):
-        return raw
+        return normalize_context_lines(raw)
     if isinstance(raw, dict):
-        return [raw]
+        return normalize_context_lines([raw])
     if isinstance(raw, str):
         stripped = raw.strip()
         if not stripped:
@@ -1420,9 +1421,9 @@ def _parse_log_context(raw: str | list | None) -> list[dict] | None:
         try:
             parsed = json.loads(stripped)
             if isinstance(parsed, list):
-                return parsed
+                return normalize_context_lines(parsed)
             if isinstance(parsed, dict):
-                return [parsed]
+                return normalize_context_lines([parsed])
         except (json.JSONDecodeError, TypeError):
             pass
     return None

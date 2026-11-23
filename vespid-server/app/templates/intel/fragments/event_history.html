@@ -42,9 +42,8 @@
             <td colspan="6" style="padding: 0;">
                 <div class="event-detail-content">
                     <strong>Matching Requests</strong>
-                    <pre>{% for line in event.log_context %}
-{% if line.trigger %}<span class="log-trigger-line">▸ {{ line.raw }}{% if line.repeat and line.repeat > 1 %} [x{{ line.repeat }}]{% endif %}</span>{% else %}{{ line.raw }}{% if line.repeat and line.repeat > 1 %} [x{{ line.repeat }}]{% endif %}{% endif %}{% if not loop.last %}
-{% endif %}{% endfor %}</pre>
+                    <pre>{% for line in event.log_context %}{% if not loop.first %}
+{% endif %}{% if line.trigger %}<span class="log-trigger-line">▸ {{ line.raw }}{% if line.repeat and line.repeat > 1 %} [x{{ line.repeat }}]{% endif %}</span>{% else %}{{ line.raw }}{% if line.repeat and line.repeat > 1 %} [x{{ line.repeat }}]{% endif %}{% endif %}{% endfor %}</pre>
                 </div>
             </td>
         </tr>
