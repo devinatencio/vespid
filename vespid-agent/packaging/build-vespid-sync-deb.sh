@@ -7,7 +7,9 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 # RPM/version source instead of drifting from a hardcoded literal.
 VERSION="$(awk '/^Version:/{print $2; exit}' "$SCRIPT_DIR/vespid-sync.spec")"
 PACKAGE="vespid-sync"
-ARCH="$(dpkg --print-architecture 2>/dev/null || echo "amd64")"
+# vespid-sync is pure Python; ship it as Architecture: all so a single .deb can
+# be used on amd64 and arm64 hosts.
+ARCH="all"
 DEB_NAME="${PACKAGE}_${VERSION}_${ARCH}.deb"
 
 GREEN='\033[0;32m'
@@ -76,7 +78,7 @@ Version: $VERSION
 Section: admin
 Priority: optional
 Architecture: $ARCH
-Depends: python3 (>= 3.9), python3-venv
+Depends: python3 (>= 3.10), python3-venv
 Maintainer: Vespid Team <dev@vespid.io>
 Description: Vespid Sync Agent — infrastructure asset discovery
  Discovers infrastructure assets from hypervisors (Proxmox, VMware, etc.)

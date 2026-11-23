@@ -111,8 +111,13 @@ build_rpm() {
     local tmp_topdir
     tmp_topdir=$(mktemp -d)
 
+    # cargo/rustc come from rustup in the container build, so rpmbuild cannot
+    # satisfy the BuildRequires names even though check_prereqs() verified the
+    # compilers are present. Keep the spec metadata accurate and skip rpm's
+    # dependency check here.
     rpmbuild \
         -tb "$tarball" \
+        --nodeps \
         --define "_topdir $tmp_topdir"
 
     local found

@@ -85,7 +85,33 @@ automatically by the `package` targets. It is safe to run by hand at any time.
 `make package-docker` builds the `.rpm` set in an `almalinux:9` container and
 the `.deb` set in a `debian:12` container, each with a current Rust toolchain.
 The repository is bind-mounted and artifacts are written back to `dist/`.
-Requires Docker.
+
+Docker or podman is supported. The engine is auto-detected, or set it
+explicitly:
+
+```bash
+CONTAINER_ENGINE=podman make package-docker
+```
+
+On Apple Silicon, build amd64 packages for typical x86_64 servers:
+
+```bash
+PLATFORM=linux/amd64 make package-docker
+```
+
+The RPM build uses the EL9 baseline so the Rust agent gets an older glibc
+dependency and runs on both EL9 and EL10. The Python RPM specs use EL9's
+`python3.11` when the distro `python3` is too old. The DEB build uses Debian 12
+as its baseline; the Python packages are distro-independent (`Architecture:
+all`) and the Rust agent links against glibc 2.36, so the result is intended for
+Debian 12+ and Ubuntu 24.04+ (the server requires Python 3.11+).
+
+## Apache repository host
+
+The `packaging/apache/` directory contains the Apache vhosts for serving
+`packages.vespid.app` from `/srv/driftkeep-repo/repos/vespid/public`, including
+the port-80 ACME/redirect vhost. See `packaging/apache/README.md` for the
+HAProxy certificate and publish steps.
 
 ## Signing RPMs
 

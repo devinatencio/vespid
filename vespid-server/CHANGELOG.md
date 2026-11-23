@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.0.5 — 2026-11-15
+
+### Changed
+
+- Bundled Python agent updated to 1.0.5, which automatically discovers nginx
+  access and error logs when they exist on a node.
+
 ## 1.0.4 — 2026-10-30
 
 ### Changed

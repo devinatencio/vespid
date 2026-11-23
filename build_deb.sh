@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${SCRIPT_DIR}/dist/deb"
-VERSION="$(cat "${SCRIPT_DIR}/vespid-server/VERSION" 2>/dev/null || echo 1.0.4)"
+VERSION="$(cat "${SCRIPT_DIR}/vespid-server/VERSION" 2>/dev/null || echo 1.0.5)"
 TARGETS=()
 
 # ---------------------------------------------------------------------------
@@ -215,6 +215,9 @@ build_server() {
     cp "${SCRIPT_DIR}/vespid-server/vespid_server.py" "${APP_DIR}/"
     cp "${SCRIPT_DIR}/vespid-server/gunicorn.conf.py" "${APP_DIR}/"
     cp "${SCRIPT_DIR}/vespid-server/requirements.txt" "${APP_DIR}/"
+    cp "${SCRIPT_DIR}/vespid-server/pyproject.toml" "${APP_DIR}/"
+    cp "${SCRIPT_DIR}/vespid-server/VERSION" "${APP_DIR}/"
+    cp "${SCRIPT_DIR}/vespid-server/README.md" "${APP_DIR}/"
     cp "${SCRIPT_DIR}/vespid-server/schema_mysql.sql" "${APP_DIR}/"
     cp "${SCRIPT_DIR}/vespid-server/CHANGELOG.md" "${APP_DIR}/"
 

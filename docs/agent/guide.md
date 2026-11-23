@@ -94,6 +94,12 @@ correct default paths:
 
 HAProxy logs (`/var/log/haproxy/access.log`) are included in all defaults.
 
+Nginx logs are also discovered automatically: when
+`/var/log/nginx/access.log` or `/var/log/nginx/error.log` exists, it is added
+with the `apache` parser (nginx combined format). This detection applies only
+when `log_sources` is omitted; an explicit list replaces the auto-detected
+set.
+
 ### Complete settings reference
 
 | Key | Default | Description |

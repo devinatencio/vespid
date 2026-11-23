@@ -21,11 +21,11 @@ if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
 case "${FORMAT}" in
     rpm)
         REQ_PKGS=(rpm-build systemd-rpm-macros python3-devel \
-                  protobuf-compiler gcc make curl gzip tar)
+                  protobuf-compiler gcc make gzip tar)
         ;;
     deb)
         REQ_PKGS=(dpkg-dev fakeroot protobuf-compiler \
-                  gcc make curl gzip tar ca-certificates)
+                  gcc make gzip tar ca-certificates)
         ;;
     *)
         echo "ERROR: unsupported host for native packaging (no rpm/deb detected)." >&2
@@ -45,6 +45,12 @@ missing=()
 for pkg in "${REQ_PKGS[@]}"; do
     pkg_installed "${pkg}" || missing+=("${pkg}")
 done
+
+# curl-minimal satisfies the EL9/EL10 images but does not provide the "curl"
+# package name. Check the command instead of requiring a specific RPM.
+if ! command -v curl >/dev/null 2>&1; then
+    missing+=("curl")
+fi
 
 if [ "${#missing[@]}" -eq 0 ]; then
     echo "System packaging toolchain already present for ${FORMAT}."

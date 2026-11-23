@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vespid Packages</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 54rem; margin: 3rem auto; padding: 0 1rem; }
+  code, pre { background: #f3f4f6; border-radius: 6px; }
+  code { padding: .1rem .3rem; }
+  pre { padding: 1rem; overflow-x: auto; }
+  table { border-collapse: collapse; }
+  td, th { text-align: left; padding: .35rem 1rem .35rem 0; }
+</style>
+<h1>Vespid Packages</h1>
+<p>RPM and DEB packages for Vespid.</p>
+<table>
+  <tr><th>Format</th><th>Packages</th></tr>
+  <tr><td>RPM</td><td>4</td></tr>
+  <tr><td>DEB</td><td>4</td></tr>
+</table>
+
+<h2>RPM</h2>
+<pre>sudo curl -fsSL https://packages.vespid.app/keys/vespid-packages.asc -o /etc/pki/rpm-gpg/RPM-GPG-KEY-vespid
+sudo tee /etc/yum.repos.d/vespid.repo &lt;&lt;'REPO'
+[vespid]
+name=Vespid Packages
+baseurl=https://packages.vespid.app/rpm/$basearch
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-vespid
+REPO
+sudo dnf install vespid vespid-agent vespid-server vespid-sync</pre>
+
+<h2>DEB</h2>
+<pre>curl -fsSL https://packages.vespid.app/keys/vespid-packages.asc | sudo gpg --dearmor -o /usr/share/keyrings/vespid-packages.gpg
+echo 'deb [signed-by=/usr/share/keyrings/vespid-packages.gpg] https://packages.vespid.app/deb stable main' | sudo tee /etc/apt/sources.list.d/vespid.list
+sudo apt update
+sudo apt install vespid vespid-agent vespid-server vespid-sync</pre>
+
+<p><a href="SHA256SUMS">SHA256SUMS</a> · <a href="keys/vespid-packages.asc">public key</a></p>

@@ -6,7 +6,7 @@ PYTHON   ?= python3
 PYTEST   ?= python3 -m pytest
 PIP      ?= pip3
 NAME     := vespid
-VERSION  := 1.0.4
+VERSION  := 1.0.5
 
 # Put a rustup-installed toolchain on PATH for the build recipes even when the
 # user's shell has not sourced ~/.cargo/env yet (e.g. right after package-deps
@@ -115,10 +115,10 @@ package-deb: package-deps ## Build all DEB packages into dist/deb
 	@echo "DEBs written to $(DIST_DIR)/deb"
 
 package-deps: ## Install this host's packaging toolchain
-	sh packaging/install-pkg-deps.sh
+	bash packaging/install-pkg-deps.sh
 
 package-docker: ## Build both RPM and DEB in containers (works on any host)
-	sh packaging/package-docker.sh
+	bash packaging/package-docker.sh
 
 package-clean: ## Remove dist/ and generated rpmbuild trees
 	rm -rf "$(DIST_DIR)" rpmbuild vespid-server/rpmbuild

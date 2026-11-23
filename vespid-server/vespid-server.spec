@@ -1,5 +1,5 @@
 %define name        vespid-server
-%{!?version:%define version 1.0.4}
+%{!?version:%define version 1.0.5}
 %define release     1%{?dist}
 %define install_dir /opt/vespid-server
 %define config_dir  /etc/vespid-server
@@ -17,8 +17,7 @@ URL:            https://github.com/vespid/vespid
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
-Requires:       python3 >= 3.11
-Requires:       python3-pip
+Requires:       ((python3 >= 3.11 and python3-pip) or (python3.11 and python3.11-pip))
 Requires(pre):  shadow-utils
 Requires(post): systemd
 Requires(preun): systemd
@@ -163,9 +162,16 @@ getent passwd %{service_user} >/dev/null || \
 exit 0
 
 %post
+# EL9 ships Python 3.9 as python3; EL10 ships 3.12. Prefer python3 when it
+# meets the server's >=3.11 floor, otherwise use the EL9 python3.11 package.
+VESPID_PYTHON=python3
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+    VESPID_PYTHON=python3.11
+fi
+
 # Set up Python virtual environment and install dependencies
 if [ ! -d %{install_dir}/.venv ]; then
-    python3 -m venv %{install_dir}/.venv
+    "$VESPID_PYTHON" -m venv %{install_dir}/.venv
 fi
 %{install_dir}/.venv/bin/pip install --quiet --upgrade pip
 (cd %{install_dir} && .venv/bin/pip install --quiet -r requirements.txt)
@@ -178,7 +184,7 @@ chown -R %{service_user}:%{service_user} %{config_dir}
 
 # Generate a random SECRET_KEY on first install (must be before init-db)
 if [ "$1" = "1" ]; then
-    SECRET=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
+    SECRET=$("$VESPID_PYTHON" -c "import secrets; print(secrets.token_urlsafe(48))")
     if [ -f %{config_dir}/config.yaml ]; then
         sed -i "s/change-me-to-a-random-string/${SECRET}/" %{config_dir}/config.yaml
     fi
@@ -283,6 +289,8 @@ fi
 %license LICENSE
 
 %changelog
+* Sun Nov 15 2026 Vespid Team <team@vespid.dev> - 1.0.5-1
+- Automatic nginx log discovery when /var/log/nginx/access.log or error.log exists
 * Fri Oct 30 2026 Vespid Team <team@vespid.dev> - 1.0.4-1
 - Host threat mode reliability and CLI list rendering fixes
 * Sun Oct 25 2026 Vespid Team <team@vespid.dev> - 1.0.3-1
@@ -297,7 +305,7 @@ fi
 - `make package` installs the packaging toolchain automatically
 * Thu Oct 08 2026 Vespid Team <team@vespid.dev> - 1.0.1-1
 - Per-node active-parser resolution now unions profile log_sources with heartbeat parsers
-* %(date "+%%a %%b %%d %%Y") Vespid Team <team@vespid.dev> - 1.0.0-1
+* Wed Oct 07 2026 Vespid Team <team@vespid.dev> - 1.0.0-1
 - Detection rule packs loaded from YAML files (packs/ directory)
 - Included packs: Apache attacks, NGINX attacks, OpenSSH attacks, Postfix attacks
 - YAML configuration support (preferred over JSON)
